@@ -1290,7 +1290,3 @@ VITE_TURN_HOST=turn.zola.app
 - API contract rõ (OpenAPI), có test pass, có migration, có seed local, có monitoring baseline.
 - Mỗi service phải chạy độc lập được bằng profile local + docker deps.
 - Không có dependency chéo DB; đồng bộ giữa service qua event/contract.
-
----
-
-_Zola Chat Application — DHKTPM18CTT — Giảng viên: Tôn Long Phước_
