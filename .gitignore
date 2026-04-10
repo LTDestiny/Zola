@@ -24,3 +24,4 @@ frontend/web/dist/
 
 # VS Code
 .vscode/
+frontend/web/*.tsbuildinfo
