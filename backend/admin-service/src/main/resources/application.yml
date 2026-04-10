@@ -1,0 +1,19 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: admin-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:zola_admin_db}
+    username: ${DB_USER:zola}
+    password: ${DB_PASSWORD:zola_pass}
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

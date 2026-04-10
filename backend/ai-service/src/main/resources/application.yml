@@ -1,0 +1,22 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ai-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:zola_ai_meta_db}
+    username: ${DB_USER:zola}
+    password: ${DB_PASSWORD:zola_pass}
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/zola_ai_db}
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
