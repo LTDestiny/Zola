@@ -1,0 +1,223 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: zola
+      POSTGRES_PASSWORD: zola_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  db-bootstrap:
+    image: postgres:15-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_USER: zola
+      POSTGRES_PASSWORD: zola_pass
+    volumes:
+      - ./bootstrap/postgres-bootstrap.sh:/bootstrap/postgres-bootstrap.sh
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "chmod +x /bootstrap/postgres-bootstrap.sh && /bootstrap/postgres-bootstrap.sh",
+      ]
+    restart: "no"
+
+  mongo-bootstrap:
+    image: mongo:7
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./bootstrap/mongo-seed.js:/bootstrap/mongo-seed.js
+    entrypoint:
+      ["mongosh", "mongodb://mongodb:27017", "/bootstrap/mongo-seed.js"]
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass redis_pass
+    ports:
+      - "6379:6379"
+
+  coturn:
+    image: coturn/coturn
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf
+
+  api-gateway:
+    build:
+      context: ../backend
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - user-service
+      - chat-service
+      - call-service
+
+  auth-service:
+    build:
+      context: ../backend
+      dockerfile: auth-service/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
+      REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  user-service:
+    build:
+      context: ../backend
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${USER_DB_NAME:-zola_user_db}
+      REDIS_HOST: redis
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  chat-service:
+    build:
+      context: ../backend
+      dockerfile: chat-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
+      REDIS_HOST: redis
+    depends_on:
+      mongo-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  call-service:
+    build:
+      context: ../backend
+      dockerfile: call-service/Dockerfile
+    ports:
+      - "8087:8087"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${CALL_DB_NAME:-zola_call_db}
+      REDIS_HOST: redis
+      TURN_SECRET: ${TURN_SECRET}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  file-service:
+    build:
+      context: ../backend
+      dockerfile: file-service/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${FILE_DB_NAME:-zola_file_db}
+      S3_BUCKET: ${S3_BUCKET}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+
+  ai-service:
+    build:
+      context: ../backend
+      dockerfile: ai-service/Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${AI_META_DB_NAME:-zola_ai_meta_db}
+      MONGO_URI: ${AI_MONGO_URI:-mongodb://mongodb:27017/zola_ai_db}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+      mongo-bootstrap:
+        condition: service_completed_successfully
+
+  notification-service:
+    build:
+      context: ../backend
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      REDIS_HOST: redis
+      DB_HOST: postgres
+      DB_NAME: ${NOTIFICATION_DB_NAME:-zola_notification_db}
+    depends_on:
+      redis:
+        condition: service_started
+      db-bootstrap:
+        condition: service_completed_successfully
+
+  admin-service:
+    build:
+      context: ../backend
+      dockerfile: admin-service/Dockerfile
+    ports:
+      - "8088:8088"
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+
+  zola-web:
+    build: ../frontend/web
+    ports:
+      - "3000:80"
+    environment:
+      VITE_API_URL: http://localhost:8080
+      VITE_WS_URL: ws://localhost:8083/ws
+
+volumes:
+  postgres_data:
+  mongo_data:
