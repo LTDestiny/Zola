@@ -11,7 +11,7 @@ Monorepo scaffold for the Zola chat platform based on the project specification.
 ## Quick Start
 
 1. Copy `.env.example` to `.env` and update secrets.
-2. Start local dependencies:
+2. Start core containers (lean mode):
    - `docker compose -f infrastructure/docker-compose.yml up -d`
 3. Import backend services as Maven projects.
 4. Start the web app:
@@ -19,14 +19,99 @@ Monorepo scaffold for the Zola chat platform based on the project specification.
    - `npm install`
    - `npm run dev`
 
+## Full Stack Dev Run (All Services)
+
+To run all backend services + coturn + frontend in dev mode (Vite at 5173):
+
+- `docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.dev.yml --profile web --profile extended --profile realtime up -d --build`
+
+To check running containers:
+
+- `docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.dev.yml --profile web --profile extended --profile realtime ps`
+
+To stop full dev stack:
+
+- `docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.dev.yml --profile web --profile extended --profile realtime down`
+
+## Docker Compose Profiles (Container Optimization)
+
+Default `up -d` now starts only the core chat/auth stack:
+
+- `mongodb`, `mongo-bootstrap`, `redis`
+- `auth-service`, `user-service`, `chat-service`, `api-gateway`
+
+Optional profiles:
+
+- `--profile web`: run `zola-web` (Nginx production web container)
+- `--profile extended`: run `call-service`, `file-service`, `ai-service`, `notification-service`, `admin-service`
+- `--profile realtime`: run `coturn` for WebRTC/TURN
+- `--profile local-pg-bootstrap`: run Docker PostgreSQL + `db-bootstrap` only when needed
+
+Examples:
+
+- Core + web:
+  - `docker compose -f infrastructure/docker-compose.yml --profile web up -d --build`
+- Core + extended services:
+  - `docker compose -f infrastructure/docker-compose.yml --profile extended up -d --build`
+- Full stack:
+  - `docker compose -f infrastructure/docker-compose.yml --profile web --profile extended --profile realtime up -d --build`
+
+Note:
+
+- Default service DB host is local PostgreSQL (`host.docker.internal`) with defaults `postgres/admin`.
+- If you only use local PostgreSQL (pgAdmin), do not enable `local-pg-bootstrap`.
+
+## Docker Web Modes (Dev and Prod)
+
+- Production mode (Nginx static build):
+  - Uses `frontend/web/Dockerfile.prod`
+  - Start with: `docker compose -f infrastructure/docker-compose.yml up -d --build zola-web`
+  - Open: `http://localhost:3000`
+
+- Development mode (auto update on code changes):
+  - Uses `frontend/web/Dockerfile.dev` and bind-mount source code
+  - Start with:
+    - `docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.dev.yml up -d --build zola-web`
+  - Open: `http://localhost:5173`
+  - Any file change in `frontend/web/src` hot-reloads in container.
+
+## Authentication Notes
+
+- Login flow now uses Email OTP:
+  - `POST /api/v1/auth/login/request-otp`
+  - `POST /api/v1/auth/login/verify-otp`
+- Register requires policy consent (`acceptedPolicy=true`).
+- SMTP is used as a third-party email provider for OTP delivery. Configure:
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`
+- Session rule:
+  - Each account can only keep one active `WEB` session and one active `MOBILE` session at the same time.
+  - Logging in again on the same device type revokes older sessions of that type.
+
 ## Auto Bootstrap Behavior
 
 When starting with Docker Compose:
 
-- `db-bootstrap` checks PostgreSQL databases and creates missing ones only.
+- `db-bootstrap` (when `local-pg-bootstrap` profile is enabled) checks PostgreSQL databases and creates missing ones only.
 - `mongo-bootstrap` inserts seed documents only when target collections are empty.
 - PostgreSQL table schemas and seed rows are managed by Flyway migrations per service.
 - If data already exists, bootstrap and seed steps do not duplicate records.
+
+### Local PostgreSQL Bootstrap (without Docker PostgreSQL)
+
+If you run PostgreSQL on host machine and want service DBs + seed users:
+
+- `cd infrastructure/bootstrap`
+- `powershell -ExecutionPolicy Bypass -File .\init-local-postgres.ps1`
+
+Seed auth users created:
+
+- `seed1@zola.app`
+- `seed2@zola.app`
+- `seed3@zola.app`
+
+Seed password:
+
+- `password123`
 
 ## Suggested Build Order
 

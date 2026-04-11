@@ -1,0 +1,20 @@
+services:
+  zola-web:
+    build:
+      context: ../frontend/web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8080
+      VITE_WS_URL: ws://localhost:8083/ws
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    command: >
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ../frontend/web:/app
+      - zola_web_node_modules:/app/node_modules
+
+volumes:
+  zola_web_node_modules:

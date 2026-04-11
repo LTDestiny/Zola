@@ -41,6 +41,10 @@
       <optional>true</optional>
     </dependency>
     <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.zola</groupId>
       <artifactId>common</artifactId>
       <version>0.1.0-SNAPSHOT</version>

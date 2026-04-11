@@ -4,7 +4,10 @@ const aiDb = db.getSiblingDB("zola_ai_db");
 if (chatDb.conversations.countDocuments() === 0) {
   chatDb.conversations.insertOne({
     type: "DIRECT",
-    participants: ["seed-user-1", "seed-user-2"],
+    participants: [
+      "11111111-1111-1111-1111-111111111111",
+      "11111111-1111-1111-1111-222222222222",
+    ],
     last_message: {
       content: "Hello from seed data",
       sender_id: "seed-user-1",
@@ -21,9 +24,20 @@ if (chatDb.messages.countDocuments() === 0) {
   if (conv) {
     chatDb.messages.insertOne({
       conversation_id: conv._id,
-      sender_id: "seed-user-1",
+      sender_id: "11111111-1111-1111-1111-111111111111",
       type: "TEXT",
-      content: "Seed message",
+      content: "Hello from seed user 1",
+      is_deleted: false,
+      is_recalled: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    chatDb.messages.insertOne({
+      conversation_id: conv._id,
+      sender_id: "11111111-1111-1111-1111-222222222222",
+      type: "TEXT",
+      content: "Hi, this is seed user 2",
       is_deleted: false,
       is_recalled: false,
       created_at: new Date(),
