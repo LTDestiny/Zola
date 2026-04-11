@@ -17,3 +17,7 @@ management:
     web:
       exposure:
         include: health,info
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-dev-secret-key-dev-secret-key-12345}
+  issuer: zola-auth-service

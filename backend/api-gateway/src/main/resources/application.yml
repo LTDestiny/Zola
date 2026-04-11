@@ -15,3 +15,12 @@ management:
     web:
       exposure:
         include: health,info
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-dev-secret-key-dev-secret-key-12345}
+  issuer: zola-auth-service
+
+services:
+  auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+  user-url: ${USER_SERVICE_URL:http://localhost:8082}
+  chat-url: ${CHAT_SERVICE_URL:http://localhost:8083}
