@@ -50,7 +50,7 @@ export function ChatPage() {
     const [conversations, setConversations] = useState<ConversationItem[]>([]);
     const [messages, setMessages] = useState<MessageItem[]>([]);
     const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
-    
+
     const markMessageAsRead = async (conversationId: string, messageId: string) => {
         const realtimeSent = Boolean(
             realtimeClientRef.current?.publishRead(conversationId, messageId),

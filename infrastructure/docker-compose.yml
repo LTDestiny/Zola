@@ -15,7 +15,13 @@ services:
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_CFG_NUM_PARTITIONS: 3
     healthcheck:
-      test: ["CMD", "bash", "-lc", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      test:
+        [
+          "CMD",
+          "bash",
+          "-lc",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
