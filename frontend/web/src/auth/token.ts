@@ -19,6 +19,10 @@ export function clearAuthTokens() {
   localStorage.removeItem(ACCESS_EXPIRES_AT_KEY);
 }
 
+export function getAccessToken() {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
 export function isAuthenticated() {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   const expiresAtValue = localStorage.getItem(ACCESS_EXPIRES_AT_KEY);

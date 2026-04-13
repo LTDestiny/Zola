@@ -24,3 +24,4 @@ services:
   auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}
   user-url: ${USER_SERVICE_URL:http://localhost:8082}
   chat-url: ${CHAT_SERVICE_URL:http://localhost:8083}
+  file-url: ${FILE_SERVICE_URL:http://localhost:8084}

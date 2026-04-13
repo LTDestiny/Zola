@@ -30,6 +30,9 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
             }
             Claims claims = socketJwtService.parse(authorization.substring(7));
             String userId = claims.get("userId", String.class);
+            if (userId == null || userId.isBlank()) {
+                throw new IllegalArgumentException("Invalid token payload");
+            }
             accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
         }
         return message;

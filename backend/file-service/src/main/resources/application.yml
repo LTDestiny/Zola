@@ -17,3 +17,17 @@ management:
     web:
       exposure:
         include: health,info
+
+storage:
+  endpoint: ${S3_ENDPOINT:}
+  public-endpoint: ${S3_PUBLIC_ENDPOINT:${S3_ENDPOINT:}}
+  access-key: ${AWS_ACCESS_KEY:}
+  secret-key: ${AWS_SECRET_KEY:}
+  bucket: ${S3_BUCKET:zola-shared-files-dev}
+  region: ${AWS_REGION:ap-southeast-1}
+  path-style: ${S3_PATH_STYLE:false}
+
+media:
+  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:5242880}
+  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:52428800}
+  max-file-bytes: ${MEDIA_MAX_FILE_BYTES:20971520}
