@@ -28,7 +28,9 @@ public class AuthService {
     private final OtpService otpService;
     private final SessionRedisService sessionRedisService;
     private final SecurityLogService securityLogService;
+    private final SessionSyncPublisher sessionSyncPublisher;
     private final long refreshTtlSeconds;
+    private final String samePlatformPolicy;
 
     public AuthService(
         UserRepository userRepository,
@@ -38,7 +40,9 @@ public class AuthService {
         OtpService otpService,
         SessionRedisService sessionRedisService,
         SecurityLogService securityLogService,
-        @Value("${jwt.refresh-token-expiry-seconds}") long refreshTtlSeconds
+        SessionSyncPublisher sessionSyncPublisher,
+        @Value("${jwt.refresh-token-expiry-seconds}") long refreshTtlSeconds,
+        @Value("${app.session.same-platform-policy:REVOKE}") String samePlatformPolicy
     ) {
         this.userRepository = userRepository;
         this.userSessionRepository = userSessionRepository;
@@ -47,7 +51,9 @@ public class AuthService {
         this.otpService = otpService;
         this.sessionRedisService = sessionRedisService;
         this.securityLogService = securityLogService;
+        this.sessionSyncPublisher = sessionSyncPublisher;
         this.refreshTtlSeconds = refreshTtlSeconds;
+        this.samePlatformPolicy = samePlatformPolicy;
     }
 
     @Transactional
@@ -314,7 +320,10 @@ public class AuthService {
         }
 
         String normalized = deviceType.trim().toUpperCase(Locale.ROOT);
-        return "MOBILE".equals(normalized) ? "MOBILE" : "WEB";
+        if ("MOBILE".equals(normalized) || "ANDROID".equals(normalized) || "IOS".equals(normalized)) {
+            return "MOBILE";
+        }
+        return "WEB";
     }
 
     private void enforceSingleActiveSessionPerDeviceType(UUID userId, String deviceType) {
@@ -323,9 +332,19 @@ public class AuthService {
             return;
         }
 
+        String policy = samePlatformPolicy == null ? "REVOKE" : samePlatformPolicy.trim().toUpperCase(Locale.ROOT);
+        if ("REJECT".equals(policy)) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "An active " + deviceType + " session already exists"
+            );
+        }
+
         for (UserSessionEntity session : sameDeviceSessions) {
             session.setIsActive(false);
             sessionRedisService.revokeSession(userId, session.getId());
+            String payload = "{\"sessionId\":\"" + session.getId() + "\",\"deviceType\":\"" + deviceType + "\",\"reason\":\"NEW_LOGIN\"}";
+            sessionSyncPublisher.publish(userId, "SESSION_REVOKED", payload);
         }
         userSessionRepository.saveAll(sameDeviceSessions);
     }

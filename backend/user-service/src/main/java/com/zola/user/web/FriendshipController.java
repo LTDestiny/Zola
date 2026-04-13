@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -66,7 +69,9 @@ public class FriendshipController {
 
         return ApiResponse.ok("Friend request sent", Map.of(
             "friendshipId", created.getId().toString(),
-            "status", created.getStatus()
+            "status", created.getStatus(),
+            "requesterId", created.getRequesterId().toString(),
+            "addresseeId", created.getAddresseeId().toString()
         ));
     }
 
@@ -96,6 +101,119 @@ public class FriendshipController {
         ));
     }
 
+    @GetMapping("/pending")
+    public ApiResponse<List<PendingFriendRequest>> getPendingRequests(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        UUID addresseeId = parseUserId(userIdHeader);
+        List<PendingFriendRequest> requests = friendshipRepository
+            .findAllByAddresseeIdAndStatus(addresseeId, "PENDING")
+            .stream()
+            .map(relation -> new PendingFriendRequest(
+                relation.getId(),
+                relation.getRequesterId(),
+                relation.getAddresseeId(),
+                relation.getStatus()
+            ))
+            .toList();
+
+        return ApiResponse.ok("Pending friendship requests", requests);
+    }
+
+    @GetMapping("/friends")
+    public ApiResponse<List<FriendContact>> getFriends(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        UUID userId = parseUserId(userIdHeader);
+        List<FriendContact> friends = friendshipRepository
+            .findAllByUserIdAndStatus(userId, "ACCEPTED")
+            .stream()
+            .map(relation -> {
+                UUID friendId = relation.getRequesterId().equals(userId)
+                    ? relation.getAddresseeId()
+                    : relation.getRequesterId();
+                return new FriendContact(relation.getId(), friendId);
+            })
+            .toList();
+
+        return ApiResponse.ok("Friend list", friends);
+    }
+
+    @PostMapping("/{friendshipId}/accept")
+    public ApiResponse<Map<String, Object>> acceptRequest(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        UUID userId = parseUserId(userIdHeader);
+        FriendshipEntity relation = friendshipRepository.findById(friendshipId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+
+        if (!relation.getAddresseeId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot accept this request");
+        }
+        if (!"PENDING".equalsIgnoreCase(relation.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request is not pending");
+        }
+
+        relation.setStatus("ACCEPTED");
+        FriendshipEntity updated = friendshipRepository.save(relation);
+        return ApiResponse.ok("Friend request accepted", Map.of(
+            "friendshipId", updated.getId().toString(),
+            "status", updated.getStatus(),
+            "requesterId", updated.getRequesterId().toString(),
+            "addresseeId", updated.getAddresseeId().toString()
+        ));
+    }
+
+    @PostMapping("/{friendshipId}/decline")
+    public ApiResponse<Map<String, Object>> declineRequest(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        UUID userId = parseUserId(userIdHeader);
+        FriendshipEntity relation = friendshipRepository.findById(friendshipId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+
+        if (!relation.getAddresseeId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot decline this request");
+        }
+        if (!"PENDING".equalsIgnoreCase(relation.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request is not pending");
+        }
+
+        relation.setStatus("DECLINED");
+        FriendshipEntity updated = friendshipRepository.save(relation);
+        return ApiResponse.ok("Friend request declined", Map.of(
+            "friendshipId", updated.getId().toString(),
+            "status", updated.getStatus(),
+            "requesterId", updated.getRequesterId().toString(),
+            "addresseeId", updated.getAddresseeId().toString()
+        ));
+    }
+
+    @DeleteMapping("/{friendshipId}")
+    public ApiResponse<Map<String, Object>> removeFriend(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        UUID userId = parseUserId(userIdHeader);
+        FriendshipEntity relation = friendshipRepository.findById(friendshipId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friendship not found"));
+
+        boolean isParticipant = relation.getRequesterId().equals(userId) || relation.getAddresseeId().equals(userId);
+        if (!isParticipant) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot remove this friendship");
+        }
+
+        friendshipRepository.delete(relation);
+        return ApiResponse.ok("Friendship removed", Map.of(
+            "friendshipId", relation.getId().toString(),
+            "status", "DELETED",
+            "requesterId", relation.getRequesterId().toString(),
+            "addresseeId", relation.getAddresseeId().toString()
+        ));
+    }
+
     private UUID parseUserId(String value) {
         try {
             return UUID.fromString(value);
@@ -105,5 +223,19 @@ public class FriendshipController {
     }
 
     public record AddFriendRequest(@NotNull UUID addresseeId) {
+    }
+
+    public record PendingFriendRequest(
+        UUID friendshipId,
+        UUID requesterId,
+        UUID addresseeId,
+        String status
+    ) {
+    }
+
+    public record FriendContact(
+        UUID friendshipId,
+        UUID userId
+    ) {
     }
 }

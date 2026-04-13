@@ -28,6 +28,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.Map;
@@ -39,6 +41,7 @@ public class GatewayProxyController {
     private static final ParameterizedTypeReference<ApiResponse<Object>> API_RESPONSE =
         new ParameterizedTypeReference<>() {
         };
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final RestClient restClient;
     private final String authServiceUrl;
@@ -164,6 +167,14 @@ public class GatewayProxyController {
         return getMap(authServiceUrl + "/api/v1/auth/users/search-by-email?email={email}", authorization, Map.of("email", email));
     }
 
+    @GetMapping("/users/{id}/summary")
+    public ApiResponse<Object> userSummary(
+        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+        @PathVariable("id") String userId
+    ) {
+        return getMap(authServiceUrl + "/api/v1/auth/users/{id}/summary", authorization, Map.of("id", userId));
+    }
+
     @GetMapping("/users/friendships/status")
     public ApiResponse<Object> friendshipStatus(
         @RequestParam("targetUserId") String targetUserId,
@@ -184,12 +195,84 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
-        return postMap(
+        ApiResponse<Object> response = postMap(
             userServiceUrl + "/api/v1/users/friendships",
             body,
             null,
             Map.of("X-User-Id", userId)
         );
+        emitSyncEvent(userId, "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + body.addresseeId() + "\"}");
+        emitSyncEvent(body.addresseeId().toString(), "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + userId + "\"}");
+        return response;
+    }
+
+    @GetMapping("/users/friendships/pending")
+    public ApiResponse<Object> pendingFriendRequests(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            userServiceUrl + "/api/v1/users/friendships/pending",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @GetMapping("/users/friendships/friends")
+    public ApiResponse<Object> friends(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            userServiceUrl + "/api/v1/users/friendships/friends",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/users/friendships/{friendshipId}/accept")
+    public ApiResponse<Object> acceptFriendRequest(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/accept",
+            Map.of(),
+            Map.of("friendshipId", friendshipId),
+            Map.of("X-User-Id", userId)
+        );
+        emitFriendshipSync(response, "FRIENDSHIP_REQUEST_ACCEPTED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/{friendshipId}/decline")
+    public ApiResponse<Object> declineFriendRequest(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/decline",
+            Map.of(),
+            Map.of("friendshipId", friendshipId),
+            Map.of("X-User-Id", userId)
+        );
+        emitFriendshipSync(response, "FRIENDSHIP_REQUEST_DECLINED");
+        return response;
+    }
+
+    @DeleteMapping("/users/friendships/{friendshipId}")
+    public ApiResponse<Object> removeFriend(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = deleteMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}",
+            Map.of("friendshipId", friendshipId),
+            Map.of("X-User-Id", userId)
+        );
+        emitFriendshipSync(response, "FRIENDSHIP_REMOVED");
+        return response;
     }
 
     @GetMapping("/chat/conversations")
@@ -395,11 +478,40 @@ public class GatewayProxyController {
             status = HttpStatus.INTERNAL_SERVER_ERROR;
         }
 
-        String message = ex.getResponseBodyAsString();
-        if (message == null || message.isBlank()) {
-            message = ex.getStatusText();
-        }
+        String message = extractErrorMessage(ex.getResponseBodyAsString(), ex.getStatusText());
         return new ResponseStatusException(status, message);
+    }
+
+    private String extractErrorMessage(String rawBody, String fallback) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return fallback;
+        }
+
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(rawBody);
+            JsonNode messageNode = root.get("message");
+            if (messageNode != null && !messageNode.isNull() && !messageNode.asText().isBlank()) {
+                return messageNode.asText();
+            }
+
+            JsonNode errorsNode = root.get("errors");
+            if (errorsNode != null && errorsNode.isArray() && !errorsNode.isEmpty()) {
+                JsonNode first = errorsNode.get(0);
+                JsonNode defaultMessage = first.get("defaultMessage");
+                if (defaultMessage != null && !defaultMessage.isNull() && !defaultMessage.asText().isBlank()) {
+                    return defaultMessage.asText();
+                }
+            }
+
+            JsonNode errorNode = root.get("error");
+            if (errorNode != null && !errorNode.isNull() && !errorNode.asText().isBlank()) {
+                return errorNode.asText();
+            }
+        } catch (Exception ignored) {
+            // Keep fallback flow if body is not JSON.
+        }
+
+        return fallback;
     }
 
     private String currentUserId(HttpServletRequest request) {
@@ -408,6 +520,41 @@ public class GatewayProxyController {
             return id;
         }
         throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing user context");
+    }
+
+    private void emitFriendshipSync(ApiResponse<Object> response, String eventType) {
+        if (!(response.data() instanceof Map<?, ?> data)) {
+            return;
+        }
+
+        Object requesterId = data.get("requesterId");
+        Object addresseeId = data.get("addresseeId");
+        Object friendshipId = data.get("friendshipId");
+        if (!(requesterId instanceof String requester) || !(addresseeId instanceof String addressee)) {
+            return;
+        }
+
+        String payload = "{\"friendshipId\":\"" + String.valueOf(friendshipId) + "\"}";
+        emitSyncEvent(requester, eventType, payload);
+        emitSyncEvent(addressee, eventType, payload);
+    }
+
+    private void emitSyncEvent(String userId, String eventType, String payload) {
+        try {
+            postMap(
+                chatServiceUrl + "/api/v1/sync/users/{userId}/emit",
+                Map.of(
+                    "userId", userId,
+                    "sourceClient", "gateway",
+                    "eventType", eventType,
+                    "payload", payload
+                ),
+                Map.of("userId", userId),
+                Map.of()
+            );
+        } catch (Exception ignored) {
+            // Ignore realtime notification failure to keep friendship API reliable.
+        }
     }
 
     public record AddFriendRequest(@NotNull java.util.UUID addresseeId) {

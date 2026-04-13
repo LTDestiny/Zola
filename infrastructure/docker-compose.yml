@@ -143,12 +143,14 @@ services:
     ports:
       - "8081:8081"
     environment:
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      CHAT_SERVICE_URL: http://chat-service:8083
+      SAME_PLATFORM_SESSION_POLICY: ${SAME_PLATFORM_SESSION_POLICY:-REVOKE}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USER: ${SMTP_USER}
@@ -166,7 +168,7 @@ services:
     ports:
       - "8082:8082"
     environment:
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
@@ -182,9 +184,9 @@ services:
     ports:
       - "8083:8083"
     environment:
-      DB_HOST: ${DB_HOST:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-admin}
       CHAT_DB_NAME: ${CHAT_DB_NAME:-zola_chat_db}
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
@@ -202,7 +204,7 @@ services:
     ports:
       - "8087:8087"
     environment:
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${CALL_DB_NAME:-zola_call_db}
@@ -219,9 +221,9 @@ services:
     ports:
       - "8084:8084"
     environment:
-      DB_HOST: ${DB_HOST:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
@@ -239,7 +241,7 @@ services:
     ports:
       - "8085:8085"
     environment:
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${AI_META_DB_NAME:-zola_ai_meta_db}
@@ -258,7 +260,7 @@ services:
       - "8086:8086"
     environment:
       REDIS_HOST: redis
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${NOTIFICATION_DB_NAME:-zola_notification_db}
@@ -274,7 +276,7 @@ services:
     ports:
       - "8088:8088"
     environment:
-      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
