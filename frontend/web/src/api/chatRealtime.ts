@@ -25,8 +25,17 @@ export type ChatRealtimeEvent = {
   } | null;
 };
 
+export type SyncRealtimeEvent = {
+  userId: string;
+  sourceClient: string;
+  eventType: string;
+  payload: string;
+  timestamp: string;
+};
+
 type RealtimeHandlers = {
   onEvent: (event: ChatRealtimeEvent) => void;
+  onSyncEvent?: (event: SyncRealtimeEvent) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (message: string) => void;
@@ -36,11 +45,14 @@ export class ChatRealtimeClient {
   private readonly client: Client;
   private conversationSubscription: StompSubscription | null = null;
   private userQueueSubscription: StompSubscription | null = null;
+  private syncQueueSubscription: StompSubscription | null = null;
   private readonly onEvent: (event: ChatRealtimeEvent) => void;
+  private readonly onSyncEvent?: (event: SyncRealtimeEvent) => void;
   private readonly onError?: (message: string) => void;
 
   constructor(accessToken: string, handlers: RealtimeHandlers) {
     this.onEvent = handlers.onEvent;
+    this.onSyncEvent = handlers.onSyncEvent;
     this.onError = handlers.onError;
 
     const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
@@ -76,8 +88,10 @@ export class ChatRealtimeClient {
   disconnect() {
     this.conversationSubscription?.unsubscribe();
     this.userQueueSubscription?.unsubscribe();
+    this.syncQueueSubscription?.unsubscribe();
     this.conversationSubscription = null;
     this.userQueueSubscription = null;
+    this.syncQueueSubscription = null;
     this.client.deactivate();
   }
 
@@ -89,7 +103,9 @@ export class ChatRealtimeClient {
     if (!this.client.connected || !this.client.active) {
       return false;
     }
-    const webSocket = (this.client as unknown as { webSocket?: { readyState?: number } }).webSocket;
+    const webSocket = (
+      this.client as unknown as { webSocket?: { readyState?: number } }
+    ).webSocket;
     if (webSocket?.readyState !== undefined && webSocket.readyState !== 1) {
       return false;
     }
@@ -142,6 +158,18 @@ export class ChatRealtimeClient {
         }
       },
     );
+
+    this.syncQueueSubscription = this.client.subscribe(
+      "/user/queue/sync",
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as SyncRealtimeEvent;
+          this.onSyncEvent?.(event);
+        } catch {
+          this.onError?.("Cannot parse sync realtime event");
+        }
+      },
+    );
   }
 
   publishSend(
@@ -188,7 +216,11 @@ export class ChatRealtimeClient {
     });
   }
 
-  publishForward(sourceConversationId: string, messageId: string, targetConversationId: string): boolean {
+  publishForward(
+    sourceConversationId: string,
+    messageId: string,
+    targetConversationId: string,
+  ): boolean {
     return this.safePublish("/app/chat.forward", {
       sourceConversationId,
       messageId,

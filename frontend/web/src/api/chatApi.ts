@@ -24,6 +24,18 @@ export type ConversationItem = {
   participants: string[];
 };
 
+export type PendingFriendRequestItem = {
+  friendshipId: string;
+  requesterId: string;
+  addresseeId: string;
+  status: string;
+};
+
+export type FriendContactItem = {
+  friendshipId: string;
+  userId: string;
+};
+
 export type MessageItem = {
   id: string;
   conversationId?: string;
@@ -58,6 +70,13 @@ export async function searchUserByEmail(email: string) {
   return response.data;
 }
 
+export async function getUserSummary(userId: string) {
+  const response = await httpClient.get<ApiResponse<UserProfile>>(
+    `/api/v1/users/${userId}/summary`,
+  );
+  return response.data;
+}
+
 export async function getFriendshipStatus(targetUserId: string) {
   const response = await httpClient.get<ApiResponse<{ status: string }>>(
     "/api/v1/users/friendships/status",
@@ -74,6 +93,41 @@ export async function addFriend(addresseeId: string) {
   >("/api/v1/users/friendships", {
     addresseeId,
   });
+  return response.data;
+}
+
+export async function getPendingFriendRequests() {
+  const response = await httpClient.get<
+    ApiResponse<PendingFriendRequestItem[]>
+  >("/api/v1/users/friendships/pending");
+  return response.data;
+}
+
+export async function getFriends() {
+  const response = await httpClient.get<ApiResponse<FriendContactItem[]>>(
+    "/api/v1/users/friendships/friends",
+  );
+  return response.data;
+}
+
+export async function acceptFriendRequest(friendshipId: string) {
+  const response = await httpClient.post<
+    ApiResponse<{ friendshipId: string; status: string }>
+  >(`/api/v1/users/friendships/${friendshipId}/accept`, {});
+  return response.data;
+}
+
+export async function declineFriendRequest(friendshipId: string) {
+  const response = await httpClient.post<
+    ApiResponse<{ friendshipId: string; status: string }>
+  >(`/api/v1/users/friendships/${friendshipId}/decline`, {});
+  return response.data;
+}
+
+export async function removeFriend(friendshipId: string) {
+  const response = await httpClient.delete<
+    ApiResponse<{ friendshipId: string; status: string }>
+  >(`/api/v1/users/friendships/${friendshipId}`);
   return response.data;
 }
 
@@ -167,7 +221,9 @@ export async function addReaction(
   messageId: string,
   emoji: string,
 ) {
-  const response = await httpClient.post<ApiResponse<{ messageId: string; emoji: string }>>(
+  const response = await httpClient.post<
+    ApiResponse<{ messageId: string; emoji: string }>
+  >(
     `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/reactions`,
     { emoji },
   );
@@ -179,7 +235,9 @@ export async function removeReaction(
   messageId: string,
   emoji: string,
 ) {
-  const response = await httpClient.delete<ApiResponse<{ messageId: string; emoji: string }>>(
+  const response = await httpClient.delete<
+    ApiResponse<{ messageId: string; emoji: string }>
+  >(
     `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/reactions`,
     {
       params: { emoji },

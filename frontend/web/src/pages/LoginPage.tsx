@@ -1,9 +1,6 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
-import {
-  loginWithEmailPassword,
-  toErrorMessage,
-} from "../api/authApi";
+import { useEffect, useState } from "react";
+import { loginWithEmailPassword, toErrorMessage } from "../api/authApi";
 import { saveAuthTokens } from "../auth/token";
 import { useLanguage } from "../i18n/language";
 
@@ -13,6 +10,17 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const forcedLogoutMessage = sessionStorage.getItem(
+      "zola_forced_logout_message",
+    );
+    if (!forcedLogoutMessage) {
+      return;
+    }
+    setMessage(forcedLogoutMessage);
+    sessionStorage.removeItem("zola_forced_logout_message");
+  }, []);
 
   const onLogin = async () => {
     try {
@@ -26,6 +34,7 @@ export function LoginPage() {
       saveAuthTokens({
         accessToken: result.data.accessToken,
         refreshToken: result.data.refreshToken,
+        sessionId: result.data.sessionId,
         accessExpiresInSeconds: result.data.accessExpiresInSeconds,
       });
       window.location.href = "/chat";
@@ -66,7 +75,9 @@ export function LoginPage() {
       <div className="text-zalo-blue text-6xl font-bold leading-none tracking-tight">
         {t("appName")}
       </div>
-      <p className="text-center text-slate-600 max-w-md">{t("loginPasswordSub")}</p>
+      <p className="text-center text-slate-600 max-w-md">
+        {t("loginPasswordSub")}
+      </p>
 
       <section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
         <header className="px-6 py-4 border-b border-slate-200 text-center text-2xl font-semibold text-slate-900">
