@@ -2,26 +2,6 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
 import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
 import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
-import {
-  Heart,
-  ImagePlus,
-  Info,
-  Phone,
-  SendHorizontal,
-  Smile,
-  Sparkles,
-  Sticker,
-  Video,
-} from "lucide-react";
-import {
-  type ConversationItem,
-  type MessageItem,
-  type UserProfile,
-} from "../api/chatApi";
-import {
-  MessageRenderer,
-  type ChatMessage,
-} from "./components/MessageRenderer";
 
 const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -60,6 +40,7 @@ type ChatProps = {
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
   onLoadOlderMessages: () => void | Promise<void>;
+  onViewportBottomChange?: (atBottom: boolean) => void;
 };
 
 function buildReactionSummary(reactions: string[] | undefined) {
@@ -179,6 +160,7 @@ export function Chat({
   hasMoreMessages,
   isLoadingMoreMessages,
   onLoadOlderMessages,
+  onViewportBottomChange,
 }: ChatProps) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -198,7 +180,12 @@ export function Chat({
   const imageInputId = `${fileInputId}-image`;
   const videoInputId = `${fileInputId}-video`;
   const mobileCameraInputId = `${fileInputId}-camera`;
+  const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
+  const previousFirstMessageIdRef = useRef<string | null>(null);
+  const previousLastMessageIdRef = useRef<string | null>(null);
+  const lastViewportBottomRef = useRef<boolean | null>(null);
+  const pendingScrollToBottomOnLoadRef = useRef(false);
 
   const quickEmojis = ["😀", "😂", "😍", "👍", "🔥", "🙏", "🎉", "💬"];
 
@@ -231,8 +218,90 @@ export function Chat({
   }, [typingText]);
 
   useEffect(() => {
-    messageBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const nextCount = localMessages.length;
+    if (nextCount <= 0) {
+      previousFirstMessageIdRef.current = null;
+      previousLastMessageIdRef.current = null;
+      return;
+    }
+
+    const firstMessageId = localMessages[0]?.id ?? null;
+    const lastMessageId = localMessages[nextCount - 1]?.id ?? null;
+    const previousFirst = previousFirstMessageIdRef.current;
+    const previousLast = previousLastMessageIdRef.current;
+    const scrollContainer = messageListRef.current;
+
+    const isInitialPaint = previousLast === null;
+    const appendedNewMessage =
+      previousLast !== null &&
+      lastMessageId !== null &&
+      lastMessageId !== previousLast;
+    const prependedOlderMessages =
+      previousFirst !== null &&
+      firstMessageId !== null &&
+      firstMessageId !== previousFirst &&
+      previousLast === lastMessageId;
+
+    const nearBottom =
+      !scrollContainer ||
+      scrollContainer.scrollHeight -
+      scrollContainer.scrollTop -
+      scrollContainer.clientHeight <
+      120;
+
+    if (isInitialPaint) {
+      messageBottomRef.current?.scrollIntoView({ behavior: "auto" });
+    } else if (appendedNewMessage && nearBottom) {
+      messageBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else if (prependedOlderMessages) {
+      // Keep current viewport when older messages are prepended.
+    }
+
+    previousFirstMessageIdRef.current = firstMessageId;
+    previousLastMessageIdRef.current = lastMessageId;
   }, [localMessages]);
+
+  useEffect(() => {
+    previousFirstMessageIdRef.current = null;
+    previousLastMessageIdRef.current = null;
+    pendingScrollToBottomOnLoadRef.current = true;
+  }, [activeConversation?.id]);
+
+  useEffect(() => {
+    if (isLoadingMessages) {
+      return;
+    }
+    if (!pendingScrollToBottomOnLoadRef.current) {
+      return;
+    }
+    if (localMessages.length === 0) {
+      return;
+    }
+
+    pendingScrollToBottomOnLoadRef.current = false;
+    window.requestAnimationFrame(() => {
+      messageBottomRef.current?.scrollIntoView({ behavior: "auto" });
+      notifyViewportBottom(messageListRef.current);
+    });
+  }, [isLoadingMessages, localMessages]);
+
+  const handleLoadOlderMessages = async () => {
+    const scrollContainer = messageListRef.current;
+    const previousScrollHeight = scrollContainer?.scrollHeight ?? 0;
+    const previousScrollTop = scrollContainer?.scrollTop ?? 0;
+
+    await onLoadOlderMessages();
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const nextScrollHeight = scrollContainer.scrollHeight;
+      const heightDelta = nextScrollHeight - previousScrollHeight;
+      scrollContainer.scrollTop = previousScrollTop + Math.max(0, heightDelta);
+    });
+  };
 
   useEffect(() => {
     return () => {
@@ -243,6 +312,29 @@ export function Chat({
       });
     };
   }, [previewFiles]);
+
+  const notifyViewportBottom = (scrollContainer: HTMLDivElement | null) => {
+    if (!scrollContainer) {
+      return;
+    }
+
+    const atBottom =
+      scrollContainer.scrollHeight -
+      scrollContainer.scrollTop -
+      scrollContainer.clientHeight <
+      100;
+
+    if (lastViewportBottomRef.current === atBottom) {
+      return;
+    }
+
+    lastViewportBottomRef.current = atBottom;
+    onViewportBottomChange?.(atBottom);
+  };
+
+  useEffect(() => {
+    notifyViewportBottom(messageListRef.current);
+  }, [localMessages]);
 
   const inferFileKind = (file: File): "image" | "video" | "file" => {
     if (file.type.startsWith("image/")) {
@@ -466,7 +558,9 @@ export function Chat({
       {/* ... phần Header ... */}
 
       <div
+        ref={messageListRef}
         className={`scrollbar-hide relative flex-1 overflow-y-auto bg-slate-50/30 px-4 py-6 ${isDragOverComposer ? "ring-2 ring-indigo-300 ring-inset" : ""}`}
+        onScroll={() => notifyViewportBottom(messageListRef.current)}
         onDragOver={(event) => {
           event.preventDefault();
           if (event.dataTransfer.items.length > 0) {
@@ -503,7 +597,7 @@ export function Chat({
                   <button
                     type="button"
                     onClick={() => {
-                      void onLoadOlderMessages();
+                      void handleLoadOlderMessages();
                     }}
                     disabled={isLoadingMoreMessages}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -583,10 +677,6 @@ export function Chat({
                         return onRecallMessage(messageId);
                       }}
                       onReact={(messageId, emoji) => onReactMessage(messageId, emoji)}
-                      onRecall={(messageId) => onRecallMessage(messageId)}
-                      onReact={(messageId, emoji) =>
-                        onReactMessage(messageId, emoji)
-                      }
                     />
                   </div>
                 );

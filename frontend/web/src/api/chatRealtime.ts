@@ -109,7 +109,6 @@ export class ChatRealtimeClient {
     this.userQueueSubscription?.unsubscribe();
     this.syncQueueSubscription?.unsubscribe();
     this.presenceSubscription?.unsubscribe();
-    this.conversationSubscription = null;
     this.userQueueSubscription = null;
     this.syncQueueSubscription = null;
     this.presenceSubscription = null;

@@ -14,6 +14,7 @@ import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
+import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -314,10 +315,12 @@ public class ChatRealtimeService {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, userId);
 
-        MessageDocument item = markMessagesAsSeenUpTo(userId, request.conversationId(), request.messageId());
+        Optional<MessageDocument> item = markMessagesAsSeenUpTo(userId, request.conversationId(), request.messageId());
 
-        conversation.markRead(userId, Instant.now(), request.messageId());
-        conversationRepository.save(conversation);
+        if (item.isPresent()) {
+            conversation.markRead(userId, Instant.now(), request.messageId());
+            conversationRepository.save(conversation);
+        }
 
         return new ChatEventResponse(
             "READ_RECEIPT",
@@ -326,7 +329,7 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item),
+            item.map(this::toMessagePayload).orElse(null),
             null,
             null,
             null,
@@ -413,12 +416,17 @@ public class ChatRealtimeService {
         }
 
         if (messageId != null && !messageId.isBlank()) {
-            MessageDocument readMessage = markMessagesAsSeenUpTo(userId, conversationId, messageId);
-            readMessagePayload = toMessagePayload(readMessage);
+            Optional<MessageDocument> readMessage = markMessagesAsSeenUpTo(userId, conversationId, messageId);
+            readMessagePayload = readMessage.map(this::toMessagePayload).orElse(null);
+            if (readMessage.isEmpty()) {
+                messageId = null;
+            }
         }
 
-        conversation.markRead(userId, Instant.now(), messageId);
-        conversationRepository.save(conversation);
+        if (messageId != null && !messageId.isBlank()) {
+            conversation.markRead(userId, Instant.now(), messageId);
+            conversationRepository.save(conversation);
+        }
 
         return new ChatEventResponse(
             "READ_RECEIPT",
@@ -630,16 +638,32 @@ public class ChatRealtimeService {
         return Optional.ofNullable(items.get(items.size() - 1).getId());
     }
 
-    private MessageDocument markMessagesAsSeenUpTo(String userId, UUID conversationId, String messageId) {
+    private Optional<MessageDocument> markMessagesAsSeenUpTo(String userId, UUID conversationId, String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            return Optional.empty();
+        }
+
         List<MessageDocument> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId.toString());
         if (items.isEmpty()) {
-            throw new ResourceNotFoundException("Message not found");
+            return Optional.empty();
+        }
+
+        int targetIndex = -1;
+        for (int index = 0; index < items.size(); index += 1) {
+            if (messageId.equals(items.get(index).getId())) {
+                targetIndex = index;
+                break;
+            }
+        }
+        if (targetIndex < 0) {
+            return Optional.empty();
         }
 
         Instant now = Instant.now();
         MessageDocument target = null;
 
-        for (MessageDocument item : items) {
+        for (int index = 0; index <= targetIndex; index += 1) {
+            MessageDocument item = items.get(index);
             Set<String> deliveredTo = item.getDeliveredTo() == null ? new HashSet<>() : new HashSet<>(item.getDeliveredTo());
             deliveredTo.add(userId);
             item.setDeliveredTo(deliveredTo);
@@ -652,14 +676,10 @@ public class ChatRealtimeService {
 
             if (messageId.equals(item.getId())) {
                 target = item;
-                break;
             }
         }
 
-        if (target == null) {
-            throw new ResourceNotFoundException("Message not found");
-        }
-        return target;
+        return Optional.ofNullable(target);
     }
 
     private String generateMessageId() {

@@ -84,44 +84,37 @@ export function ChatList({
 
                             <div className="min-w-0 flex-1">
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                    <p className="truncate font-semibold text-slate-900">
+                                    <p className={`truncate font-semibold ${hasUnread ? "text-slate-900" : "text-slate-700"}`}>
                                         {chat.name}
                                     </p>
-                                    <span className="text-xs text-gray-400">
-                                        {chat.timestamp}
-                                    </span>
+                                    <span className="text-xs text-gray-400">{chat.timestamp}</span>
                                 </div>
 
-                                <div className="min-w-0 flex-1">
-                                    <div className="mb-1 flex items-center justify-between gap-2">
-                                        <p className={`truncate font-semibold ${hasUnread ? "text-slate-900" : "text-slate-700"}`}>{chat.name}</p>
-                                        <span className="text-xs text-gray-400">{chat.timestamp}</span>
-                                    </div>
-                                    {chat.presenceLabel && (
-                                        <p
-                                            className={`mb-1 text-[11px] ${chat.isOnline ? "text-emerald-600" : "text-slate-400"}`}
-                                        >
-                                            {chat.presenceLabel}
-                                        </p>
+                                {chat.presenceLabel && (
+                                    <p
+                                        className={`mb-1 text-[11px] ${chat.isOnline ? "text-emerald-600" : "text-slate-400"}`}
+                                    >
+                                        {chat.presenceLabel}
+                                    </p>
+                                )}
+
+                                <div className="flex items-center justify-between gap-2">
+                                    <p
+                                        className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-800" : "text-gray-500"}`}
+                                    >
+                                        {chat.lastMessage}
+                                    </p>
+                                    {hasUnread && (
+                                        <span className="rounded-full bg-red-500 px-2 text-xs text-white">
+                                            {chat.unreadCount}
+                                        </span>
                                     )}
-
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p
-                                            className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-800" : "text-gray-500"}`}
-                                        >
-                                            {chat.lastMessage}
-                                        </p>
-                                        {hasUnread && (
-                                            <span className="rounded-full bg-red-500 px-2 text-xs text-white">
-                                                {chat.unreadCount}
-                                            </span>
-                                        )}
-                                    </div>
                                 </div>
-                        </button >
+                            </div>
+                        </button>
                     );
                 })}
-            </div >
-        </aside >
+            </div>
+        </aside>
     );
 }

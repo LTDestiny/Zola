@@ -2,6 +2,7 @@ import { AxiosError } from "axios";
 import { httpClient } from "./httpClient";
 
 let supportsConversationReadEndpoint: boolean | null = null;
+let supportsMessageReadEndpoint: boolean | null = null;
 
 type ApiResponse<T> = {
   success: boolean;
@@ -135,13 +136,25 @@ export async function getUsersPresence(userIds: string[]) {
     };
   }
 
-  const response = await httpClient.get<ApiResponse<UserPresenceItem[]>>(
-    "/api/v1/users/presence",
-    {
-      params: { ids },
-    },
-  );
-  return response.data;
+  try {
+    const response = await httpClient.get<ApiResponse<UserPresenceItem[]>>(
+      "/api/v1/users/presence",
+      {
+        params: { ids },
+      },
+    );
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      return {
+        success: true,
+        message: "Presence endpoint unavailable, fallback to empty presence",
+        data: [] as UserPresenceItem[],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function getFriendshipStatus(targetUserId: string) {
@@ -334,10 +347,36 @@ export async function forwardMessage(
 }
 
 export async function readMessage(conversationId: string, messageId: string) {
-  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
-    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/read`,
-  );
-  return response.data;
+  if (supportsMessageReadEndpoint === false) {
+    return {
+      success: true,
+      message: "Message read endpoint unavailable, compatibility mode enabled",
+      data: {
+        messageId,
+      },
+    };
+  }
+
+  try {
+    const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
+      `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/read`,
+    );
+    supportsMessageReadEndpoint = true;
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      supportsMessageReadEndpoint = false;
+      return {
+        success: true,
+        message: "Message read endpoint unavailable, compatibility mode enabled",
+        data: {
+          messageId,
+        },
+      };
+    }
+    throw error;
+  }
 }
 
 export async function markConversationRead(
@@ -345,12 +384,9 @@ export async function markConversationRead(
   messageId?: string | null,
 ) {
   if (supportsConversationReadEndpoint === false) {
-    if (messageId) {
-      await readMessage(conversationId, messageId);
-    }
     return {
       success: true,
-      message: "Read state updated via backward-compatible endpoint",
+      message: "Conversation read endpoint unavailable, compatibility mode enabled",
       data: {
         conversationId,
         messageId: messageId ?? "",
@@ -371,15 +407,12 @@ export async function markConversationRead(
   } catch (error) {
     const axiosError = error as AxiosError;
     if (axiosError.response?.status === 404) {
+      // Both read endpoints are unavailable on this deployment.
       supportsConversationReadEndpoint = false;
-      if (messageId) {
-        await readMessage(conversationId, messageId);
-      }
+      supportsMessageReadEndpoint = false;
       return {
         success: true,
-        message: messageId
-          ? "Read state updated via fallback endpoint"
-          : "Conversation read endpoint unavailable, using compatibility mode",
+        message: "Conversation read endpoint unavailable, compatibility mode enabled",
         data: {
           conversationId,
           messageId: messageId ?? "",

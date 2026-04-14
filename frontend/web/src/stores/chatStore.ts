@@ -24,18 +24,55 @@ function sumUnread(conversations: ConversationItem[]) {
     return conversations.reduce((sum, item) => sum + Math.max(0, item.unreadCount ?? 0), 0);
 }
 
+function toMillis(value: string | null | undefined) {
+    if (!value) {
+        return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export const useChatStore = create<ChatState>((set) => ({
     conversations: [],
     selectedConversationId: null,
     totalUnreadCount: 0,
     setConversations: (items) => {
-        const sorted = sortByLatest(
-            items.map((item) => ({
-                ...item,
-                unreadCount: item.unreadCount ?? 0,
-            })),
-        );
         set((state) => {
+            const existingById = new Map(
+                state.conversations.map((conversation) => [conversation.id, conversation]),
+            );
+            const existingUnreadById = new Map(
+                state.conversations.map((conversation) => [
+                    conversation.id,
+                    conversation.unreadCount ?? 0,
+                ]),
+            );
+
+            const normalized = items.map((item) => {
+                const existing = existingById.get(item.id);
+                const incomingUnread = Math.max(0, item.unreadCount ?? 0);
+                const existingUnread = Math.max(0, existingUnreadById.get(item.id) ?? 0);
+                const shouldPreserveUnread =
+                    item.id !== state.selectedConversationId && incomingUnread < existingUnread;
+
+                const incomingLastMessageAtMs = toMillis(item.lastMessageAt);
+                const existingLastMessageAtMs = toMillis(existing?.lastMessageAt);
+                const shouldPreserveLatestMessage =
+                    existingLastMessageAtMs > incomingLastMessageAtMs;
+
+                return {
+                    ...item,
+                    lastMessage: shouldPreserveLatestMessage
+                        ? (existing?.lastMessage ?? item.lastMessage)
+                        : item.lastMessage,
+                    lastMessageAt: shouldPreserveLatestMessage
+                        ? (existing?.lastMessageAt ?? item.lastMessageAt)
+                        : item.lastMessageAt,
+                    unreadCount: shouldPreserveUnread ? existingUnread : incomingUnread,
+                };
+            });
+
+            const sorted = sortByLatest(normalized);
             const selectedConversationExists = sorted.some((item) => item.id === state.selectedConversationId);
             return {
                 conversations: sorted,
@@ -69,7 +106,20 @@ export const useChatStore = create<ChatState>((set) => ({
             const updated = {
                 ...current[index],
                 ...patch,
-                unreadCount: patch.unreadCount ?? current[index].unreadCount ?? 0,
+                unreadCount: (() => {
+                    const currentUnread = Math.max(0, current[index].unreadCount ?? 0);
+                    const patchedUnread = patch.unreadCount;
+                    if (patchedUnread === undefined || patchedUnread === null) {
+                        return currentUnread;
+                    }
+
+                    const normalizedPatchedUnread = Math.max(0, patchedUnread);
+                    const shouldPreserveUnread =
+                        patch.id !== state.selectedConversationId &&
+                        normalizedPatchedUnread < currentUnread;
+
+                    return shouldPreserveUnread ? currentUnread : normalizedPatchedUnread;
+                })(),
             };
             const next = [...current];
             next[index] = updated;
