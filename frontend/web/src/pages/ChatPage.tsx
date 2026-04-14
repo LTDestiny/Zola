@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, LogOut, Settings, Shield } from "lucide-react";
+import { LogOut } from "lucide-react";
 import {
   acceptFriendRequest,
   addReaction,
   addFriend,
   createDirectConversation,
+  deleteMyProfile,
   deleteForMe,
   declineFriendRequest,
   editMessage,
@@ -16,8 +17,11 @@ import {
   getMessages,
   getMyProfile,
   getPendingFriendRequests,
+  getPendingFriendRequestsUnreadCount,
   getUserSummary,
   markConversationRead,
+  getUsersPresence,
+  markPendingFriendRequestsRead,
   removeFriend,
   readMessage,
   recallMessage,
@@ -25,6 +29,7 @@ import {
   searchUserByEmail,
   sendMessage,
   toApiErrorMessage,
+  updateMyProfile,
   type ConversationItem,
   type FriendContactItem,
   type MessageItem,
@@ -35,6 +40,7 @@ import { uploadMedia } from "../api/mediaApi";
 import {
   ChatRealtimeClient,
   type ChatRealtimeEvent,
+  type PresenceRealtimeEvent,
 } from "../api/chatRealtime";
 import { clearAuthTokens, getAccessToken, getSessionId } from "../auth/token";
 import { useLanguage } from "../i18n/language";
@@ -128,6 +134,11 @@ function formatBytes(value: number) {
   return `${next.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+type UserPresenceState = {
+  online: boolean;
+  lastChangedAt: string | null;
+};
+
 export function ChatPage() {
   const { language } = useLanguage();
 
@@ -143,6 +154,14 @@ export function ChatPage() {
 
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
+  const [profileFullName, setProfileFullName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [profileGender, setProfileGender] = useState("");
+  const [profileBirthdate, setProfileBirthdate] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false);
 
   const markMessageAsRead = async (
     conversationId: string,
@@ -181,6 +200,10 @@ export function ChatPage() {
   const [pendingFriendRequests, setPendingFriendRequests] = useState<
     PendingFriendRequestItem[]
   >([]);
+  const [
+    pendingFriendRequestsUnreadCount,
+    setPendingFriendRequestsUnreadCount,
+  ] = useState(0);
   const [friendContacts, setFriendContacts] = useState<FriendContactItem[]>([]);
   const [userProfileMap, setUserProfileMap] = useState<
     Record<string, UserProfile>
@@ -198,6 +221,10 @@ export function ChatPage() {
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("messages");
+  const [userPresenceMap, setUserPresenceMap] = useState<
+    Record<string, UserPresenceState>
+  >({});
+  const [presenceTick, setPresenceTick] = useState(Date.now());
 
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -226,6 +253,168 @@ export function ChatPage() {
     myUserIdRef.current = myProfile?.id ?? null;
   }, [myProfile?.id]);
 
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setPresenceTick(Date.now());
+    }, 60 * 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  const mergePresence = (
+    entries: Array<{
+      userId: string;
+      online: boolean;
+      lastChangedAt: string | null;
+    }>,
+  ) => {
+    if (entries.length === 0) {
+      return;
+    }
+
+    setUserPresenceMap((prev) => {
+      const next = { ...prev };
+      entries.forEach((entry) => {
+        next[entry.userId] = {
+          online: entry.online,
+          lastChangedAt: entry.lastChangedAt,
+        };
+      });
+      return next;
+    });
+  };
+
+  const refreshPresenceData = async (userIds: string[]) => {
+    const normalizedUserIds = Array.from(
+      new Set(userIds.map((value) => value.trim()).filter(Boolean)),
+    );
+    if (normalizedUserIds.length === 0) {
+      return;
+    }
+
+    try {
+      const result = await getUsersPresence(normalizedUserIds);
+      mergePresence(result.data ?? []);
+    } catch {
+      // Keep the current presence snapshot if transient request fails.
+    }
+  };
+
+  const toPresenceLabel = (presence: UserPresenceState | undefined) => {
+    if (!presence) {
+      return language === "vi" ? "Offline" : "Offline";
+    }
+
+    if (presence.online) {
+      return language === "vi" ? "Online" : "Online";
+    }
+
+    if (!presence.lastChangedAt) {
+      return language === "vi" ? "Offline" : "Offline";
+    }
+
+    const changedAt = new Date(presence.lastChangedAt).getTime();
+    if (Number.isNaN(changedAt)) {
+      return language === "vi" ? "Offline" : "Offline";
+    }
+
+    const minutes = Math.max(0, Math.floor((presenceTick - changedAt) / 60000));
+    if (minutes < 60) {
+      return language === "vi"
+        ? `Truy cap ${Math.max(1, minutes)} phut truoc`
+        : `Last seen ${Math.max(1, minutes)} min ago`;
+    }
+
+    if (minutes < 24 * 60) {
+      const hours = Math.max(1, Math.floor(minutes / 60));
+      return language === "vi"
+        ? `Truy cap ${hours}h truoc`
+        : `Last seen ${hours}h ago`;
+    }
+
+    const formattedDate = new Intl.DateTimeFormat(
+      language === "vi" ? "vi-VN" : "en-US",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      },
+    ).format(new Date(changedAt));
+    return language === "vi"
+      ? `Truy cap lan cuoi ${formattedDate}`
+      : `Last seen on ${formattedDate}`;
+  };
+
+  const getPresenceForUser = (
+    userId: string,
+  ): UserPresenceState | undefined => {
+    const profilePresence = userProfileMap[userId];
+    const realtimePresence = userPresenceMap[userId];
+
+    const hasProfileOnline = typeof profilePresence?.isOnline === "boolean";
+    const hasRealtimeOnline = typeof realtimePresence?.online === "boolean";
+    const online = hasProfileOnline
+      ? Boolean(profilePresence?.isOnline)
+      : hasRealtimeOnline
+        ? Boolean(realtimePresence?.online)
+        : false;
+    const lastChangedAt =
+      profilePresence?.lastSeenAt ?? realtimePresence?.lastChangedAt ?? null;
+
+    if (!hasRealtimeOnline && !hasProfileOnline && !lastChangedAt) {
+      return undefined;
+    }
+
+    return {
+      online,
+      lastChangedAt,
+    };
+  };
+
+  const resolvePeerUserId = (conversation: ConversationItem) => {
+    const myId = myProfile?.id ?? null;
+    const peer = conversation.participants?.find((id) => id && id !== myId);
+    if (peer) {
+      return peer;
+    }
+    return conversation.name;
+  };
+
+  const getConversationDisplayName = (conversation: ConversationItem) => {
+    const peerUserId = resolvePeerUserId(conversation);
+    const profile = userProfileMap[peerUserId];
+    if (profile?.fullName) {
+      return profile.fullName;
+    }
+
+    if (conversation.name && !conversation.name.includes("-")) {
+      return conversation.name;
+    }
+
+    if (peerUserId && peerUserId.length >= 8) {
+      return `User ${peerUserId.slice(0, 8)}`;
+    }
+
+    return conversation.name || "User";
+  };
+
+  const normalizeFriendshipStatus = (status: string | null | undefined) => {
+    const normalized = (status ?? "").trim().toUpperCase();
+    if (
+      normalized === "PENDING" ||
+      normalized === "ACCEPTED" ||
+      normalized === "NONE"
+    ) {
+      return normalized;
+    }
+    if (normalized === "DELETED") {
+      return "NONE";
+    }
+    return normalized || "NONE";
+  };
+
   const activeConversation = useMemo(
     () =>
       conversations.find(
@@ -238,29 +427,42 @@ export function ChatPage() {
     const normalized = searchText.trim().toLowerCase();
     if (!normalized) return conversations;
     return conversations.filter((conversation) => {
+      const displayName = getConversationDisplayName(conversation);
       return (
-        conversation.name.toLowerCase().includes(normalized) ||
+        displayName.toLowerCase().includes(normalized) ||
         conversation.lastMessage.toLowerCase().includes(normalized)
       );
     });
-  }, [conversations, searchText]);
+  }, [conversations, searchText, userProfileMap, myProfile?.id]);
 
   const sidebarChats = useMemo<ChatListItem[]>(() => {
-    return filteredConversations.map((conversation) => ({
-      id: conversation.id,
-      name: conversation.name,
-      avatar: initials(conversation.name),
-      timestamp: conversation.lastMessageAt
-        ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
+    return filteredConversations.map((conversation) => {
+      const displayName = getConversationDisplayName(conversation);
+      const presence = getPresenceForUser(resolvePeerUserId(conversation));
+      return {
+        id: conversation.id,
+        name: displayName,
+        avatar: initials(displayName),
+        timestamp: conversation.lastMessageAt
+          ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
             hour: "2-digit",
             minute: "2-digit",
           }).format(new Date(conversation.lastMessageAt))
-        : "--:--",
-      lastMessage: conversation.lastMessage || "...",
-      unreadCount: conversation.unreadCount ?? 0,
-      isOnline: true,
-    }));
-  }, [filteredConversations, language]);
+          : "--:--",
+        lastMessage: conversation.lastMessage || "...",
+        unreadCount: 0,
+        isOnline: presence?.online ?? false,
+        presenceLabel: toPresenceLabel(presence),
+      };
+    });
+  }, [
+    filteredConversations,
+    language,
+    presenceTick,
+    userPresenceMap,
+    userProfileMap,
+    myProfile?.id,
+  ]);
 
   const fetchConversations = async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -276,7 +478,60 @@ export function ChatPage() {
       }
       const result = await getConversations();
       const items = result.data ?? [];
-      setConversationList(items);
+      setConversations(items);
+
+      const myId = myUserIdRef.current;
+      const participantIds = Array.from(
+        new Set(
+          items.flatMap((item) => {
+            const peers = item.participants?.filter((id) => id && id !== myId);
+            if (peers && peers.length > 0) {
+              return peers;
+            }
+            return item.name ? [item.name] : [];
+          }),
+        ),
+      );
+      await refreshPresenceData(participantIds);
+
+      const missingProfileIds = participantIds.filter(
+        (id) => !userProfileMap[id],
+      );
+      if (missingProfileIds.length > 0) {
+        const fetchedProfiles = await Promise.all(
+          missingProfileIds.map(async (id) => {
+            try {
+              const profile = await getUserSummary(id);
+              return profile.data;
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        const profileMap: Record<string, UserProfile> = {};
+        fetchedProfiles.forEach((profile) => {
+          if (profile) {
+            profileMap[profile.id] = profile;
+          }
+        });
+
+        if (Object.keys(profileMap).length > 0) {
+          setUserProfileMap((prev) => ({
+            ...prev,
+            ...profileMap,
+          }));
+        }
+      }
+
+      if (!activeConversationId && items.length > 0) {
+        setActiveConversationId(items[0].id);
+      } else if (
+        activeConversationId &&
+        !items.some((conversation) => conversation.id === activeConversationId)
+      ) {
+        setActiveConversationId(items[0]?.id ?? null);
+      }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -301,15 +556,19 @@ export function ChatPage() {
 
   const fetchFriendshipData = async () => {
     try {
-      const [pendingResult, friendsResult] = await Promise.all([
+      const [pendingResult, friendsResult, unreadResult] = await Promise.all([
         getPendingFriendRequests(),
         getFriends(),
+        getPendingFriendRequestsUnreadCount(),
       ]);
 
       const pending = pendingResult.data ?? [];
       const friends = friendsResult.data ?? [];
       setPendingFriendRequests(pending);
       setFriendContacts(friends);
+      setPendingFriendRequestsUnreadCount(
+        Math.max(0, unreadResult.data?.count ?? 0),
+      );
 
       const ids = Array.from(
         new Set([
@@ -317,6 +576,8 @@ export function ChatPage() {
           ...friends.map((item) => item.userId),
         ]),
       );
+
+      await refreshPresenceData(ids);
 
       const fetchedProfiles = await Promise.all(
         ids.map(async (id) => {
@@ -335,7 +596,10 @@ export function ChatPage() {
           profileMap[profile.id] = profile;
         }
       });
-      setUserProfileMap(profileMap);
+      setUserProfileMap((prev) => ({
+        ...prev,
+        ...profileMap,
+      }));
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -355,328 +619,406 @@ export function ChatPage() {
       window.clearInterval(refreshInterval);
     };
   }, []);
+  if (!myProfile?.id) {
+    return;
+  }
+  void fetchConversations();
+}, [myProfile?.id]);
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const result = await getMyProfile();
-        setMyProfile(result.data);
-      } catch (error) {
-        setBannerMessage(toApiErrorMessage(error));
-      }
-    };
-    void loadProfile();
-  }, []);
-
-  useEffect(() => {
-    const accessToken = getAccessToken();
-    if (!accessToken) {
-      return;
+useEffect(() => {
+  const loadProfile = async () => {
+    try {
+      const result = await getMyProfile();
+      setMyProfile(result.data);
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
     }
+  };
+  void loadProfile();
+}, []);
 
-    const client = new ChatRealtimeClient(accessToken, {
-      onConnect: () => {
-        setIsRealtimeConnected(true);
-        client.subscribeUserQueue();
-        client.syncConversationSubscriptions(conversationIdsRef.current);
-      },
-      onDisconnect: () => {
-        setIsRealtimeConnected(false);
-      },
-      onError: (message) => {
-        const normalized = message.toLowerCase();
-        if (
-          normalized.includes("edit") &&
-          normalized.includes("window") &&
-          normalized.includes("expired")
-        ) {
-          setBannerMessage(
-            language === "vi"
-              ? "Khong the sua tin nhan vi qua 15p"
-              : "Cannot edit this message after 15 minutes",
-          );
-          return;
-        }
+useEffect(() => {
+  setProfileFullName(myProfile?.fullName ?? "");
+  setProfilePhone(myProfile?.phone ?? "");
+  setProfileAvatarUrl(myProfile?.avatarUrl ?? "");
+  setProfileGender((myProfile?.gender ?? "").toUpperCase());
+  setProfileBirthdate(myProfile?.birthdate ?? "");
+}, [myProfile]);
 
-        if (
-          normalized.includes("recall") &&
-          normalized.includes("window") &&
-          normalized.includes("expired")
-        ) {
-          setBannerMessage(
-            language === "vi"
-              ? "Khong the thu hoi tin nhan sau 24h"
-              : "Cannot recall this message after 24 hours",
-          );
-          return;
-        }
+useEffect(() => {
+  const accessToken = getAccessToken();
+  if (!accessToken) {
+    return;
+  }
 
-        setBannerMessage(message);
-      },
-      onEvent: (event: ChatRealtimeEvent) => {
-        if (event.eventType === "TYPING") {
-          if (event.actorId !== myUserIdRef.current) {
-            setTypingUserId(event.typing ? event.actorId : null);
-          }
-          return;
-        }
-
-        if (
-          event.eventType === "CONVERSATION_UPDATED" ||
-          event.eventType === "UNREAD_COUNT_UPDATED" ||
-          event.eventType === "TOTAL_UNREAD_UPDATED" ||
-          event.eventType === "NEW_MESSAGE" ||
-          event.eventType === "MESSAGE_SENT"
-        ) {
-          if (event.conversationId) {
-            upsertConversation({
-              id: event.conversationId,
-              lastMessage: event.lastMessage ?? undefined,
-              lastMessageAt: event.lastMessageAt ?? undefined,
-              unreadCount: event.unreadCount ?? undefined,
-            });
-          }
-          if (typeof event.totalUnreadCount === "number") {
-            syncTotalUnread(event.totalUnreadCount);
-          }
-
-          // Keep sidebar and unread counters accurate even when realtime payload is partial.
-          scheduleConversationsRefresh();
-        }
-
-        const payload = event.message;
-        if (!payload) {
-          return;
-        }
-
-        const messageKey = `${event.eventType}:${payload.messageId}`;
-        if (event.eventType === "NEW_MESSAGE") {
-          if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
-            return;
-          }
-          processedRealtimeMessageIdsRef.current.add(messageKey);
-          if (processedRealtimeMessageIdsRef.current.size > 500) {
-            const first = processedRealtimeMessageIdsRef.current.values().next().value;
-            if (first) {
-              processedRealtimeMessageIdsRef.current.delete(first);
-            }
-          }
-        }
-
-        const normalizedMessage: MessageItem = {
-          id: payload.messageId,
-          conversationId: payload.conversationId,
-          senderId: payload.senderId,
-          receiverId: payload.receiverId,
-          type: payload.type,
-          content: payload.recalled
-            ? "This message was recalled"
-            : payload.content,
-          fileUrl: payload.fileUrl,
-          fileName: payload.fileName,
-          reactions: payload.reactions,
-          recalled: payload.recalled,
-          edited: payload.edited,
-          deletedForUsers: payload.deletedForUsers,
-          deliveredTo: payload.deliveredTo,
-          seenBy: payload.seenBy,
-          createdAt: payload.createdAt,
-          updatedAt: payload.updatedAt,
-        };
-
-        const isDeletedForMe = payload.deletedForUsers?.includes(
-          myUserIdRef.current ?? "",
+  const client = new ChatRealtimeClient(accessToken, {
+    onConnect: () => {
+      setIsRealtimeConnected(true);
+      client.subscribeUserQueue();
+      client.syncConversationSubscriptions(conversationIdsRef.current);
+    },
+    onDisconnect: () => {
+      setIsRealtimeConnected(false);
+    },
+    onError: (message) => {
+      const normalized = message.toLowerCase();
+      if (
+        normalized.includes("edit") &&
+        normalized.includes("window") &&
+        normalized.includes("expired")
+      ) {
+        setBannerMessage(
+          language === "vi"
+            ? "Khong the sua tin nhan vi qua 15p"
+            : "Cannot edit this message after 15 minutes",
         );
-        if (isDeletedForMe) {
-          setMessages((prev) =>
-            prev.filter((item) => item.id !== payload.messageId),
-          );
-          return;
+        return;
+      }
+
+      if (
+        normalized.includes("recall") &&
+        normalized.includes("window") &&
+        normalized.includes("expired")
+      ) {
+        setBannerMessage(
+          language === "vi"
+            ? "Khong the thu hoi tin nhan sau 24h"
+            : "Cannot recall this message after 24 hours",
+        );
+        return;
+      }
+
+      setBannerMessage(message);
+    },
+    onEvent: (event: ChatRealtimeEvent) => {
+      if (event.eventType === "TYPING") {
+        if (event.actorId !== myUserIdRef.current) {
+          setTypingUserId(event.typing ? event.actorId : null);
+        }
+        return;
+      }
+
+      if (
+        event.eventType === "CONVERSATION_UPDATED" ||
+        event.eventType === "UNREAD_COUNT_UPDATED" ||
+        event.eventType === "TOTAL_UNREAD_UPDATED" ||
+        event.eventType === "NEW_MESSAGE" ||
+        event.eventType === "MESSAGE_SENT"
+      ) {
+        if (event.conversationId) {
+          upsertConversation({
+            id: event.conversationId,
+            lastMessage: event.lastMessage ?? undefined,
+            lastMessageAt: event.lastMessageAt ?? undefined,
+            unreadCount: event.unreadCount ?? undefined,
+          });
+        }
+        if (typeof event.totalUnreadCount === "number") {
+          syncTotalUnread(event.totalUnreadCount);
         }
 
-        if (event.conversationId === activeConversationIdRef.current) {
-          setMessages((prev) => {
-            const existingIndex = prev.findIndex(
-              (item) => item.id === normalizedMessage.id,
-            );
-            let next =
-              existingIndex >= 0
-                ? prev.map((item) =>
-                    item.id === normalizedMessage.id ? normalizedMessage : item,
-                  )
-                : [...prev, normalizedMessage];
+        // Keep sidebar and unread counters accurate even when realtime payload is partial.
+        scheduleConversationsRefresh();
+      }
 
-            if (
-              event.eventType === "READ_RECEIPT" &&
-              event.actorId &&
-              event.actorId !== myUserIdRef.current
-            ) {
-              const readUpToIndex = next.findIndex(
-                (item) => item.id === normalizedMessage.id,
-              );
-              if (readUpToIndex >= 0) {
-                next = next.map((item, index) => {
-                  if (index > readUpToIndex || item.senderId !== myUserIdRef.current) {
-                    return item;
-                  }
+      const payload = event.message;
+      if (!payload) {
+        return;
+      }
 
-                  const seenBy = new Set(item.seenBy ?? []);
-                  seenBy.add(event.actorId);
+      const messageKey = `${event.eventType}:${payload.messageId}`;
+      if (event.eventType === "NEW_MESSAGE") {
+        if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
+          return;
+        }
+        processedRealtimeMessageIdsRef.current.add(messageKey);
+        if (processedRealtimeMessageIdsRef.current.size > 500) {
+          const first = processedRealtimeMessageIdsRef.current.values().next().value;
+          if (first) {
+            processedRealtimeMessageIdsRef.current.delete(first);
+          }
+        }
+      }
 
-                  const deliveredTo = new Set(item.deliveredTo ?? []);
-                  deliveredTo.add(event.actorId);
+      const normalizedMessage: MessageItem = {
+        id: payload.messageId,
+        conversationId: payload.conversationId,
+        senderId: payload.senderId,
+        receiverId: payload.receiverId,
+        type: payload.type,
+        content: payload.recalled
+          ? "This message was recalled"
+          : payload.content,
+        fileUrl: payload.fileUrl,
+        fileName: payload.fileName,
+        reactions: payload.reactions,
+        recalled: payload.recalled,
+        edited: payload.edited,
+        deletedForUsers: payload.deletedForUsers,
+        deliveredTo: payload.deliveredTo,
+        seenBy: payload.seenBy,
+        createdAt: payload.createdAt,
+        updatedAt: payload.updatedAt,
+      };
 
-                  return {
-                    ...item,
-                    seenBy: Array.from(seenBy),
-                    deliveredTo: Array.from(deliveredTo),
-                  };
-                });
-              }
-            }
+      const isDeletedForMe = payload.deletedForUsers?.includes(
+        myUserIdRef.current ?? "",
+      );
+      if (isDeletedForMe) {
+        setMessages((prev) =>
+          prev.filter((item) => item.id !== payload.messageId),
+        );
+        return;
+      }
 
-            return next;
-          });
+      if (event.conversationId === activeConversationIdRef.current) {
+        setMessages((prev) => {
+          const existingIndex = prev.findIndex(
+            (item) => item.id === normalizedMessage.id,
+          );
+          let next =
+            existingIndex >= 0
+              ? prev.map((item) =>
+                item.id === normalizedMessage.id ? normalizedMessage : item,
+              )
+              : [...prev, normalizedMessage];
 
           if (
-            (event.eventType === "MESSAGE_SENT" || event.eventType === "NEW_MESSAGE") &&
-            normalizedMessage.senderId !== myUserIdRef.current
+            event.eventType === "READ_RECEIPT" &&
+            event.actorId &&
+            event.actorId !== myUserIdRef.current
           ) {
-            const canAutoRead =
-              activeTab === "messages" &&
-              document.visibilityState === "visible" &&
-              document.hasFocus();
-            if (canAutoRead) {
-              void markMessageAsRead(event.conversationId, normalizedMessage.id);
-              markConversationReadLocal(event.conversationId);
+            const readUpToIndex = next.findIndex(
+              (item) => item.id === normalizedMessage.id,
+            );
+            if (readUpToIndex >= 0) {
+              next = next.map((item, index) => {
+                if (index > readUpToIndex || item.senderId !== myUserIdRef.current) {
+                  return item;
+                }
+
+                const seenBy = new Set(item.seenBy ?? []);
+                seenBy.add(event.actorId);
+
+                const deliveredTo = new Set(item.deliveredTo ?? []);
+                deliveredTo.add(event.actorId);
+
+                return {
+                  ...item,
+                  seenBy: Array.from(seenBy),
+                  deliveredTo: Array.from(deliveredTo),
+                };
+              });
             }
           }
-        }
 
-        let unreadPatch = event.unreadCount ?? undefined;
-        const isIncomingFromOtherUser =
-          normalizedMessage.senderId !== myUserIdRef.current;
-        const isDifferentConversation =
-          event.conversationId !== activeConversationIdRef.current;
-        const shouldLocalIncrementUnread =
-          unreadPatch === undefined &&
-          isIncomingFromOtherUser &&
-          isDifferentConversation &&
-          (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT");
-
-        if (shouldLocalIncrementUnread) {
-          const currentConversation = useChatStore
-            .getState()
-            .conversations.find((item) => item.id === event.conversationId);
-          unreadPatch = (currentConversation?.unreadCount ?? 0) + 1;
-        }
-
-        upsertConversation({
-          id: event.conversationId,
-          lastMessage: normalizedMessage.content,
-          lastMessageAt: normalizedMessage.createdAt,
-          unreadCount: unreadPatch,
+          return next;
         });
-      },
-      onSyncEvent: (event) => {
-        if (event.eventType.startsWith("FRIENDSHIP_")) {
-          void fetchFriendshipData();
-          return;
-        }
 
-        if (event.eventType === "SESSION_REVOKED") {
-          const currentSessionId = getSessionId();
-          try {
-            const payload = event.payload ? JSON.parse(event.payload) : null;
-            const revokedSessionId = payload?.sessionId as string | undefined;
-            if (
-              currentSessionId &&
-              revokedSessionId &&
-              currentSessionId === revokedSessionId
-            ) {
-              const forcedLogoutMessage =
-                language === "vi"
-                  ? "Tai khoan da dang nhap o thiet bi khac. Vui long dang nhap lai."
-                  : "Your account signed in on another device. Please sign in again.";
-              sessionStorage.setItem(
-                "zola_forced_logout_message",
-                forcedLogoutMessage,
-              );
-              clearAuthTokens();
-              window.location.replace("/login");
-            }
-          } catch {
-            // Ignore malformed payload and keep current session.
+        if (
+          (event.eventType === "MESSAGE_SENT" || event.eventType === "NEW_MESSAGE") &&
+          normalizedMessage.senderId !== myUserIdRef.current
+        ) {
+          const canAutoRead =
+            activeTab === "messages" &&
+            document.visibilityState === "visible" &&
+            document.hasFocus();
+          if (canAutoRead) {
+            void markMessageAsRead(event.conversationId, normalizedMessage.id);
+            markConversationReadLocal(event.conversationId);
           }
         }
-      },
-    });
-
-    client.connect();
-    realtimeClientRef.current = client;
-
-    return () => {
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
       }
-      if (refreshConversationsTimeoutRef.current) {
-        window.clearTimeout(refreshConversationsTimeoutRef.current);
-        refreshConversationsTimeoutRef.current = null;
-      }
-      realtimeClientRef.current?.disconnect();
-      realtimeClientRef.current = null;
-    };
-  }, []);
 
-  useEffect(() => {
-    if (!isRealtimeConnected) {
-      setTypingUserId(null);
+      let unreadPatch = event.unreadCount ?? undefined;
+      const isIncomingFromOtherUser =
+        normalizedMessage.senderId !== myUserIdRef.current;
+      const isDifferentConversation =
+        event.conversationId !== activeConversationIdRef.current;
+      const shouldLocalIncrementUnread =
+        unreadPatch === undefined &&
+        isIncomingFromOtherUser &&
+        isDifferentConversation &&
+        (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT");
+
+      if (shouldLocalIncrementUnread) {
+        const currentConversation = useChatStore
+          .getState()
+          .conversations.find((item) => item.id === event.conversationId);
+        unreadPatch = (currentConversation?.unreadCount ?? 0) + 1;
+      }
+
+      upsertConversation({
+        id: event.conversationId,
+        lastMessage: normalizedMessage.content,
+        lastMessageAt: normalizedMessage.createdAt,
+        unreadCount: unreadPatch,
+      });
+    },
+    onSyncEvent: (event) => {
+      if (event.eventType.startsWith("FRIENDSHIP_")) {
+        void fetchFriendshipData();
+        if (
+          event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED" ||
+          event.eventType === "FRIENDSHIP_CHAT_READY"
+        ) {
+          void fetchConversations();
+        }
+        return;
+      }
+
+      if (event.eventType === "PROFILE_UPDATED") {
+        void fetchFriendshipData();
+        try {
+          const payload = event.payload ? JSON.parse(event.payload) : null;
+          const updatedUserId = payload?.userId as string | undefined;
+          if (!updatedUserId || updatedUserId === myUserIdRef.current) {
+            void (async () => {
+              try {
+                const result = await getMyProfile();
+                setMyProfile(result.data);
+              } catch {
+                // Ignore transient profile refresh errors.
+              }
+            })();
+          }
+        } catch {
+          // Ignore malformed payload.
+        }
+        return;
+      }
+
+      if (event.eventType === "PROFILE_DELETED") {
+        clearAuthTokens();
+        window.location.replace("/login");
+        return;
+      }
+
+      if (event.eventType === "SESSION_REVOKED") {
+        const currentSessionId = getSessionId();
+        try {
+          const payload = event.payload ? JSON.parse(event.payload) : null;
+          const revokedSessionId = payload?.sessionId as string | undefined;
+          if (
+            currentSessionId &&
+            revokedSessionId &&
+            currentSessionId === revokedSessionId
+          ) {
+            const forcedLogoutMessage =
+              language === "vi"
+                ? "Tai khoan da dang nhap o thiet bi khac. Vui long dang nhap lai."
+                : "Your account signed in on another device. Please sign in again.";
+            sessionStorage.setItem(
+              "zola_forced_logout_message",
+              forcedLogoutMessage,
+            );
+            clearAuthTokens();
+            window.location.replace("/login");
+          }
+        } catch {
+          // Ignore malformed payload and keep current session.
+        }
+      }
+    },
+    onPresenceEvent: (event: PresenceRealtimeEvent) => {
+      mergePresence([
+        {
+          userId: event.userId,
+          online: event.online,
+          lastChangedAt: event.lastChangedAt ?? null,
+        },
+      ]);
+    },
+  });
+
+  client.connect();
+  realtimeClientRef.current = client;
+
+  return () => {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (refreshConversationsTimeoutRef.current) {
+      window.clearTimeout(refreshConversationsTimeoutRef.current);
+      refreshConversationsTimeoutRef.current = null;
+    }
+    realtimeClientRef.current?.disconnect();
+    realtimeClientRef.current = null;
+  };
+}, []);
+
+useEffect(() => {
+  if (!isRealtimeConnected) {
+    setTypingUserId(null);
+    return;
+  }
+
+  const client = realtimeClientRef.current;
+  if (client && client.isConnected()) {
+    client.syncConversationSubscriptions(conversations.map((conversation) => conversation.id));
+  }
+
+  if (!activeConversationId) {
+    setTypingUserId(null);
+  }
+}, [activeConversationId, conversations, isRealtimeConnected]);
+
+useEffect(() => {
+  if (!activeConversationId) {
+    setMessages([]);
+    setNextCursor(null);
+    return;
+  }
+
+  const loadMessages = async () => {
+    try {
+      setIsLoadingMessages(true);
+      const result = await getMessages(activeConversationId, {
+        cursor: null,
+        limit: 50,
+      });
+      const items = result.data?.items ?? [];
+      setMessages(items.slice().reverse());
+      setNextCursor(result.data?.nextCursor ?? null);
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  void loadMessages();
+}, [activeConversationId]);
+
+useEffect(() => {
+  if (!activeConversationId) {
+    return;
+  }
+
+  const isViewingMessages =
+    activeTab === "messages" &&
+    document.visibilityState === "visible" &&
+    document.hasFocus();
+  if (!isViewingMessages) {
+    return;
+  }
+
+  const latestMessageId = messages[messages.length - 1]?.id;
+  markConversationReadLocal(activeConversationId);
+  if (!latestMessageId) {
+    return;
+  }
+  void markConversationRead(activeConversationId, latestMessageId).catch(() => {
+    // Keep UI responsive even if API gateway lags behind deployment.
+  });
+}, [activeConversationId, activeTab, messages, markConversationReadLocal]);
+
+useEffect(() => {
+  const syncReadWhenFocused = () => {
+    if (!activeConversationIdRef.current) {
       return;
     }
-
-    const client = realtimeClientRef.current;
-    if (client && client.isConnected()) {
-      client.syncConversationSubscriptions(conversations.map((conversation) => conversation.id));
-    }
-
-    if (!activeConversationId) {
-      setTypingUserId(null);
-    }
-  }, [activeConversationId, conversations, isRealtimeConnected]);
-
-  useEffect(() => {
-    if (!activeConversationId) {
-      setMessages([]);
-      setNextCursor(null);
-      return;
-    }
-
-    const loadMessages = async () => {
-      try {
-        setIsLoadingMessages(true);
-        const result = await getMessages(activeConversationId, {
-          cursor: null,
-          limit: 50,
-        });
-        const items = result.data?.items ?? [];
-        setMessages(items.slice().reverse());
-        setNextCursor(result.data?.nextCursor ?? null);
-      } catch (error) {
-        setBannerMessage(toApiErrorMessage(error));
-      } finally {
-        setIsLoadingMessages(false);
-      }
-    };
-
-    void loadMessages();
-  }, [activeConversationId]);
-
-  useEffect(() => {
-    if (!activeConversationId) {
-      return;
-    }
-
     const isViewingMessages =
       activeTab === "messages" &&
       document.visibilityState === "visible" &&
@@ -684,170 +1026,76 @@ export function ChatPage() {
     if (!isViewingMessages) {
       return;
     }
-
     const latestMessageId = messages[messages.length - 1]?.id;
-    markConversationReadLocal(activeConversationId);
+    markConversationReadLocal(activeConversationIdRef.current);
     if (!latestMessageId) {
       return;
     }
-    void markConversationRead(activeConversationId, latestMessageId).catch(() => {
-      // Keep UI responsive even if API gateway lags behind deployment.
+    void markConversationRead(activeConversationIdRef.current, latestMessageId).catch(() => {
+      // Ignore read sync errors to avoid breaking incoming message flow.
     });
-  }, [activeConversationId, activeTab, messages, markConversationReadLocal]);
-
-  useEffect(() => {
-    const syncReadWhenFocused = () => {
-      if (!activeConversationIdRef.current) {
-        return;
-      }
-      const isViewingMessages =
-        activeTab === "messages" &&
-        document.visibilityState === "visible" &&
-        document.hasFocus();
-      if (!isViewingMessages) {
-        return;
-      }
-      const latestMessageId = messages[messages.length - 1]?.id;
-      markConversationReadLocal(activeConversationIdRef.current);
-      if (!latestMessageId) {
-        return;
-      }
-      void markConversationRead(activeConversationIdRef.current, latestMessageId).catch(() => {
-        // Ignore read sync errors to avoid breaking incoming message flow.
-      });
-    };
-
-    window.addEventListener("focus", syncReadWhenFocused);
-    document.addEventListener("visibilitychange", syncReadWhenFocused);
-
-    return () => {
-      window.removeEventListener("focus", syncReadWhenFocused);
-      document.removeEventListener("visibilitychange", syncReadWhenFocused);
-    };
-  }, [activeTab, messages, markConversationReadLocal]);
-
-  const onLoadOlderMessages = async () => {
-    if (!activeConversationId || !nextCursor || isLoadingMoreMessages) {
-      return;
-    }
-
-    try {
-      setIsLoadingMoreMessages(true);
-      const result = await getMessages(activeConversationId, {
-        cursor: nextCursor,
-        limit: 50,
-      });
-      const olderItems = (result.data?.items ?? []).slice().reverse();
-      if (olderItems.length > 0) {
-        setMessages((prev) => {
-          const existingIds = new Set(prev.map((item) => item.id));
-          const uniqueOlder = olderItems.filter((item) => !existingIds.has(item.id));
-          return [...uniqueOlder, ...prev];
-        });
-      }
-      setNextCursor(result.data?.nextCursor ?? null);
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsLoadingMoreMessages(false);
-    }
   };
 
-  const onSendMessage = async () => {
-    const content = draftMessage.trim();
-    if (!content || !activeConversationId || isSending) return;
+  window.addEventListener("focus", syncReadWhenFocused);
+  document.addEventListener("visibilitychange", syncReadWhenFocused);
 
-    try {
-      setIsSending(true);
-      const result = await sendMessage(activeConversationId, content, {
-        type: "TEXT",
-      });
+  return () => {
+    window.removeEventListener("focus", syncReadWhenFocused);
+    document.removeEventListener("visibilitychange", syncReadWhenFocused);
+  };
+}, [activeTab, messages, markConversationReadLocal]);
+
+const onLoadOlderMessages = async () => {
+  if (!activeConversationId || !nextCursor || isLoadingMoreMessages) {
+    return;
+  }
+
+  try {
+    setIsLoadingMoreMessages(true);
+    const result = await getMessages(activeConversationId, {
+      cursor: nextCursor,
+      limit: 50,
+    });
+    const olderItems = (result.data?.items ?? []).slice().reverse();
+    if (olderItems.length > 0) {
       setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
+        const existingIds = new Set(prev.map((item) => item.id));
+        const uniqueOlder = olderItems.filter((item) => !existingIds.has(item.id));
+        return [...uniqueOlder, ...prev];
       });
-      setDraftMessage("");
-      await fetchConversations();
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsSending(false);
     }
-  };
+    setNextCursor(result.data?.nextCursor ?? null);
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsLoadingMoreMessages(false);
+  }
+};
+if (activeTab !== "contacts" || pendingFriendRequestsUnreadCount <= 0) {
+  return;
+}
 
-  const validateFileBeforeUpload = (file: File) => {
-    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-    const mediaKind = inferMediaKind(file);
+const markRead = async () => {
+  try {
+    await markPendingFriendRequestsRead();
+    setPendingFriendRequestsUnreadCount(0);
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  }
+};
 
-    const imageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
-    const videoExtensions = new Set(["mp4", "mov", "webm"]);
-    const fileExtensions = new Set([
-      "pdf",
-      "doc",
-      "docx",
-      "xls",
-      "xlsx",
-      "ppt",
-      "pptx",
-      "zip",
-      "rar",
-      "txt",
-    ]);
+void markRead();
+  }, [activeTab, pendingFriendRequestsUnreadCount]);
 
-    if (mediaKind === "image") {
-      if (!imageExtensions.has(ext)) {
-        return language === "vi"
-          ? "Dinh dang anh khong ho tro"
-          : "Unsupported image format";
-      }
-      if (file.size > MAX_IMAGE_BYTES) {
-        return language === "vi" ? "Anh vuot 10MB" : "Image exceeds 10MB";
-      }
-      return null;
-    }
+const onSendMessage = async () => {
+  const content = draftMessage.trim();
+  if (!content || !activeConversationId || isSending) return;
 
-    if (mediaKind === "video") {
-      if (!videoExtensions.has(ext)) {
-        return language === "vi"
-          ? "Dinh dang video khong ho tro"
-          : "Unsupported video format";
-      }
-      if (file.size > MAX_VIDEO_BYTES) {
-        return language === "vi"
-          ? "Video vuot 100MB"
-          : "Video exceeds 100MB";
-      }
-      return null;
-    }
-
-    if (!fileExtensions.has(ext)) {
-      return language === "vi"
-        ? "Dinh dang tep khong ho tro"
-        : "Unsupported file format";
-    }
-    if (file.size > MAX_FILE_BYTES) {
-      return language === "vi" ? "Tep vuot 100MB" : "File exceeds 100MB";
-    }
-    return null;
-  };
-
-  const sendUploadedMediaMessage = async (
-    conversationId: string,
-    caption: string,
-    uploaded: Awaited<ReturnType<typeof uploadMedia>>,
-    mediaKind: "image" | "video" | "file",
-  ) => {
-    const type = mediaKind === "image" ? "IMAGE" : mediaKind === "video" ? "VIDEO" : "FILE";
-    const content = caption || `📎 ${uploaded.data.fileName}`;
-    const result = await sendMessage(conversationId, content, {
-      type,
-      fileName: uploaded.data.fileName,
-      fileUrl: uploaded.data.fileUrl,
+  try {
+    setIsSending(true);
+    const result = await sendMessage(activeConversationId, content, {
+      type: "TEXT",
     });
-
     setMessages((prev) => {
       const exists = prev.some((item) => item.id === result.data.id);
       if (exists) {
@@ -855,127 +1103,136 @@ export function ChatPage() {
       }
       return [...prev, result.data];
     });
-  };
+    setDraftMessage("");
+    await fetchConversations();
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsSending(false);
+  }
+};
 
-  const uploadAndDispatch = async (localId: string) => {
-    const payload = uploadFileRegistryRef.current[localId];
-    if (!payload) {
-      return;
+const validateFileBeforeUpload = (file: File) => {
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  const mediaKind = inferMediaKind(file);
+
+  const imageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+  const videoExtensions = new Set(["mp4", "mov", "webm"]);
+  const fileExtensions = new Set([
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "zip",
+    "rar",
+    "txt",
+  ]);
+
+  if (mediaKind === "image") {
+    if (!imageExtensions.has(ext)) {
+      return language === "vi"
+        ? "Dinh dang anh khong ho tro"
+        : "Unsupported image format";
     }
+    if (file.size > MAX_IMAGE_BYTES) {
+      return language === "vi" ? "Anh vuot 10MB" : "Image exceeds 10MB";
+    }
+    return null;
+  }
 
-    const { file, caption, conversationId } = payload;
-    const mediaKind = inferMediaKind(file);
+  if (mediaKind === "video") {
+    if (!videoExtensions.has(ext)) {
+      return language === "vi"
+        ? "Dinh dang video khong ho tro"
+        : "Unsupported video format";
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      return language === "vi"
+        ? "Video vuot 100MB"
+        : "Video exceeds 100MB";
+    }
+    return null;
+  }
 
-    const controller = new AbortController();
-    uploadAbortControllersRef.current[localId] = controller;
+  if (!fileExtensions.has(ext)) {
+    return language === "vi"
+      ? "Dinh dang tep khong ho tro"
+      : "Unsupported file format";
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return language === "vi" ? "Tep vuot 100MB" : "File exceeds 100MB";
+  }
+  return null;
+};
 
-    try {
-      const uploaded = await uploadMedia(file, {
-        signal: controller.signal,
-        onProgress: (percent) => {
-          setPendingUploads((prev) =>
-            prev.map((item) =>
-              item.localId === localId
-                ? { ...item, progress: percent, status: "uploading", errorMessage: undefined }
-                : item,
-            ),
-          );
-        },
-      });
+const sendUploadedMediaMessage = async (
+  conversationId: string,
+  caption: string,
+  uploaded: Awaited<ReturnType<typeof uploadMedia>>,
+  mediaKind: "image" | "video" | "file",
+) => {
+  const type = mediaKind === "image" ? "IMAGE" : mediaKind === "video" ? "VIDEO" : "FILE";
+  const content = caption || `📎 ${uploaded.data.fileName}`;
+  const result = await sendMessage(conversationId, content, {
+    type,
+    fileName: uploaded.data.fileName,
+    fileUrl: uploaded.data.fileUrl,
+  });
 
-      await sendUploadedMediaMessage(conversationId, caption, uploaded, mediaKind);
+  setMessages((prev) => {
+    const exists = prev.some((item) => item.id === result.data.id);
+    if (exists) {
+      return prev;
+    }
+    return [...prev, result.data];
+  });
+};
 
+const uploadAndDispatch = async (localId: string) => {
+  const payload = uploadFileRegistryRef.current[localId];
+  if (!payload) {
+    return;
+  }
+
+  const { file, caption, conversationId } = payload;
+  const mediaKind = inferMediaKind(file);
+
+  const controller = new AbortController();
+  uploadAbortControllersRef.current[localId] = controller;
+
+  try {
+    const uploaded = await uploadMedia(file, {
+      signal: controller.signal,
+      onProgress: (percent) => {
+        setPendingUploads((prev) =>
+          prev.map((item) =>
+            item.localId === localId
+              ? { ...item, progress: percent, status: "uploading", errorMessage: undefined }
+              : item,
+          ),
+        );
+      },
+    });
+
+    await sendUploadedMediaMessage(conversationId, caption, uploaded, mediaKind);
+
+    setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
+    delete uploadFileRegistryRef.current[localId];
+    delete uploadAbortControllersRef.current[localId];
+  } catch (error) {
+    const message = toApiErrorMessage(error);
+    const isAbort =
+      (error as { name?: string; code?: string })?.name === "CanceledError" ||
+      (error as { name?: string; code?: string })?.name === "AbortError" ||
+      (error as { name?: string; code?: string })?.code === "ERR_CANCELED";
+
+    if (isAbort) {
       setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
       delete uploadFileRegistryRef.current[localId];
       delete uploadAbortControllersRef.current[localId];
-    } catch (error) {
-      const message = toApiErrorMessage(error);
-      const isAbort =
-        (error as { name?: string; code?: string })?.name === "CanceledError" ||
-        (error as { name?: string; code?: string })?.name === "AbortError" ||
-        (error as { name?: string; code?: string })?.code === "ERR_CANCELED";
-
-      if (isAbort) {
-        setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
-        delete uploadFileRegistryRef.current[localId];
-        delete uploadAbortControllersRef.current[localId];
-        return;
-      }
-
-      setPendingUploads((prev) =>
-        prev.map((item) =>
-          item.localId === localId
-            ? {
-                ...item,
-                status: "failed",
-                errorMessage: message,
-              }
-            : item,
-        ),
-      );
-      delete uploadAbortControllersRef.current[localId];
-    }
-  };
-
-  const onSendFiles = async (files: File[], caption: string) => {
-    if (!activeConversationId || files.length === 0) {
-      return;
-    }
-
-    const validFiles: Array<{ localId: string; file: File }> = [];
-    const rejectedMessages: string[] = [];
-    const oversizedMessages: string[] = [];
-
-    files.forEach((file) => {
-      const error = validateFileBeforeUpload(file);
-      if (error) {
-        rejectedMessages.push(`${file.name}: ${error}`);
-        if (error.includes("10MB") || error.includes("100MB") || error.includes("exceeds")) {
-          oversizedMessages.push(`${file.name}: ${error}`);
-        }
-        return;
-      }
-
-      const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      validFiles.push({ localId, file });
-      uploadFileRegistryRef.current[localId] = {
-        file,
-        caption,
-        conversationId: activeConversationId,
-      };
-    });
-
-    if (rejectedMessages.length > 0) {
-      setBannerMessage(rejectedMessages.join(" | "));
-    }
-
-    if (oversizedMessages.length > 0) {
-      setUploadLimitModalMessage(oversizedMessages.join("\n"));
-    }
-
-    if (validFiles.length === 0) {
-      return;
-    }
-
-    setPendingUploads((prev) => [
-      ...prev,
-      ...validFiles.map(({ localId, file }) => ({
-        localId,
-        fileName: file.name,
-        fileSizeLabel: formatBytes(file.size),
-        mediaKind: inferMediaKind(file),
-        status: "uploading" as const,
-        progress: 0,
-      })),
-    ]);
-
-    await Promise.all(validFiles.map((item) => uploadAndDispatch(item.localId)));
-    await fetchConversations();
-  };
-
-  const onRetryUpload = async (localId: string) => {
-    const payload = uploadFileRegistryRef.current[localId];
-    if (!payload) {
       return;
     }
 
@@ -983,762 +1240,1097 @@ export function ChatPage() {
       prev.map((item) =>
         item.localId === localId
           ? {
-              ...item,
-              progress: 0,
-              status: "uploading",
-              errorMessage: undefined,
-            }
+            ...item,
+            status: "failed",
+            errorMessage: message,
+          }
+          : item,
+      ),
+    );
+    delete uploadAbortControllersRef.current[localId];
+  }
+};
+
+const onSendFiles = async (files: File[], caption: string) => {
+  if (!activeConversationId || files.length === 0) {
+    return;
+  }
+
+  const validFiles: Array<{ localId: string; file: File }> = [];
+  const rejectedMessages: string[] = [];
+  const oversizedMessages: string[] = [];
+
+  files.forEach((file) => {
+    const error = validateFileBeforeUpload(file);
+    if (error) {
+      rejectedMessages.push(`${file.name}: ${error}`);
+      if (error.includes("10MB") || error.includes("100MB") || error.includes("exceeds")) {
+        oversizedMessages.push(`${file.name}: ${error}`);
+      }
+      return;
+    }
+
+    const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    validFiles.push({ localId, file });
+    uploadFileRegistryRef.current[localId] = {
+      file,
+      caption,
+      conversationId: activeConversationId,
+    };
+  });
+
+  if (rejectedMessages.length > 0) {
+    setBannerMessage(rejectedMessages.join(" | "));
+  }
+
+  if (oversizedMessages.length > 0) {
+    setUploadLimitModalMessage(oversizedMessages.join("\n"));
+  }
+
+  if (validFiles.length === 0) {
+    return;
+  }
+
+  setPendingUploads((prev) => [
+    ...prev,
+    ...validFiles.map(({ localId, file }) => ({
+      localId,
+      fileName: file.name,
+      fileSizeLabel: formatBytes(file.size),
+      mediaKind: inferMediaKind(file),
+      status: "uploading" as const,
+      progress: 0,
+    })),
+  ]);
+
+  await Promise.all(validFiles.map((item) => uploadAndDispatch(item.localId)));
+  await fetchConversations();
+};
+
+const onRetryUpload = async (localId: string) => {
+  const payload = uploadFileRegistryRef.current[localId];
+  if (!payload) {
+    return;
+  }
+
+  setPendingUploads((prev) =>
+    prev.map((item) =>
+      item.localId === localId
+        ? {
+          ...item,
+          progress: 0,
+          status: "uploading",
+          errorMessage: undefined,
+        }
+        : item,
+    ),
+  );
+
+  await uploadAndDispatch(localId);
+  await fetchConversations();
+};
+
+const onCancelUpload = (localId: string) => {
+  const controller = uploadAbortControllersRef.current[localId];
+  if (controller) {
+    controller.abort();
+  }
+  delete uploadAbortControllersRef.current[localId];
+  delete uploadFileRegistryRef.current[localId];
+  setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
+};
+
+const onRecallMessage = async (messageId: string) => {
+  if (!activeConversationId) return;
+  try {
+    // Persist recall via REST as the source of truth; backend will broadcast realtime to both participants.
+    await recallMessage(activeConversationId, messageId);
+    setMessages((prev) =>
+      prev.map((item) =>
+        item.id === messageId
+          ? { ...item, recalled: true, content: "This message was recalled" }
+          : item,
+      ),
+    );
+  } catch (error) {
+    setBannerMessage(toPolicyViolationMessage(error, "recall", language));
+  }
+};
+
+const onEditMessage = async (messageId: string, nextContent: string) => {
+  if (!activeConversationId) {
+    return;
+  }
+
+  const conversationId = activeConversationId;
+  const previousMessage = messages.find((item) => item.id === messageId);
+
+  try {
+    setMessages((prev) =>
+      prev.map((item) =>
+        item.id === messageId
+          ? {
+            ...item,
+            content: nextContent,
+            edited: true,
+            updatedAt: new Date().toISOString(),
+          }
           : item,
       ),
     );
 
-    await uploadAndDispatch(localId);
-    await fetchConversations();
-  };
+    // Single source of truth: REST edit endpoint persists and server broadcasts realtime.
+    await editMessage(conversationId, messageId, nextContent);
 
-  const onCancelUpload = (localId: string) => {
-    const controller = uploadAbortControllersRef.current[localId];
-    if (controller) {
-      controller.abort();
-    }
-    delete uploadAbortControllersRef.current[localId];
-    delete uploadFileRegistryRef.current[localId];
-    setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
-  };
-
-  const onRecallMessage = async (messageId: string) => {
-    if (!activeConversationId) return;
-    try {
-      // Persist recall via REST as the source of truth; backend will broadcast realtime to both participants.
-      await recallMessage(activeConversationId, messageId);
+    // Re-sync current conversation to guarantee UI consistency after server-side mutation.
+    await reloadConversationMessagesWithRetry(conversationId, 3);
+  } catch (error) {
+    if (previousMessage) {
       setMessages((prev) =>
-        prev.map((item) =>
-          item.id === messageId
-            ? { ...item, recalled: true, content: "This message was recalled" }
-            : item,
-        ),
+        prev.map((item) => (item.id === messageId ? previousMessage : item)),
       );
-    } catch (error) {
-      setBannerMessage(toPolicyViolationMessage(error, "recall", language));
     }
-  };
+    setBannerMessage(toPolicyViolationMessage(error, "edit", language));
+  }
+};
 
-  const onEditMessage = async (messageId: string, nextContent: string) => {
-    if (!activeConversationId) {
-      return;
-    }
+const onDeleteForMe = async (messageId: string) => {
+  if (!activeConversationId) return;
+  try {
+    await deleteForMe(activeConversationId, messageId);
+    setMessages((prev) => prev.filter((item) => item.id !== messageId));
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  }
+};
 
-    const conversationId = activeConversationId;
-    const previousMessage = messages.find((item) => item.id === messageId);
-
-    try {
-      setMessages((prev) =>
-        prev.map((item) =>
-          item.id === messageId
-            ? {
-                ...item,
-                content: nextContent,
-                edited: true,
-                updatedAt: new Date().toISOString(),
-              }
-            : item,
-        ),
-      );
-
-      // Single source of truth: REST edit endpoint persists and server broadcasts realtime.
-      await editMessage(conversationId, messageId, nextContent);
-
-      // Re-sync current conversation to guarantee UI consistency after server-side mutation.
-      await reloadConversationMessagesWithRetry(conversationId, 3);
-    } catch (error) {
-      if (previousMessage) {
-        setMessages((prev) =>
-          prev.map((item) => (item.id === messageId ? previousMessage : item)),
-        );
-      }
-      setBannerMessage(toPolicyViolationMessage(error, "edit", language));
-    }
-  };
-
-  const onDeleteForMe = async (messageId: string) => {
-    if (!activeConversationId) return;
-    try {
-      await deleteForMe(activeConversationId, messageId);
-      setMessages((prev) => prev.filter((item) => item.id !== messageId));
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    }
-  };
-
-  const onForwardMessage = async (messageId: string) => {
-    if (!activeConversationId) return;
-    const targets = conversations.filter(
-      (conversation) => conversation.id !== activeConversationId,
+const onForwardMessage = async (messageId: string) => {
+  if (!activeConversationId) return;
+  const targets = conversations.filter(
+    (conversation) => conversation.id !== activeConversationId,
+  );
+  if (targets.length === 0) {
+    setBannerMessage(
+      language === "vi"
+        ? "Khong co hoi thoai de chuyen tiep"
+        : "No target conversation to forward",
     );
-    if (targets.length === 0) {
+    return;
+  }
+  setForwardMessageId(messageId);
+  setIsForwardModalOpen(true);
+};
+
+const onConfirmForwardTargets = async ({
+  targetConversationIds,
+  targetUserIds,
+}: {
+  targetConversationIds: string[];
+  targetUserIds: string[];
+}) => {
+  if (!activeConversationId || !forwardMessageId) {
+    return;
+  }
+
+  try {
+    setIsForwardingMessage(true);
+    const createdConversationIds = await Promise.all(
+      targetUserIds.map(async (targetUserId) => {
+        const conversation = await createDirectConversation(targetUserId);
+        return conversation.data.id;
+      }),
+    );
+
+    const uniqueTargetIds = Array.from(
+      new Set(
+        [...targetConversationIds, ...createdConversationIds].filter(
+          (id) => id && id !== activeConversationId,
+        ),
+      ),
+    );
+
+    if (uniqueTargetIds.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Khong co hoi thoai de chuyen tiep"
-          : "No target conversation to forward",
+          ? "Khong co doi tuong hop le de chuyen tiep"
+          : "No valid target to forward",
       );
       return;
     }
-    setForwardMessageId(messageId);
-    setIsForwardModalOpen(true);
-  };
 
-  const onConfirmForwardTargets = async ({
-    targetConversationIds,
-    targetUserIds,
-  }: {
-    targetConversationIds: string[];
-    targetUserIds: string[];
-  }) => {
-    if (!activeConversationId || !forwardMessageId) {
-      return;
-    }
-
-    try {
-      setIsForwardingMessage(true);
-      const createdConversationIds = await Promise.all(
-        targetUserIds.map(async (targetUserId) => {
-          const conversation = await createDirectConversation(targetUserId);
-          return conversation.data.id;
-        }),
+    const forwardOne = async (targetConversationId: string) => {
+      await forwardMessage(
+        activeConversationId,
+        forwardMessageId,
+        targetConversationId,
       );
+      return { targetConversationId, channel: "rest" as const };
+    };
 
-      const uniqueTargetIds = Array.from(
-        new Set(
-          [...targetConversationIds, ...createdConversationIds].filter(
-            (id) => id && id !== activeConversationId,
-          ),
-        ),
-      );
+    const results = await Promise.allSettled(
+      uniqueTargetIds.map((targetId) => forwardOne(targetId)),
+    );
 
-      if (uniqueTargetIds.length === 0) {
-        setBannerMessage(
-          language === "vi"
-            ? "Khong co doi tuong hop le de chuyen tiep"
-            : "No valid target to forward",
-        );
-        return;
+    const successItems = results.filter(
+      (item) => item.status === "fulfilled",
+    ) as PromiseFulfilledResult<{
+      targetConversationId: string;
+      channel: "rest";
+    }>[];
+    const failedItems = results.filter(
+      (item) => item.status === "rejected",
+    ) as PromiseRejectedResult[];
+    const successCount = successItems.length;
+    const failedCount = failedItems.length;
+    const restCount = successItems.length;
+
+    if (successCount > 0) {
+      await fetchConversations();
+      // Move user to first selected target so forwarded message is visible immediately.
+      const primaryTargetId =
+        successItems[0]?.value.targetConversationId ?? null;
+      setActiveConversationId(primaryTargetId);
+      if (primaryTargetId) {
+        void reloadConversationMessagesWithRetry(primaryTargetId, 4);
       }
+    }
 
-      const forwardOne = async (targetConversationId: string) => {
-        await forwardMessage(
-          activeConversationId,
-          forwardMessageId,
-          targetConversationId,
-        );
-        return { targetConversationId, channel: "rest" as const };
-      };
-
-      const results = await Promise.allSettled(
-        uniqueTargetIds.map((targetId) => forwardOne(targetId)),
+    if (failedCount === 0 && restCount === 0) {
+      setBannerMessage(
+        language === "vi"
+          ? `Da chuyen tiep den ${successCount} doi tuong`
+          : `Forwarded to ${successCount} target(s)`,
       );
+    } else if (failedCount === 0 && restCount > 0) {
+      setBannerMessage(
+        language === "vi"
+          ? `Da chuyen tiep ${successCount} doi tuong (${restCount} qua API)`
+          : `Forwarded ${successCount} target(s) (${restCount} via API)`,
+      );
+    } else {
+      const firstError = failedItems[0]?.reason;
+      const firstErrorMessage = toApiErrorMessage(firstError);
+      setBannerMessage(
+        language === "vi"
+          ? `Chuyen tiep thanh cong ${successCount}, that bai ${failedCount}. Loi: ${firstErrorMessage}`
+          : `Forward success ${successCount}, failed ${failedCount}. Error: ${firstErrorMessage}`,
+      );
+    }
 
-      const successItems = results.filter(
-        (item) => item.status === "fulfilled",
-      ) as PromiseFulfilledResult<{
-        targetConversationId: string;
-        channel: "rest";
-      }>[];
-      const failedItems = results.filter(
-        (item) => item.status === "rejected",
-      ) as PromiseRejectedResult[];
-      const successCount = successItems.length;
-      const failedCount = failedItems.length;
-      const restCount = successItems.length;
+    setIsForwardModalOpen(false);
+    setForwardMessageId(null);
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsForwardingMessage(false);
+  }
+};
 
-      if (successCount > 0) {
-        await fetchConversations();
-        // Move user to first selected target so forwarded message is visible immediately.
-        const primaryTargetId =
-          successItems[0]?.value.targetConversationId ?? null;
-        setActiveConversationId(primaryTargetId);
-        if (primaryTargetId) {
-          void reloadConversationMessagesWithRetry(primaryTargetId, 4);
+const onReactMessage = async (messageId: string, emoji: string) => {
+  if (!activeConversationId || !myUserIdRef.current) {
+    return;
+  }
+
+  const key = `${myUserIdRef.current}|${emoji}`;
+  const current = messages.find((item) => item.id === messageId);
+  const hasReaction = Boolean(current?.reactions?.includes(key));
+
+  try {
+    if (hasReaction) {
+      await removeReaction(activeConversationId, messageId, emoji);
+    } else {
+      await addReaction(activeConversationId, messageId, emoji);
+    }
+
+    setMessages((prev) =>
+      prev.map((item) => {
+        if (item.id !== messageId) {
+          return item;
         }
-      }
-
-      if (failedCount === 0 && restCount === 0) {
-        setBannerMessage(
-          language === "vi"
-            ? `Da chuyen tiep den ${successCount} doi tuong`
-            : `Forwarded to ${successCount} target(s)`,
+        const reactions = item.reactions ?? [];
+        const filtered = reactions.filter(
+          (value) => !value.startsWith(`${myUserIdRef.current}|`),
         );
-      } else if (failedCount === 0 && restCount > 0) {
-        setBannerMessage(
-          language === "vi"
-            ? `Da chuyen tiep ${successCount} doi tuong (${restCount} qua API)`
-            : `Forwarded ${successCount} target(s) (${restCount} via API)`,
-        );
-      } else {
-        const firstError = failedItems[0]?.reason;
-        const firstErrorMessage = toApiErrorMessage(firstError);
-        setBannerMessage(
-          language === "vi"
-            ? `Chuyen tiep thanh cong ${successCount}, that bai ${failedCount}. Loi: ${firstErrorMessage}`
-            : `Forward success ${successCount}, failed ${failedCount}. Error: ${firstErrorMessage}`,
-        );
-      }
+        return {
+          ...item,
+          reactions: hasReaction ? filtered : [...filtered, key],
+        };
+      }),
+    );
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  }
+};
 
-      setIsForwardModalOpen(false);
-      setForwardMessageId(null);
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsForwardingMessage(false);
-    }
-  };
+const onSearchFriendByEmail = async () => {
+  const email = friendEmail.trim();
+  if (!email) return;
 
-  const onReactMessage = async (messageId: string, emoji: string) => {
-    if (!activeConversationId || !myUserIdRef.current) {
-      return;
-    }
+  try {
+    setIsSearchingFriend(true);
+    setFriendProfile(null);
+    setFriendshipStatus("NONE");
+    const profileResult = await searchUserByEmail(email);
+    setFriendProfile(profileResult.data);
 
-    const key = `${myUserIdRef.current}|${emoji}`;
-    const current = messages.find((item) => item.id === messageId);
-    const hasReaction = Boolean(current?.reactions?.includes(key));
+    const statusResult = await getFriendshipStatus(profileResult.data.id);
+    setFriendshipStatus(normalizeFriendshipStatus(statusResult.data.status));
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsSearchingFriend(false);
+  }
+};
 
-    try {
-      if (hasReaction) {
-        await removeReaction(activeConversationId, messageId, emoji);
-      } else {
-        await addReaction(activeConversationId, messageId, emoji);
-      }
+const onAddFriend = async () => {
+  if (!friendProfile) return;
 
-      setMessages((prev) =>
-        prev.map((item) => {
-          if (item.id !== messageId) {
-            return item;
-          }
-          const reactions = item.reactions ?? [];
-          const filtered = reactions.filter(
-            (value) => !value.startsWith(`${myUserIdRef.current}|`),
-          );
-          return {
-            ...item,
-            reactions: hasReaction ? filtered : [...filtered, key],
-          };
-        }),
-      );
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    }
-  };
+  try {
+    setIsSubmittingFriend(true);
+    const result = await addFriend(friendProfile.id);
+    setFriendshipStatus(normalizeFriendshipStatus(result.data.status));
+    await fetchFriendshipData();
+    setBannerMessage(
+      language === "vi" ? "Da gui loi moi ket ban" : "Friend request sent",
+    );
+    setIsAddFriendOpen(false);
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsSubmittingFriend(false);
+  }
+};
 
-  const onSearchFriendByEmail = async () => {
-    const email = friendEmail.trim();
-    if (!email) return;
+const canAddFriend =
+  Boolean(friendProfile) &&
+  friendshipStatus !== "PENDING" &&
+  friendshipStatus !== "ACCEPTED";
 
-    try {
-      setIsSearchingFriend(true);
-      setFriendProfile(null);
-      setFriendshipStatus("NONE");
-      const profileResult = await searchUserByEmail(email);
-      setFriendProfile(profileResult.data);
+const onAcceptFriendRequest = async (friendshipId: string) => {
+  try {
+    setProcessingFriendshipId(friendshipId);
+    await acceptFriendRequest(friendshipId);
+    await fetchFriendshipData();
+    await fetchConversations();
 
-      const statusResult = await getFriendshipStatus(profileResult.data.id);
-      setFriendshipStatus(statusResult.data.status);
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsSearchingFriend(false);
-    }
-  };
-
-  const onAddFriend = async () => {
-    if (!friendProfile) return;
-
-    try {
-      setIsSubmittingFriend(true);
-      const result = await addFriend(friendProfile.id);
-      setFriendshipStatus(result.data.status);
-      const conversationResult = await createDirectConversation(
-        friendProfile.id,
+    const accepted = pendingFriendRequests.find(
+      (item) => item.friendshipId === friendshipId,
+    );
+    if (accepted?.requesterId) {
+      const conversation = await createDirectConversation(
+        accepted.requesterId,
       );
       await fetchConversations();
-      await fetchFriendshipData();
-      setActiveConversationId(conversationResult.data.id);
-      setBannerMessage(
-        language === "vi" ? "Da tao hoi thoai" : "Conversation created",
-      );
-      setIsAddFriendOpen(false);
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsSubmittingFriend(false);
+      setActiveConversationId(conversation.data.id);
     }
-  };
 
-  const canAddFriend =
-    Boolean(friendProfile) &&
-    friendshipStatus !== "PENDING" &&
-    friendshipStatus !== "ACCEPTED";
+    setBannerMessage(
+      language === "vi"
+        ? "Da chap nhan loi moi ket ban"
+        : "Friend request accepted",
+    );
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setProcessingFriendshipId(null);
+  }
+};
 
-  const onAcceptFriendRequest = async (friendshipId: string) => {
-    try {
-      setProcessingFriendshipId(friendshipId);
-      await acceptFriendRequest(friendshipId);
-      await fetchFriendshipData();
+const onDeclineFriendRequest = async (friendshipId: string) => {
+  try {
+    setProcessingFriendshipId(friendshipId);
+    await declineFriendRequest(friendshipId);
+    await fetchFriendshipData();
+    setBannerMessage(
+      language === "vi" ? "Da tu choi loi moi" : "Friend request declined",
+    );
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setProcessingFriendshipId(null);
+  }
+};
 
-      const accepted = pendingFriendRequests.find(
-        (item) => item.friendshipId === friendshipId,
-      );
-      if (accepted?.requesterId) {
-        const conversation = await createDirectConversation(
-          accepted.requesterId,
-        );
-        await fetchConversations();
-        setActiveConversationId(conversation.data.id);
-      }
-
-      setBannerMessage(
-        language === "vi"
-          ? "Da chap nhan loi moi ket ban"
-          : "Friend request accepted",
-      );
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setProcessingFriendshipId(null);
+const onRemoveFriend = async (friendshipId: string) => {
+  try {
+    setProcessingFriendshipId(friendshipId);
+    const removedContact = friendContacts.find(
+      (item) => item.friendshipId === friendshipId,
+    );
+    await removeFriend(friendshipId);
+    if (removedContact && friendProfile?.id === removedContact.userId) {
+      setFriendshipStatus("NONE");
     }
-  };
+    await fetchFriendshipData();
+    setBannerMessage(language === "vi" ? "Da xoa ban" : "Friend removed");
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setProcessingFriendshipId(null);
+  }
+};
 
-  const onDeclineFriendRequest = async (friendshipId: string) => {
-    try {
-      setProcessingFriendshipId(friendshipId);
-      await declineFriendRequest(friendshipId);
-      await fetchFriendshipData();
-      setBannerMessage(
-        language === "vi" ? "Da tu choi loi moi" : "Friend request declined",
-      );
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setProcessingFriendshipId(null);
-    }
-  };
+const onOpenFriendConversation = async (friendUserId: string) => {
+  try {
+    const conversation = await createDirectConversation(friendUserId);
+    await fetchConversations();
+    setActiveConversationId(conversation.data.id);
+    setActiveTab("messages");
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  }
+};
 
-  const onRemoveFriend = async (friendshipId: string) => {
-    try {
-      setProcessingFriendshipId(friendshipId);
-      await removeFriend(friendshipId);
-      await fetchFriendshipData();
-      setBannerMessage(language === "vi" ? "Da xoa ban" : "Friend removed");
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setProcessingFriendshipId(null);
-    }
-  };
-
-  const onSearchUserForForward = async (email: string) => {
-    try {
-      const profileResult = await searchUserByEmail(email.trim());
-      if (!profileResult?.data?.id) {
-        return null;
-      }
-      return profileResult.data;
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
+const onSearchUserForForward = async (email: string) => {
+  try {
+    const profileResult = await searchUserByEmail(email.trim());
+    if (!profileResult?.data?.id) {
       return null;
     }
-  };
+    return profileResult.data;
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+    return null;
+  }
+};
 
-  const reloadConversationMessagesWithRetry = async (
-    conversationId: string,
-    attempts = 4,
-  ) => {
-    for (let index = 0; index < attempts; index += 1) {
-      try {
-        const result = await getMessages(conversationId, {
-          cursor: null,
-          limit: 50,
-        });
-        if (activeConversationIdRef.current === conversationId) {
-          const items = result.data?.items ?? [];
-          setMessages(items.slice().reverse());
-          setNextCursor(result.data?.nextCursor ?? null);
-        }
-        return;
-      } catch {
-        if (index === attempts - 1) {
-          return;
-        }
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 350);
-        });
+const onSaveProfile = async () => {
+  if (!profileFullName.trim()) {
+    setBannerMessage(
+      language === "vi"
+        ? "Ho ten khong duoc de trong"
+        : "Full name is required",
+    );
+    return;
+  }
+
+  try {
+    setIsSavingProfile(true);
+    const result = await updateMyProfile({
+      fullName: profileFullName.trim(),
+      phone: profilePhone.trim() || null,
+      avatarUrl: profileAvatarUrl.trim() || null,
+      gender: profileGender.trim() || null,
+      birthdate: profileBirthdate.trim() || null,
+    });
+    setMyProfile(result.data);
+    setBannerMessage(
+      language === "vi" ? "Da cap nhat thong tin" : "Profile updated",
+    );
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsSavingProfile(false);
+  }
+};
+
+const onSelectProfileAvatar = async (file: File | null) => {
+  if (!file) {
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    setBannerMessage(
+      language === "vi"
+        ? "Vui long chon file hinh anh"
+        : "Please choose an image file",
+    );
+    return;
+  }
+
+  if (file.size > MAX_IMAGE_BYTES) {
+    setBannerMessage(
+      language === "vi"
+        ? "Anh dai dien vuot qua 5MB"
+        : "Avatar image exceeds 5MB",
+    );
+    return;
+  }
+
+  try {
+    setIsUploadingAvatar(true);
+    const uploaded = await uploadMedia(file);
+
+    const uploadedAvatarUrl = uploaded.data.fileUrl;
+    setProfileAvatarUrl(uploadedAvatarUrl);
+
+    const updatedProfile = await updateMyProfile({
+      fullName: profileFullName.trim() || myProfile?.fullName || "User",
+      phone: profilePhone.trim() || null,
+      avatarUrl: uploadedAvatarUrl,
+      gender: profileGender.trim() || null,
+      birthdate: profileBirthdate.trim() || null,
+    });
+    setMyProfile(updatedProfile.data);
+    setBannerMessage(
+      language === "vi" ? "Da cap nhat anh dai dien" : "Avatar updated",
+    );
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsUploadingAvatar(false);
+  }
+};
+
+const onDeleteProfile = async () => {
+  const confirmed = window.confirm(
+    language === "vi"
+      ? "Ban chac chan muon xoa tai khoan?"
+      : "Are you sure you want to delete this account?",
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setIsDeletingProfile(true);
+    await deleteMyProfile();
+    clearAuthTokens();
+    window.location.replace("/login");
+  } catch (error) {
+    setBannerMessage(toApiErrorMessage(error));
+  } finally {
+    setIsDeletingProfile(false);
+  }
+};
+
+const reloadConversationMessagesWithRetry = async (
+  conversationId: string,
+  attempts = 4,
+) => {
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      const result = await getMessages(conversationId, {
+        cursor: null,
+        limit: 50,
+      });
+      if (activeConversationIdRef.current === conversationId) {
+        const items = result.data?.items ?? [];
+        setMessages(items.slice().reverse());
+        setNextCursor(result.data?.nextCursor ?? null);
       }
+      return;
+    } catch {
+      if (index === attempts - 1) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 350);
+      });
     }
-  };
+  }
+};
 
-  const contactUsers = useMemo(() => {
-    return friendContacts
-      .map((friend, index) => ({
+const contactUsers = useMemo(() => {
+  return friendContacts
+    .map((friend, index) => {
+      const presence = getPresenceForUser(friend.userId);
+      return {
         id: friend.userId,
         friendshipId: friend.friendshipId,
         name:
           userProfileMap[friend.userId]?.fullName ??
           `User ${friend.userId.slice(0, 8)}`,
         email: userProfileMap[friend.userId]?.email ?? null,
+        isOnline: presence?.online ?? false,
+        presenceLabel: toPresenceLabel(presence),
         sortKey: `${friend.userId}-${index}`,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [friendContacts, userProfileMap]);
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}, [friendContacts, userProfileMap, userPresenceMap, presenceTick]);
 
-  const messageBadge = totalUnreadCount > 0 ? Math.min(totalUnreadCount, 99) : 0;
+const messageBadge =
+  conversations.length > 0 ? Math.min(conversations.length, 9) : 0;
+const contactsBadge =
+  pendingFriendRequestsUnreadCount > 0
+    ? Math.min(pendingFriendRequestsUnreadCount, 99)
+    : 0;
 
-  const onChangeTab = (tab: ChatTab) => {
-    setActiveTab(tab);
-  };
+const onChangeTab = (tab: ChatTab) => {
+  setActiveTab(tab);
+};
 
-  return (
-    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
-      <Sidebar
-        active={activeTab}
-        messageBadge={messageBadge}
-        chats={sidebarChats}
-        selectedChatId={activeConversationId}
-        searchText={searchText}
-        onTabChange={onChangeTab}
-        onSearchTextChange={setSearchText}
-        onSelectChat={(conversationId) => {
-          setActiveConversationId(conversationId);
-          markConversationReadLocal(conversationId);
-        }}
-        onCreateChat={() => setIsAddFriendOpen(true)}
-      />
+const activeConversationPresence = activeConversation
+  ? getPresenceForUser(resolvePeerUserId(activeConversation))
+  : undefined;
 
-      {activeTab !== "messages" && (
-        <aside className="w-[320px] shrink-0 border-r border-slate-200 bg-white">
-          {activeTab === "contacts" && (
-            <div className="flex h-full flex-col">
-              <div className="border-b border-slate-200 p-4">
-                <h2 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Loi moi ket ban" : "Friend Requests"}
-                </h2>
-              </div>
+const activeConversationForView = activeConversation
+  ? {
+    ...activeConversation,
+    name: getConversationDisplayName(activeConversation),
+  }
+  : null;
 
-              <div className="space-y-2 border-b border-slate-200 p-3">
-                {pendingFriendRequests.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-                    {language === "vi"
-                      ? "Chua co loi moi. Dung nut Them ban de tim theo email."
-                      : "No pending request. Use New Message to search by email."}
-                  </div>
-                ) : (
-                  pendingFriendRequests.map((request) => {
-                    const profile = userProfileMap[request.requesterId];
-                    const displayName =
-                      profile?.fullName ??
-                      `User ${request.requesterId.slice(0, 8)}`;
-                    const displayEmail = profile?.email ?? request.requesterId;
+return (
+  <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
+    <Sidebar
+      active={activeTab}
+      messageBadge={messageBadge}
+      contactsBadge={contactsBadge}
+      chats={sidebarChats}
+      selectedChatId={activeConversationId}
+      searchText={searchText}
+      onTabChange={onChangeTab}
+      onSearchTextChange={setSearchText}
+      onSelectChat={(conversationId) => {
+        setActiveConversationId(conversationId);
+        markConversationReadLocal(conversationId);
+      }}
+      onCreateChat={() => setIsAddFriendOpen(true)}
+    />
 
-                    return (
-                      <div
-                        key={request.friendshipId}
-                        className="rounded-xl border border-slate-200 bg-white p-3"
-                      >
-                        <div className="mb-2 flex items-center gap-3">
-                          <div className="grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
-                            {initials(displayName)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">
-                              {displayName}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {displayEmail}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={
-                              processingFriendshipId === request.friendshipId
-                            }
-                            onClick={() =>
-                              void onAcceptFriendRequest(request.friendshipId)
-                            }
-                            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Chap nhan" : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              processingFriendshipId === request.friendshipId
-                            }
-                            onClick={() =>
-                              void onDeclineFriendRequest(request.friendshipId)
-                            }
-                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Tu choi" : "Decline"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="p-4 pb-2">
-                <h2 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Tat ca ban be" : "All Friends"}
-                </h2>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {contactUsers.map((user) => (
-                  <div
-                    key={user.sortKey}
-                    className="mb-1 flex items-center justify-between rounded-xl p-3 transition-all duration-200 hover:bg-slate-50"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
-                        {initials(user.name)}
-                      </div>
-                      <span className="truncate text-sm text-slate-700">
-                        {user.name}
-                      </span>
-                    </div>
-                    <div className="ml-3 flex items-center gap-2">
-                      <span className="max-w-25 truncate text-xs text-slate-400">
-                        {user.email ?? ""}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={processingFriendshipId === user.friendshipId}
-                        onClick={() => void onRemoveFriend(user.friendshipId)}
-                        className="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 transition-all duration-200 hover:bg-rose-50 disabled:opacity-50"
-                      >
-                        {language === "vi" ? "Xoa" : "Remove"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {contactUsers.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-                    {language === "vi" ? "Chua co ban be" : "No friends yet"}
-                  </div>
-                )}
-              </div>
+    {activeTab !== "messages" && (
+      <aside className="w-[320px] shrink-0 border-r border-slate-200 bg-white">
+        {activeTab === "contacts" && (
+          <div className="flex h-full flex-col">
+            <div className="border-b border-slate-200 p-4">
+              <h2 className="text-sm font-semibold text-slate-800">
+                {language === "vi" ? "Loi moi ket ban" : "Friend Requests"}
+              </h2>
             </div>
-          )}
 
-          {activeTab === "profile" && (
-            <div className="p-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="space-y-2 border-b border-slate-200 p-3">
+              {pendingFriendRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
+                  {language === "vi"
+                    ? "Chua co loi moi. Dung nut Them ban de tim theo email."
+                    : "No pending request. Use New Message to search by email."}
+                </div>
+              ) : (
+                pendingFriendRequests.map((request) => {
+                  const profile = userProfileMap[request.requesterId];
+                  const displayName =
+                    profile?.fullName ??
+                    `User ${request.requesterId.slice(0, 8)}`;
+                  const displayEmail = profile?.email ?? request.requesterId;
+
+                  return (
+                    <div
+                      key={request.friendshipId}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="mb-2 flex items-center gap-3">
+                        <div className="grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                          {initials(displayName)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            {displayName}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {displayEmail}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            processingFriendshipId === request.friendshipId
+                          }
+                          onClick={() =>
+                            void onAcceptFriendRequest(request.friendshipId)
+                          }
+                          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                        >
+                          {language === "vi" ? "Chap nhan" : "Accept"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            processingFriendshipId === request.friendshipId
+                          }
+                          onClick={() =>
+                            void onDeclineFriendRequest(request.friendshipId)
+                          }
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                        >
+                          {language === "vi" ? "Tu choi" : "Decline"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-4 pb-2">
+              <h2 className="text-sm font-semibold text-slate-800">
+                {language === "vi" ? "Tat ca ban be" : "All Friends"}
+              </h2>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+              {contactUsers.map((user) => (
+                <div
+                  key={user.sortKey}
+                  className="mb-1 flex cursor-pointer items-center justify-between rounded-xl p-3 transition-all duration-200 hover:bg-slate-50"
+                  onClick={() => void onOpenFriendConversation(user.id)}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                      {initials(user.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-slate-700">
+                        {user.name}
+                      </p>
+                      <p
+                        className={`text-[11px] ${user.isOnline ? "text-emerald-600" : "text-slate-400"}`}
+                      >
+                        {user.presenceLabel}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ml-3 flex items-center gap-2">
+                    <span className="max-w-25 truncate text-xs text-slate-400">
+                      {user.email ?? ""}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={processingFriendshipId === user.friendshipId}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onRemoveFriend(user.friendshipId);
+                      }}
+                      className="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 transition-all duration-200 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      {language === "vi" ? "Xoa" : "Remove"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {contactUsers.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
+                  {language === "vi" ? "Chua co ban be" : "No friends yet"}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "profile" && (
+          <div className="p-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              {profileAvatarUrl ? (
+                <img
+                  src={profileAvatarUrl}
+                  alt="avatar"
+                  className="mb-3 h-14 w-14 rounded-full object-cover"
+                />
+              ) : (
                 <div className="mb-3 grid h-14 w-14 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
                   {initials(myProfile?.fullName ?? "User")}
                 </div>
-                <h2 className="text-base font-semibold text-slate-800">
-                  {myProfile?.fullName ?? "User"}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {myProfile?.email ?? "-"}
-                </p>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
-                >
-                  <Settings size={16} />
-                  <span>
-                    {language === "vi"
-                      ? "Cai dat tai khoan"
-                      : "Account Settings"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
-                >
-                  <Bell size={16} />
-                  <span>
-                    {language === "vi" ? "Thong bao" : "Notifications"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
-                >
-                  <Shield size={16} />
-                  <span>{language === "vi" ? "Bao mat" : "Privacy"}</span>
-                </button>
-              </div>
+              )}
+              <h2 className="text-base font-semibold text-slate-800">
+                {myProfile?.fullName ?? "User"}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {myProfile?.email ?? "-"}
+              </p>
             </div>
-          )}
 
-          {activeTab === "calls" && (
-            <div className="flex h-full items-center justify-center p-6 text-center">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">
-                  {language === "vi" ? "Cuoc goi" : "Calls"}
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  {language === "vi"
-                    ? "Muc calls se duoc mo rong o buoc tiep theo."
-                    : "Calls section will be expanded in the next step."}
-                </p>
-              </div>
-            </div>
-          )}
+            <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+              <label className="block text-xs font-semibold text-slate-500">
+                {language === "vi" ? "Email" : "Email"}
+                <input
+                  type="text"
+                  value={myProfile?.email ?? ""}
+                  readOnly
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500"
+                />
+              </label>
 
-          {activeTab === "settings" && (
-            <div className="p-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-base font-semibold text-slate-800">
-                  {language === "vi" ? "Cai dat" : "Settings"}
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {language === "vi"
-                    ? "Tuy chinh tai khoan va ung dung"
-                    : "Customize account and app preferences"}
-                </p>
-              </div>
-              <div className="mt-4">
-                <Link
-                  to="/login"
-                  onClick={() => clearAuthTokens()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
-                >
-                  <LogOut size={16} />
-                  <span>{language === "vi" ? "Dang xuat" : "Logout"}</span>
-                </Link>
-              </div>
-            </div>
-          )}
-        </aside>
-      )}
+              <label className="block text-xs font-semibold text-slate-500">
+                {language === "vi" ? "Ho ten" : "Full name"}
+                <input
+                  type="text"
+                  value={profileFullName}
+                  onChange={(event) => setProfileFullName(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+              </label>
 
-      <main className="min-w-0 flex-1 bg-slate-50">
-        {activeTab === "messages" ? (
-          <section className="relative flex h-full flex-col overflow-hidden">
-            <Chat
-              language={language}
-              activeConversation={activeConversation}
-              messages={messages}
-              myProfile={myProfile}
-              isLoadingMessages={isLoadingMessages}
-              draftMessage={draftMessage}
-              onDraftChange={(value) => {
-                setDraftMessage(value);
-                const client = realtimeClientRef.current;
-                if (!activeConversationId || !client || !client.isConnected()) {
-                  return;
-                }
+              <label className="block text-xs font-semibold text-slate-500">
+                {language === "vi" ? "So dien thoai" : "Phone"}
+                <input
+                  type="text"
+                  value={profilePhone}
+                  onChange={(event) => setProfilePhone(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+              </label>
 
-                client.publishTyping(activeConversationId, true);
-                if (typingTimeoutRef.current) {
-                  window.clearTimeout(typingTimeoutRef.current);
-                }
-                typingTimeoutRef.current = window.setTimeout(() => {
-                  client.publishTyping(activeConversationId, false);
-                  typingTimeoutRef.current = null;
-                }, 1200);
-              }}
-              onSendMessage={onSendMessage}
-              onSendFiles={onSendFiles}
-              onEditMessage={onEditMessage}
-              onRecallMessage={onRecallMessage}
-              onDeleteForMe={onDeleteForMe}
-              onForwardMessage={onForwardMessage}
-              onReactMessage={onReactMessage}
-              pendingUploads={pendingUploads}
-              onRetryUpload={onRetryUpload}
-              onCancelUpload={onCancelUpload}
-              isSending={isSending}
-              typingText={typingUserId ? `${typingUserId} is typing...` : null}
-              hasMoreMessages={Boolean(nextCursor)}
-              isLoadingMoreMessages={isLoadingMoreMessages}
-              onLoadOlderMessages={onLoadOlderMessages}
-            />
-          </section>
-        ) : (
-          <div className="flex h-full items-center justify-center p-8 text-center">
-            <div>
-              <h2 className="text-2xl font-semibold text-slate-800">
+              <label className="block text-xs font-semibold text-slate-500">
                 {language === "vi"
-                  ? "Chon tab Messages"
-                  : "Select Messages tab"}
+                  ? "Avatar (upload S3)"
+                  : "Avatar (upload S3)"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    void onSelectProfileAvatar(
+                      event.target.files?.[0] ?? null,
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+                {profileAvatarUrl && (
+                  <a
+                    href={profileAvatarUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block truncate text-[11px] font-normal text-indigo-600 hover:text-indigo-700"
+                  >
+                    {profileAvatarUrl}
+                  </a>
+                )}
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-500">
+                {language === "vi" ? "Gioi tinh" : "Gender"}
+                <select
+                  value={profileGender}
+                  onChange={(event) => setProfileGender(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                >
+                  <option value="">
+                    {language === "vi" ? "Khong chon" : "Not set"}
+                  </option>
+                  <option value="MALE">
+                    {language === "vi" ? "Nam" : "Male"}
+                  </option>
+                  <option value="FEMALE">
+                    {language === "vi" ? "Nu" : "Female"}
+                  </option>
+                  <option value="OTHER">
+                    {language === "vi" ? "Khac" : "Other"}
+                  </option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-500">
+                {language === "vi" ? "Ngay sinh" : "Birthdate"}
+                <input
+                  type="date"
+                  value={profileBirthdate}
+                  onChange={(event) =>
+                    setProfileBirthdate(event.target.value)
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+              </label>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void onSaveProfile()}
+                  disabled={isSavingProfile || isUploadingAvatar}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {isUploadingAvatar
+                    ? language === "vi"
+                      ? "Dang tai anh..."
+                      : "Uploading avatar..."
+                    : isSavingProfile
+                      ? language === "vi"
+                        ? "Dang luu..."
+                        : "Saving..."
+                      : language === "vi"
+                        ? "Luu thong tin"
+                        : "Save profile"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void onDeleteProfile()}
+                  disabled={isDeletingProfile}
+                  className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 disabled:opacity-50"
+                >
+                  {isDeletingProfile
+                    ? language === "vi"
+                      ? "Dang xoa..."
+                      : "Deleting..."
+                    : language === "vi"
+                      ? "Xoa tai khoan"
+                      : "Delete account"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "calls" && (
+          <div className="flex h-full items-center justify-center p-6 text-center">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">
+                {language === "vi" ? "Cuoc goi" : "Calls"}
               </h2>
               <p className="mt-2 text-sm text-slate-500">
                 {language === "vi"
-                  ? "Chuyen ve tab Messages de bat dau nhan tin real-time."
-                  : "Switch back to Messages tab to start real-time chat."}
+                  ? "Muc calls se duoc mo rong o buoc tiep theo."
+                  : "Calls section will be expanded in the next step."}
               </p>
             </div>
           </div>
         )}
-      </main>
 
-      <AddFriendModal
-        language={language}
-        open={isAddFriendOpen}
-        friendEmail={friendEmail}
-        onFriendEmailChange={setFriendEmail}
-        onClose={() => {
-          setIsAddFriendOpen(false);
-          setFriendEmail("");
-          setFriendProfile(null);
-          setFriendshipStatus("NONE");
-        }}
-        onSearch={onSearchFriendByEmail}
-        onAddFriend={onAddFriend}
-        isSearchingFriend={isSearchingFriend}
-        isSubmittingFriend={isSubmittingFriend}
-        friendProfile={friendProfile}
-        friendshipStatus={friendshipStatus}
-        canAddFriend={canAddFriend}
-      />
-
-      <ForwardMessageModal
-        open={isForwardModalOpen}
-        language={language}
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        isSubmitting={isForwardingMessage}
-        onSearchUserByEmail={onSearchUserForForward}
-        onClose={() => {
-          setIsForwardModalOpen(false);
-          setForwardMessageId(null);
-        }}
-        onConfirm={onConfirmForwardTargets}
-      />
-
-      {bannerMessage && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
-          {bannerMessage}
-        </div>
-      )}
-
-      {uploadLimitModalMessage && (
-        <div className="fixed inset-0 z-60 grid place-items-center bg-slate-900/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-semibold text-slate-900">
-              {language === "vi" ? "Vuot gioi han dung luong" : "File size limit exceeded"}
-            </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
-              {uploadLimitModalMessage}
-            </p>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setUploadLimitModalMessage(null)}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                OK
-              </button>
+        {activeTab === "settings" && (
+          <div className="p-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-base font-semibold text-slate-800">
+                {language === "vi" ? "Cai dat" : "Settings"}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {language === "vi"
+                  ? "Tuy chinh tai khoan va ung dung"
+                  : "Customize account and app preferences"}
+              </p>
             </div>
+            <div className="mt-4">
+              <Link
+                to="/login"
+                onClick={() => clearAuthTokens()}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
+              >
+                <LogOut size={16} />
+                <span>{language === "vi" ? "Dang xuat" : "Logout"}</span>
+              </Link>
+            </div>
+          </div>
+        )}
+      </aside>
+    )}
+
+    <main className="min-w-0 flex-1 bg-slate-50">
+      {activeTab === "messages" ? (
+        <section className="relative flex h-full flex-col overflow-hidden">
+          <Chat
+            language={language}
+            activeConversation={activeConversationForView}
+            activeConversationOnline={
+              activeConversationPresence?.online ?? false
+            }
+            activeConversationPresenceLabel={toPresenceLabel(
+              activeConversationPresence,
+            )}
+            messages={messages}
+            myProfile={myProfile}
+            isLoadingMessages={isLoadingMessages}
+            draftMessage={draftMessage}
+            onDraftChange={(value) => {
+              setDraftMessage(value);
+              const client = realtimeClientRef.current;
+              if (!activeConversationId || !client || !client.isConnected()) {
+                return;
+              }
+
+              client.publishTyping(activeConversationId, true);
+              if (typingTimeoutRef.current) {
+                window.clearTimeout(typingTimeoutRef.current);
+              }
+              typingTimeoutRef.current = window.setTimeout(() => {
+                client.publishTyping(activeConversationId, false);
+                typingTimeoutRef.current = null;
+              }, 1200);
+            }}
+            onSendMessage={onSendMessage}
+            onSendFiles={onSendFiles}
+            onEditMessage={onEditMessage}
+            onRecallMessage={onRecallMessage}
+            onDeleteForMe={onDeleteForMe}
+            onForwardMessage={onForwardMessage}
+            onReactMessage={onReactMessage}
+            pendingUploads={pendingUploads}
+            onRetryUpload={onRetryUpload}
+            onCancelUpload={onCancelUpload}
+            isSending={isSending}
+            typingText={typingUserId ? `${typingUserId} is typing...` : null}
+            hasMoreMessages={Boolean(nextCursor)}
+            isLoadingMoreMessages={isLoadingMoreMessages}
+            onLoadOlderMessages={onLoadOlderMessages}
+          />
+        </section>
+      ) : (
+        <div className="flex h-full items-center justify-center p-8 text-center">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-800">
+              {language === "vi"
+                ? "Chon tab Messages"
+                : "Select Messages tab"}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {language === "vi"
+                ? "Chuyen ve tab Messages de bat dau nhan tin real-time."
+                : "Switch back to Messages tab to start real-time chat."}
+            </p>
           </div>
         </div>
       )}
-    </div>
-  );
+    </main>
+
+    <AddFriendModal
+      language={language}
+      open={isAddFriendOpen}
+      friendEmail={friendEmail}
+      onFriendEmailChange={setFriendEmail}
+      onClose={() => {
+        setIsAddFriendOpen(false);
+        setFriendEmail("");
+        setFriendProfile(null);
+        setFriendshipStatus("NONE");
+      }}
+      onSearch={onSearchFriendByEmail}
+      onAddFriend={onAddFriend}
+      isSearchingFriend={isSearchingFriend}
+      isSubmittingFriend={isSubmittingFriend}
+      friendProfile={friendProfile}
+      friendshipStatus={friendshipStatus}
+      canAddFriend={canAddFriend}
+    />
+
+    <ForwardMessageModal
+      open={isForwardModalOpen}
+      language={language}
+      conversations={conversations}
+      activeConversationId={activeConversationId}
+      isSubmitting={isForwardingMessage}
+      onSearchUserByEmail={onSearchUserForForward}
+      onClose={() => {
+        setIsForwardModalOpen(false);
+        setForwardMessageId(null);
+      }}
+      onConfirm={onConfirmForwardTargets}
+    />
+
+    {bannerMessage && (
+      <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
+        {bannerMessage}
+      </div>
+    )}
+
+    {uploadLimitModalMessage && (
+      <div className="fixed inset-0 z-60 grid place-items-center bg-slate-900/45 p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <h3 className="text-base font-semibold text-slate-900">
+            {language === "vi" ? "Vuot gioi han dung luong" : "File size limit exceeded"}
+          </h3>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+            {uploadLimitModalMessage}
+          </p>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setUploadLimitModalMessage(null)}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
 }

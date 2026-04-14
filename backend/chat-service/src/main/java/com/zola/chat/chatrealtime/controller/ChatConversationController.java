@@ -8,6 +8,7 @@ import com.zola.chat.chatrealtime.dto.ChatEditRequest;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
+import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.chatrealtime.service.ChatRealtimeService;
 import com.zola.common.response.ApiResponse;
 import com.zola.chat.chatrealtime.dto.ChatDeleteForMeRequest;
@@ -139,10 +140,19 @@ public class ChatConversationController {
 
     @GetMapping("/users/{userId}/online")
     public ApiResponse<Map<String, Object>> onlineStatus(@PathVariable("userId") String userId) {
+        UserPresenceResponse presence = chatRealtimeService.getUserPresence(userId);
         return ApiResponse.ok("Online status", Map.of(
             "userId", userId,
-            "online", chatRealtimeService.isOnline(userId)
+            "online", presence.online(),
+            "lastChangedAt", presence.lastChangedAt()
         ));
+    }
+
+    @GetMapping("/users/presence")
+    public ApiResponse<List<UserPresenceResponse>> userPresence(
+        @RequestParam("ids") List<String> userIds
+    ) {
+        return ApiResponse.ok("Presence fetched", chatRealtimeService.getUsersPresence(userIds));
     }
 
     public record SendMessageRequest(

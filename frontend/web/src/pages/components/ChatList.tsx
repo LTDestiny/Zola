@@ -8,6 +8,7 @@ export interface ChatListItem {
     lastMessage: string;
     unreadCount: number;
     isOnline: boolean;
+    presenceLabel?: string;
 }
 
 export interface ChatListProps {
@@ -18,7 +19,6 @@ export interface ChatListProps {
     onSelectChat: (chatId: string) => void;
     onCreateChat: () => void;
 }
-
 
 
 export function ChatList({
@@ -47,7 +47,10 @@ export function ChatList({
 
             <div className="sticky top-0 z-10 bg-white px-4 pb-3">
                 <div className="relative">
-                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Search
+                        size={15}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
                         type="text"
                         value={searchText}
@@ -81,25 +84,44 @@ export function ChatList({
 
                             <div className="min-w-0 flex-1">
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                    <p className={`truncate font-semibold ${hasUnread ? "text-slate-900" : "text-slate-700"}`}>{chat.name}</p>
-                                    <span className="text-xs text-gray-400">{chat.timestamp}</span>
+                                    <p className="truncate font-semibold text-slate-900">
+                                        {chat.name}
+                                    </p>
+                                    <span className="text-xs text-gray-400">
+                                        {chat.timestamp}
+                                    </span>
                                 </div>
 
-                                <div className="flex items-center justify-between gap-2">
-                                    <p className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-800" : "text-gray-500"}`}>
-                                        {chat.lastMessage}
-                                    </p>
-                                    {hasUnread && (
-                                        <span className="rounded-full bg-red-500 px-2 text-xs text-white">
-                                            {chat.unreadCount}
-                                        </span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <p className={`truncate font-semibold ${hasUnread ? "text-slate-900" : "text-slate-700"}`}>{chat.name}</p>
+                                        <span className="text-xs text-gray-400">{chat.timestamp}</span>
+                                    </div>
+                                    {chat.presenceLabel && (
+                                        <p
+                                            className={`mb-1 text-[11px] ${chat.isOnline ? "text-emerald-600" : "text-slate-400"}`}
+                                        >
+                                            {chat.presenceLabel}
+                                        </p>
                                     )}
+
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p
+                                            className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-800" : "text-gray-500"}`}
+                                        >
+                                            {chat.lastMessage}
+                                        </p>
+                                        {hasUnread && (
+                                            <span className="rounded-full bg-red-500 px-2 text-xs text-white">
+                                                {chat.unreadCount}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        </button>
+                        </button >
                     );
                 })}
-            </div>
-        </aside>
+            </div >
+        </aside >
     );
 }

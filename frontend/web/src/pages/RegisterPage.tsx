@@ -191,6 +191,15 @@ export function RegisterPage() {
               >
                 {t("verifyRegister")}
               </button>
+
+              <button
+                className="h-11 rounded-lg border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
+                onClick={() => void onRegister()}
+                disabled={loading}
+              >
+                {language === "vi" ? "Gui lai OTP" : "Resend OTP"}
+              </button>
             </>
           )}
 

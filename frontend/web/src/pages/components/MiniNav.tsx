@@ -1,11 +1,23 @@
-import { MessageSquare, Phone, Settings, UserCircle2, Users } from "lucide-react";
+import {
+    MessageSquare,
+    Phone,
+    Settings,
+    UserCircle2,
+    Users,
+} from "lucide-react";
 
-export type MiniNavTab = "messages" | "contacts" | "calls" | "profile" | "settings";
+export type MiniNavTab =
+    | "messages"
+    | "contacts"
+    | "calls"
+    | "profile"
+    | "settings";
 
 export interface MiniNavProps {
     active: MiniNavTab;
     onChange: (tab: MiniNavTab) => void;
     messageBadge?: number;
+    contactsBadge?: number;
 }
 
 interface NavItem {
@@ -27,8 +39,8 @@ const bottomItems: NavItem[] = [
 
 function navButtonClass(isActive: boolean) {
     return `relative flex h-12 w-full items-center justify-center text-white transition-all duration-200 ${isActive
-            ? "border-l-4 border-white bg-indigo-800"
-            : "border-l-4 border-transparent hover:bg-indigo-800/70"
+        ? "border-l-4 border-white bg-indigo-800"
+        : "border-l-4 border-transparent hover:bg-indigo-800/70"
         }`;
 }
 

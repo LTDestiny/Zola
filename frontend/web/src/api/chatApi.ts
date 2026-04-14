@@ -13,9 +13,20 @@ export type UserProfile = {
   id: string;
   fullName: string;
   email: string | null;
+  phone?: string | null;
   avatarUrl: string | null;
   gender: string | null;
   birthdate: string | null;
+  isOnline?: boolean | null;
+  lastSeenAt?: string | null;
+};
+
+export type UpdateUserProfileInput = {
+  fullName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  gender?: string | null;
+  birthdate?: string | null;
 };
 
 export type ConversationItem = {
@@ -39,6 +50,12 @@ export type PendingFriendRequestItem = {
 export type FriendContactItem = {
   friendshipId: string;
   userId: string;
+};
+
+export type UserPresenceItem = {
+  userId: string;
+  online: boolean;
+  lastChangedAt: string | null;
 };
 
 export type MessageItem = {
@@ -72,6 +89,21 @@ export async function getMyProfile() {
   return response.data;
 }
 
+export async function updateMyProfile(input: UpdateUserProfileInput) {
+  const response = await httpClient.put<ApiResponse<UserProfile>>(
+    "/api/v1/users/me/profile",
+    input,
+  );
+  return response.data;
+}
+
+export async function deleteMyProfile() {
+  const response = await httpClient.delete<ApiResponse<{ ok: boolean }>>(
+    "/api/v1/users/me/profile",
+  );
+  return response.data;
+}
+
 export async function searchUserByEmail(email: string) {
   const response = await httpClient.get<ApiResponse<UserProfile>>(
     "/api/v1/users/search-by-email",
@@ -85,6 +117,29 @@ export async function searchUserByEmail(email: string) {
 export async function getUserSummary(userId: string) {
   const response = await httpClient.get<ApiResponse<UserProfile>>(
     `/api/v1/users/${userId}/summary`,
+  );
+  return response.data;
+}
+
+export async function getUsersPresence(userIds: string[]) {
+  const ids = userIds
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(",");
+
+  if (!ids) {
+    return {
+      success: true,
+      message: "Presence fetched",
+      data: [] as UserPresenceItem[],
+    };
+  }
+
+  const response = await httpClient.get<ApiResponse<UserPresenceItem[]>>(
+    "/api/v1/users/presence",
+    {
+      params: { ids },
+    },
   );
   return response.data;
 }
@@ -112,6 +167,21 @@ export async function getPendingFriendRequests() {
   const response = await httpClient.get<
     ApiResponse<PendingFriendRequestItem[]>
   >("/api/v1/users/friendships/pending");
+  return response.data;
+}
+
+export async function getPendingFriendRequestsUnreadCount() {
+  const response = await httpClient.get<ApiResponse<{ count: number }>>(
+    "/api/v1/users/friendships/pending/unread-count",
+  );
+  return response.data;
+}
+
+export async function markPendingFriendRequestsRead() {
+  const response = await httpClient.post<ApiResponse<{ updated: number }>>(
+    "/api/v1/users/friendships/pending/mark-read",
+    {},
+  );
   return response.data;
 }
 
@@ -352,6 +422,9 @@ export async function removeReaction(
 
 export function toApiErrorMessage(error: unknown): string {
   const axiosError = error as AxiosError<{ message?: string }>;
+  if (axiosError.response?.status === 413) {
+    return "File qua lon. Vui long chon file nho hon gioi han he thong.";
+  }
   return (
     axiosError.response?.data?.message ??
     axiosError.message ??

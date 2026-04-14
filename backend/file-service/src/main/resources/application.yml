@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: file-service
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:20MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:25MB}
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:zola_file_db}
     username: ${DB_USER:zola}

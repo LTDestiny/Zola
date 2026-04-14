@@ -40,6 +40,23 @@ export function AddFriendModal({
 }: AddFriendModalProps) {
   if (!open) return null;
 
+  const statusText = (() => {
+    const normalized = friendshipStatus.trim().toUpperCase();
+    if (language === "vi") {
+      if (normalized === "NONE") return "Nguoi la";
+      if (normalized === "PENDING") return "Dang cho xac nhan";
+      if (normalized === "ACCEPTED") return "Ban be";
+      if (normalized === "REJECTED") return "Da tu choi";
+      return normalized || "Nguoi la";
+    }
+
+    if (normalized === "NONE") return "Stranger";
+    if (normalized === "PENDING") return "Pending";
+    if (normalized === "ACCEPTED") return "Accepted";
+    if (normalized === "REJECTED") return "Rejected";
+    return normalized || "Stranger";
+  })();
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5">
@@ -61,7 +78,13 @@ export function AddFriendModal({
             onClick={() => void onSearch()}
             disabled={isSearchingFriend || !friendEmail.trim()}
           >
-            {isSearchingFriend ? (language === "vi" ? "Dang tim" : "Searching") : (language === "vi" ? "Tim" : "Search")}
+            {isSearchingFriend
+              ? language === "vi"
+                ? "Dang tim"
+                : "Searching"
+              : language === "vi"
+                ? "Tim"
+                : "Search"}
           </button>
         </div>
 
@@ -71,9 +94,13 @@ export function AddFriendModal({
               {initials(friendProfile.fullName)}
             </div>
             <div>
-              <strong className="block text-sm text-slate-900">{friendProfile.fullName}</strong>
-              <p className="m-0 text-xs text-slate-500">{friendProfile.email ?? "-"}</p>
-              <p className="m-0 text-xs text-slate-500">Status: {friendshipStatus}</p>
+              <strong className="block text-sm text-slate-900">
+                {friendProfile.fullName}
+              </strong>
+              <p className="m-0 text-xs text-slate-500">
+                {friendProfile.email ?? "-"}
+              </p>
+              <p className="m-0 text-xs text-slate-500">Status: {statusText}</p>
             </div>
           </div>
         )}
