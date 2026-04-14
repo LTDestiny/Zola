@@ -1,6 +1,8 @@
 import { AxiosError } from "axios";
 import { httpClient } from "./httpClient";
 
+let supportsConversationReadEndpoint: boolean | null = null;
+
 type ApiResponse<T> = {
   success: boolean;
   message: string;
@@ -21,6 +23,9 @@ export type ConversationItem = {
   name: string;
   lastMessage: string;
   lastMessageAt: string | null;
+  unreadCount: number;
+  lastReadAt?: string | null;
+  lastReadMessageId?: string | null;
   participants: string[];
 };
 
@@ -48,9 +53,16 @@ export type MessageItem = {
   reactions?: string[];
   recalled?: boolean;
   deletedForUsers?: string[];
+  deliveredTo?: string[];
   seenBy?: string[];
   createdAt: string | null;
   updatedAt?: string | null;
+  edited?: boolean;
+};
+
+export type MessagePageData = {
+  items: MessageItem[];
+  nextCursor: string | null;
 };
 
 export async function getMyProfile() {
@@ -135,7 +147,16 @@ export async function getConversations() {
   const response = await httpClient.get<ApiResponse<ConversationItem[]>>(
     "/api/v1/chat/conversations",
   );
-  return response.data;
+  const normalized = (response.data.data ?? []).map((item) => ({
+    ...item,
+    unreadCount: Number.isFinite(item.unreadCount) ? item.unreadCount : 0,
+    lastReadAt: item.lastReadAt ?? null,
+    lastReadMessageId: item.lastReadMessageId ?? null,
+  }));
+  return {
+    ...response.data,
+    data: normalized,
+  };
 }
 
 export async function createDirectConversation(targetUserId: string) {
@@ -148,16 +169,49 @@ export async function createDirectConversation(targetUserId: string) {
 
 export async function getMessages(
   conversationId: string,
-  options?: { page?: number; size?: number },
+  options?: { cursor?: string | null; limit?: number },
 ) {
-  const response = await httpClient.get<ApiResponse<MessageItem[]>>(
+  const response = await httpClient.get<
+    ApiResponse<MessagePageData | MessageItem[]>
+  >(
     `/api/v1/chat/conversations/${conversationId}/messages`,
     {
       params: {
-        page: options?.page ?? 0,
-        size: options?.size ?? 50,
+        cursor: options?.cursor ?? undefined,
+        limit: options?.limit ?? 50,
       },
     },
+  );
+
+  const payload = response.data.data;
+  if (Array.isArray(payload)) {
+    // Backward compatible shape from old gateway/service: data is MessageItem[]
+    return {
+      ...response.data,
+      data: {
+        items: payload,
+        nextCursor: null,
+      },
+    };
+  }
+
+  return {
+    ...response.data,
+    data: {
+      items: payload?.items ?? [],
+      nextCursor: payload?.nextCursor ?? null,
+    },
+  };
+}
+
+export async function editMessage(
+  conversationId: string,
+  messageId: string,
+  content: string,
+) {
+  const response = await httpClient.patch<ApiResponse<{ messageId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/edit`,
+    { content },
   );
   return response.data;
 }
@@ -214,6 +268,56 @@ export async function readMessage(conversationId: string, messageId: string) {
     `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/read`,
   );
   return response.data;
+}
+
+export async function markConversationRead(
+  conversationId: string,
+  messageId?: string | null,
+) {
+  if (supportsConversationReadEndpoint === false) {
+    if (messageId) {
+      await readMessage(conversationId, messageId);
+    }
+    return {
+      success: true,
+      message: "Read state updated via backward-compatible endpoint",
+      data: {
+        conversationId,
+        messageId: messageId ?? "",
+      },
+    };
+  }
+
+  try {
+    const response = await httpClient.patch<
+      ApiResponse<{ conversationId: string; messageId: string }>
+    >(`/api/v1/chat/conversations/${conversationId}/read`, null, {
+      params: {
+        messageId: messageId ?? undefined,
+      },
+    });
+    supportsConversationReadEndpoint = true;
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      supportsConversationReadEndpoint = false;
+      if (messageId) {
+        await readMessage(conversationId, messageId);
+      }
+      return {
+        success: true,
+        message: messageId
+          ? "Read state updated via fallback endpoint"
+          : "Conversation read endpoint unavailable, using compatibility mode",
+        data: {
+          conversationId,
+          messageId: messageId ?? "",
+        },
+      };
+    }
+    throw error;
+  }
 }
 
 export async function addReaction(

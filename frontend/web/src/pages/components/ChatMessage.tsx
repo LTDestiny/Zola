@@ -7,8 +7,25 @@ import type { ChatMessage, ChatMessageProps } from "./ChatMessage.types";
 export type { ChatMessage, ChatMessageProps };
 
 function ReadMark({ status }: { status: ChatMessage["status"] }) {
+  if (status === "uploading") {
+    return <span>uploading...</span>;
+  }
+
+  if (status === "upload_failed") {
+    return <span className="text-rose-500">upload failed</span>;
+  }
+
   if (status === "sending") {
     return <span>...</span>;
+  }
+
+  if (status === "delivered") {
+    return (
+      <span className="inline-flex items-center gap-0.5">
+        <CheckCheck size={12} className="text-sky-400" />
+        <span className="capitalize">delivered</span>
+      </span>
+    );
   }
 
   return (
@@ -42,6 +59,7 @@ export function ChatMessageRow({
   menuPlacement = "above",
   onDelete,
   onReply,
+  onEdit,
   onForward,
   onRecall,
   onReact,
@@ -147,6 +165,7 @@ export function ChatMessageRow({
             visible={showMenu}
             onDelete={onDelete}
             onReply={onReply}
+            onEdit={onEdit}
             onForward={onForward}
             onRecall={onRecall}
             onReact={onReact}

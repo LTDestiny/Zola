@@ -1,6 +1,7 @@
 package com.zola.chat.chatrealtime.service;
 
 import com.zola.chat.chatrealtime.dto.ChatDeleteForMeRequest;
+import com.zola.chat.chatrealtime.dto.ChatEditRequest;
 import com.zola.chat.chatrealtime.dto.ChatEventResponse;
 import com.zola.chat.chatrealtime.dto.ChatForwardRequest;
 import com.zola.chat.chatrealtime.dto.ChatReadReceiptRequest;
@@ -12,6 +13,7 @@ import com.zola.chat.chatrealtime.dto.ConversationListItemResponse;
 import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
+import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -20,13 +22,16 @@ import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
 import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -38,17 +43,23 @@ public class ChatRealtimeService {
     private final RealtimeMessageRepository messageRepository;
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
+    private final long editWindowSeconds;
+    private final long recallWindowSeconds;
 
     public ChatRealtimeService(
         PostgresConversationRepository conversationRepository,
         RealtimeMessageRepository messageRepository,
         RedisOnlineUserChecker onlineUserChecker,
-        PostgresMessageHiddenRepository messageHiddenRepository
+        PostgresMessageHiddenRepository messageHiddenRepository,
+        @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
+        @Value("${app.chat.recall-window-seconds:900}") long recallWindowSeconds
     ) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.onlineUserChecker = onlineUserChecker;
         this.messageHiddenRepository = messageHiddenRepository;
+        this.editWindowSeconds = editWindowSeconds;
+        this.recallWindowSeconds = recallWindowSeconds;
     }
 
     public ConversationResponse createDirectConversation(String requesterId, String targetUserId) {
@@ -56,7 +67,7 @@ public class ChatRealtimeService {
             throw new IllegalArgumentException("Cannot create conversation with yourself");
         }
         ConversationEntity conversation = conversationRepository.getOrCreateDirect(requesterId, targetUserId);
-        return toConversationResponse(conversation);
+        return toConversationResponse(conversation, requesterId);
     }
 
     public ChatEventResponse sendMessage(String senderId, ChatSendRequest request) {
@@ -78,11 +89,20 @@ public class ChatRealtimeService {
         item.setCreatedAt(now.toString());
         item.setUpdatedAt(now.toString());
         item.setRecalled(false);
+        item.setEdited(false);
         item.setSeenBy(new HashSet<>(Set.of(senderId)));
+        Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
+        if (onlineUserChecker.isOnline(receiverId)) {
+            deliveredTo.add(receiverId);
+        }
+        item.setDeliveredTo(deliveredTo);
         messageRepository.save(item);
 
         conversation.setLastMessage(item.getContent());
+        conversation.setLastMessageAt(now);
         conversation.setUpdatedAt(now);
+        conversation.incrementUnread(receiverId);
+        conversation.markRead(senderId, now, item.getId());
         conversationRepository.save(conversation);
 
         return new ChatEventResponse(
@@ -92,7 +112,11 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item)
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -106,9 +130,13 @@ public class ChatRealtimeService {
         if (!senderId.equals(item.getSenderId())) {
             throw new ForbiddenOperationException("Only sender can recall this message");
         }
+        ensureWithinWindow(item.getCreatedAt(), recallWindowSeconds, "Recall time window has expired");
 
         item.setRecalled(true);
         Instant recalledAt = Instant.now();
+        if (item.getAuditRecalledContent() == null) {
+            item.setAuditRecalledContent(item.getContent());
+        }
         item.setContent("This message was recalled");
         item.setRecalledBy(senderId);
         item.setRecalledAt(recalledAt.toString());
@@ -122,7 +150,61 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item)
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    public ChatEventResponse editMessage(String senderId, ChatEditRequest request) {
+        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
+        ensureMember(conversation, senderId);
+
+        MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
+            .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
+
+        if (!senderId.equals(item.getSenderId())) {
+            throw new ForbiddenOperationException("Only sender can edit this message");
+        }
+        if (item.isRecalled()) {
+            throw new ForbiddenOperationException("Recalled message cannot be edited");
+        }
+
+        String nextContent = request.content().trim();
+        if (nextContent.isBlank()) {
+            throw new ForbiddenOperationException("Message content must not be blank");
+        }
+
+        ensureWithinWindow(item.getCreatedAt(), editWindowSeconds, "Edit time window has expired");
+
+        if (item.getOriginalContent() == null) {
+            item.setOriginalContent(item.getContent());
+        }
+        item.setEdited(true);
+        item.setEditedAt(Instant.now().toString());
+        item.setContent(nextContent);
+        item.setUpdatedAt(Instant.now().toString());
+        messageRepository.save(item);
+
+        conversation.setLastMessage(nextContent);
+        conversation.setLastMessageAt(Instant.now());
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
+
+        return new ChatEventResponse(
+            "MESSAGE_UPDATED",
+            senderId,
+            request.conversationId().toString(),
+            false,
+            false,
+            null,
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -136,6 +218,10 @@ public class ChatRealtimeService {
             request.conversationId().toString(),
             request.typing(),
             false,
+            null,
+            null,
+            null,
+            null,
             null,
             null
         );
@@ -162,7 +248,11 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item)
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -188,11 +278,20 @@ public class ChatRealtimeService {
         forwarded.setCreatedAt(Instant.now().toString());
         forwarded.setUpdatedAt(Instant.now().toString());
         forwarded.setRecalled(false);
+        forwarded.setEdited(false);
         forwarded.setSeenBy(new HashSet<>(Set.of(senderId)));
+        Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
+        if (onlineUserChecker.isOnline(forwarded.getReceiverId())) {
+            deliveredTo.add(forwarded.getReceiverId());
+        }
+        forwarded.setDeliveredTo(deliveredTo);
         messageRepository.save(forwarded);
 
         target.setLastMessage(forwarded.getContent());
+        target.setLastMessageAt(Instant.now());
         target.setUpdatedAt(Instant.now());
+        target.incrementUnread(forwarded.getReceiverId());
+        target.markRead(senderId, Instant.now(), forwarded.getId());
         conversationRepository.save(target);
 
         return new ChatEventResponse(
@@ -202,7 +301,11 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(forwarded)
+            toMessagePayload(forwarded),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -210,14 +313,10 @@ public class ChatRealtimeService {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, userId);
 
-        MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
-            .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
+        MessageDocument item = markMessagesAsSeenUpTo(userId, request.conversationId(), request.messageId());
 
-        Set<String> readBy = item.getSeenBy() == null ? new HashSet<>() : new HashSet<>(item.getSeenBy());
-        readBy.add(userId);
-        item.setSeenBy(readBy);
-        item.setUpdatedAt(Instant.now().toString());
-        messageRepository.save(item);
+        conversation.markRead(userId, Instant.now(), request.messageId());
+        conversationRepository.save(conversation);
 
         return new ChatEventResponse(
             "READ_RECEIPT",
@@ -226,7 +325,11 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item)
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -258,7 +361,11 @@ public class ChatRealtimeService {
             false,
             false,
             null,
-            toMessagePayload(item)
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -284,11 +391,69 @@ public class ChatRealtimeService {
                 entity.getId().toString(),
                 peerUserId,
                 entity.getLastMessage() == null ? "" : entity.getLastMessage(),
-                entity.getUpdatedAt(),
+                entity.getLastMessageAt(),
+                entity.unreadCountOf(userId),
+                entity.getUser1Id().equals(userId) ? entity.getUser1LastReadAt() : entity.getUser2LastReadAt(),
+                entity.lastReadMessageIdOf(userId),
                 List.of(entity.getUser1Id(), entity.getUser2Id())
             ));
         }
         return items;
+    }
+
+    public ChatEventResponse markConversationAsRead(String userId, UUID conversationId, String explicitMessageId) {
+        ConversationEntity conversation = conversationRepository.findById(conversationId);
+        ensureMember(conversation, userId);
+
+        String messageId = explicitMessageId;
+        MessagePayload readMessagePayload = null;
+        if (messageId == null || messageId.isBlank()) {
+            messageId = newestMessageId(conversationId).orElse(null);
+        }
+
+        if (messageId != null && !messageId.isBlank()) {
+            MessageDocument readMessage = markMessagesAsSeenUpTo(userId, conversationId, messageId);
+            readMessagePayload = toMessagePayload(readMessage);
+        }
+
+        conversation.markRead(userId, Instant.now(), messageId);
+        conversationRepository.save(conversation);
+
+        return new ChatEventResponse(
+            "READ_RECEIPT",
+            userId,
+            conversationId.toString(),
+            false,
+            false,
+            null,
+            readMessagePayload,
+            0,
+            conversationRepository.sumUnreadByParticipant(userId),
+            conversation.getLastMessage(),
+            conversation.getLastMessageAt() == null ? null : conversation.getLastMessageAt().toString()
+        );
+    }
+
+    public int totalUnreadCount(String userId) {
+        return conversationRepository.sumUnreadByParticipant(userId);
+    }
+
+    public ChatEventResponse buildConversationUpdatedEvent(String userId, UUID conversationId, String eventType, MessagePayload message) {
+        ConversationEntity conversation = conversationRepository.findById(conversationId);
+        ensureMember(conversation, userId);
+        return new ChatEventResponse(
+            eventType,
+            userId,
+            conversationId.toString(),
+            false,
+            false,
+            null,
+            message,
+            conversation.unreadCountOf(userId),
+            conversationRepository.sumUnreadByParticipant(userId),
+            conversation.getLastMessage(),
+            conversation.getLastMessageAt() == null ? null : conversation.getLastMessageAt().toString()
+        );
     }
 
     public MessageItemResponse sendMessageHttp(
@@ -314,20 +479,38 @@ public class ChatRealtimeService {
             message.reactions(),
             message.recalled(),
             message.deletedForUsers(),
+            message.deliveredTo(),
             message.seenBy(),
             message.createdAt(),
-            message.updatedAt()
+            message.updatedAt(),
+            message.edited()
         );
     }
 
-    public List<MessageItemResponse> getMessagesHttp(String userId, UUID conversationId, int page, int size) {
-        List<MessagePayload> messages = getMessages(userId, conversationId);
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.max(size, 1);
-        int fromIndex = Math.min(safePage * safeSize, messages.size());
-        int toIndex = Math.min(fromIndex + safeSize, messages.size());
+    public MessagesPageResponse getMessagesHttp(String userId, UUID conversationId, String cursor, int limit) {
+        List<MessagePayload> messages = getMessages(userId, conversationId).stream()
+            .sorted(Comparator
+                .comparing(MessagePayload::createdAt, Comparator.nullsLast(String::compareTo))
+                .thenComparing(MessagePayload::messageId, Comparator.nullsLast(String::compareTo))
+                .reversed())
+            .toList();
 
-        return messages.subList(fromIndex, toIndex).stream()
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        int start = 0;
+        if (cursor != null && !cursor.isBlank()) {
+            for (int index = 0; index < messages.size(); index += 1) {
+                if (cursor.equals(messages.get(index).messageId())) {
+                    start = index + 1;
+                    break;
+                }
+            }
+        }
+
+        int end = Math.min(start + safeLimit, messages.size());
+        List<MessagePayload> pageSlice = messages.subList(start, end);
+        String nextCursor = end < messages.size() ? pageSlice.get(pageSlice.size() - 1).messageId() : null;
+
+        List<MessageItemResponse> items = pageSlice.stream()
             .map(message -> new MessageItemResponse(
                 message.messageId(),
                 message.conversationId(),
@@ -340,11 +523,15 @@ public class ChatRealtimeService {
                 message.reactions(),
                 message.recalled(),
                 message.deletedForUsers(),
+                message.deliveredTo(),
                 message.seenBy(),
                 message.createdAt(),
-                message.updatedAt()
+                message.updatedAt(),
+                message.edited()
             ))
             .toList();
+
+        return new MessagesPageResponse(items, nextCursor);
     }
 
     public boolean isOnline(String userId) {
@@ -369,10 +556,12 @@ public class ChatRealtimeService {
             item.getFileName(),
             item.getReactions(),
             item.getDeletedForUsers(),
+            item.getDeliveredTo(),
             item.getSeenBy(),
             item.getCreatedAt(),
             item.getUpdatedAt(),
-            item.isRecalled()
+            item.isRecalled(),
+            item.isEdited()
         );
     }
 
@@ -383,17 +572,78 @@ public class ChatRealtimeService {
         return conversation.getUser1Id();
     }
 
-    private ConversationResponse toConversationResponse(ConversationEntity entity) {
+    private ConversationResponse toConversationResponse(ConversationEntity entity, String requesterId) {
         return new ConversationResponse(
             entity.getId(),
             entity.getUser1Id(),
             entity.getUser2Id(),
             entity.getLastMessage(),
+            entity.getLastMessageAt(),
+            entity.unreadCountOf(requesterId),
+            entity.getUser1Id().equals(requesterId) ? entity.getUser1LastReadAt() : entity.getUser2LastReadAt(),
+            entity.lastReadMessageIdOf(requesterId),
             entity.getUpdatedAt()
         );
     }
 
+    private Optional<String> newestMessageId(UUID conversationId) {
+        List<MessageDocument> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId.toString());
+        if (items.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(items.get(items.size() - 1).getId());
+    }
+
+    private MessageDocument markMessagesAsSeenUpTo(String userId, UUID conversationId, String messageId) {
+        List<MessageDocument> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId.toString());
+        if (items.isEmpty()) {
+            throw new ResourceNotFoundException("Message not found");
+        }
+
+        Instant now = Instant.now();
+        MessageDocument target = null;
+
+        for (MessageDocument item : items) {
+            Set<String> deliveredTo = item.getDeliveredTo() == null ? new HashSet<>() : new HashSet<>(item.getDeliveredTo());
+            deliveredTo.add(userId);
+            item.setDeliveredTo(deliveredTo);
+
+            Set<String> readBy = item.getSeenBy() == null ? new HashSet<>() : new HashSet<>(item.getSeenBy());
+            readBy.add(userId);
+            item.setSeenBy(readBy);
+            item.setUpdatedAt(now.toString());
+            messageRepository.save(item);
+
+            if (messageId.equals(item.getId())) {
+                target = item;
+                break;
+            }
+        }
+
+        if (target == null) {
+            throw new ResourceNotFoundException("Message not found");
+        }
+        return target;
+    }
+
     private String generateMessageId() {
         return Instant.now().toEpochMilli() + "-" + UUID.randomUUID();
+    }
+
+    private void ensureWithinWindow(String createdAtRaw, long windowSeconds, String errorMessage) {
+        if (windowSeconds <= 0) {
+            return;
+        }
+        Instant createdAt;
+        try {
+            createdAt = Instant.parse(createdAtRaw);
+        } catch (Exception ex) {
+            throw new ForbiddenOperationException(errorMessage);
+        }
+
+        Instant deadline = createdAt.plusSeconds(windowSeconds);
+        if (Instant.now().isAfter(deadline)) {
+            throw new ForbiddenOperationException(errorMessage);
+        }
     }
 }

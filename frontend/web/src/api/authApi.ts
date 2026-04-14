@@ -100,6 +100,14 @@ export async function verifyForgotOtp(email: string, code: string) {
 
 export function toErrorMessage(error: unknown): string {
   const axiosError = error as AxiosError<ErrorResponseShape>;
+  if (axiosError.code === "ECONNABORTED") {
+    return "Ket noi den may chu bi timeout. Vui long thu lai sau vai giay.";
+  }
+
+  if (axiosError.code === "ERR_NETWORK") {
+    return "Khong the ket noi den may chu. Hay kiem tra backend va URL API.";
+  }
+
   const payload = axiosError.response?.data;
   const firstValidationError = payload?.errors?.[0]?.defaultMessage;
 

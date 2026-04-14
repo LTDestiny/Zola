@@ -29,7 +29,10 @@ public class PostgresConversationRepository {
                     entity.setUser2Id(userA);
                 }
                 entity.setLastMessage("");
+                entity.setLastMessageAt(Instant.now());
                 entity.setUpdatedAt(Instant.now());
+                entity.setUser1UnreadCount(0);
+                entity.setUser2UnreadCount(0);
                 return conversationJpaRepository.save(entity);
             });
     }
@@ -49,5 +52,9 @@ public class PostgresConversationRepository {
 
     public ConversationEntity save(ConversationEntity entity) {
         return conversationJpaRepository.save(entity);
+    }
+
+    public int sumUnreadByParticipant(String userId) {
+        return conversationJpaRepository.sumUnreadByParticipant(userId);
     }
 }

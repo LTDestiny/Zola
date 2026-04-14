@@ -8,6 +8,7 @@ import {
   createDirectConversation,
   deleteForMe,
   declineFriendRequest,
+  editMessage,
   forwardMessage,
   getConversations,
   getFriends,
@@ -16,6 +17,7 @@ import {
   getMyProfile,
   getPendingFriendRequests,
   getUserSummary,
+  markConversationRead,
   removeFriend,
   readMessage,
   recallMessage,
@@ -42,6 +44,7 @@ import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
+import { useChatStore } from "../stores/chatStore";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -52,13 +55,92 @@ function initials(name: string) {
     .join("");
 }
 
+function toPolicyViolationMessage(
+  error: unknown,
+  action: "edit" | "recall",
+  language: "vi" | "en",
+) {
+  const fallback = toApiErrorMessage(error);
+  const status =
+    (error as { response?: { status?: number } })?.response?.status ?? 0;
+  const rawMessage = fallback.toLowerCase();
+
+  if (
+    action === "edit" &&
+    status === 403 &&
+    rawMessage.includes("edit") &&
+    rawMessage.includes("window") &&
+    rawMessage.includes("expired")
+  ) {
+    return language === "vi"
+      ? "Khong the sua tin nhan vi qua 15p"
+      : "Cannot edit this message after 15 minutes";
+  }
+
+  if (
+    action === "recall" &&
+    status === 403 &&
+    rawMessage.includes("recall") &&
+    rawMessage.includes("window") &&
+    rawMessage.includes("expired")
+  ) {
+    return language === "vi"
+      ? "Khong the thu hoi tin nhan sau 24h"
+      : "Cannot recall this message after 24 hours";
+  }
+
+  return fallback;
+}
+
 type ChatTab = MiniNavTab;
+
+type PendingUploadItem = {
+  localId: string;
+  fileName: string;
+  fileSizeLabel: string;
+  mediaKind: "image" | "video" | "file";
+  status: "uploading" | "failed";
+  progress: number;
+  errorMessage?: string;
+};
+
+function inferMediaKind(file: File): "image" | "video" | "file" {
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+  if (file.type.startsWith("video/")) {
+    return "video";
+  }
+  return "file";
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let next = value;
+  let index = 0;
+  while (next >= 1024 && index < units.length - 1) {
+    next /= 1024;
+    index += 1;
+  }
+  return `${next.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
 
 export function ChatPage() {
   const { language } = useLanguage();
 
   const [searchText, setSearchText] = useState("");
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const conversations = useChatStore((state) => state.conversations);
+  const activeConversationId = useChatStore((state) => state.selectedConversationId);
+  const totalUnreadCount = useChatStore((state) => state.totalUnreadCount);
+  const setConversationList = useChatStore((state) => state.setConversations);
+  const setActiveConversationId = useChatStore((state) => state.setSelectedConversationId);
+  const upsertConversation = useChatStore((state) => state.upsertConversation);
+  const markConversationReadLocal = useChatStore((state) => state.markConversationRead);
+  const syncTotalUnread = useChatStore((state) => state.syncTotalUnread);
+
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
 
@@ -82,13 +164,12 @@ export function ChatPage() {
     }
   };
 
-  const [activeConversationId, setActiveConversationId] = useState<
-    string | null
-  >(null);
   const [draftMessage, setDraftMessage] = useState("");
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
 
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
@@ -110,24 +191,36 @@ export function ChatPage() {
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
+  const [uploadLimitModalMessage, setUploadLimitModalMessage] = useState<string | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("messages");
 
-  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-  const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-  const MAX_FILE_BYTES = 20 * 1024 * 1024;
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+  const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+  const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
   const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const refreshConversationsTimeoutRef = useRef<number | null>(null);
+  const isSilentRefreshingRef = useRef(false);
+  const conversationIdsRef = useRef<string[]>([]);
   const activeConversationIdRef = useRef<string | null>(null);
   const myUserIdRef = useRef<string | null>(null);
+  const processedRealtimeMessageIdsRef = useRef<Set<string>>(new Set());
+  const uploadAbortControllersRef = useRef<Record<string, AbortController>>({});
+  const uploadFileRegistryRef = useRef<Record<string, { file: File; caption: string; conversationId: string }>>({});
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
+
+  useEffect(() => {
+    conversationIdsRef.current = conversations.map((conversation) => conversation.id);
+  }, [conversations]);
 
   useEffect(() => {
     myUserIdRef.current = myProfile?.id ?? null;
@@ -164,31 +257,46 @@ export function ChatPage() {
           }).format(new Date(conversation.lastMessageAt))
         : "--:--",
       lastMessage: conversation.lastMessage || "...",
-      unreadCount: 0,
+      unreadCount: conversation.unreadCount ?? 0,
       isOnline: true,
     }));
   }, [filteredConversations, language]);
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (silent && isSilentRefreshingRef.current) {
+      return;
+    }
+
     try {
-      setIsLoadingConversations(true);
+      if (silent) {
+        isSilentRefreshingRef.current = true;
+      } else {
+        setIsLoadingConversations(true);
+      }
       const result = await getConversations();
       const items = result.data ?? [];
-      setConversations(items);
-
-      if (!activeConversationId && items.length > 0) {
-        setActiveConversationId(items[0].id);
-      } else if (
-        activeConversationId &&
-        !items.some((conversation) => conversation.id === activeConversationId)
-      ) {
-        setActiveConversationId(items[0]?.id ?? null);
-      }
+      setConversationList(items);
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
-      setIsLoadingConversations(false);
+      if (silent) {
+        isSilentRefreshingRef.current = false;
+      } else {
+        setIsLoadingConversations(false);
+      }
     }
+  };
+
+  const scheduleConversationsRefresh = () => {
+    if (refreshConversationsTimeoutRef.current) {
+      return;
+    }
+
+    refreshConversationsTimeoutRef.current = window.setTimeout(() => {
+      refreshConversationsTimeoutRef.current = null;
+      void fetchConversations({ silent: true });
+    }, 400);
   };
 
   const fetchFriendshipData = async () => {
@@ -239,6 +347,16 @@ export function ChatPage() {
   }, []);
 
   useEffect(() => {
+    const refreshInterval = window.setInterval(() => {
+      void fetchConversations({ silent: true });
+    }, 3000);
+
+    return () => {
+      window.clearInterval(refreshInterval);
+    };
+  }, []);
+
+  useEffect(() => {
     const loadProfile = async () => {
       try {
         const result = await getMyProfile();
@@ -260,14 +378,39 @@ export function ChatPage() {
       onConnect: () => {
         setIsRealtimeConnected(true);
         client.subscribeUserQueue();
-        if (activeConversationIdRef.current) {
-          client.subscribeConversation(activeConversationIdRef.current);
-        }
+        client.syncConversationSubscriptions(conversationIdsRef.current);
       },
       onDisconnect: () => {
         setIsRealtimeConnected(false);
       },
       onError: (message) => {
+        const normalized = message.toLowerCase();
+        if (
+          normalized.includes("edit") &&
+          normalized.includes("window") &&
+          normalized.includes("expired")
+        ) {
+          setBannerMessage(
+            language === "vi"
+              ? "Khong the sua tin nhan vi qua 15p"
+              : "Cannot edit this message after 15 minutes",
+          );
+          return;
+        }
+
+        if (
+          normalized.includes("recall") &&
+          normalized.includes("window") &&
+          normalized.includes("expired")
+        ) {
+          setBannerMessage(
+            language === "vi"
+              ? "Khong the thu hoi tin nhan sau 24h"
+              : "Cannot recall this message after 24 hours",
+          );
+          return;
+        }
+
         setBannerMessage(message);
       },
       onEvent: (event: ChatRealtimeEvent) => {
@@ -278,9 +421,46 @@ export function ChatPage() {
           return;
         }
 
+        if (
+          event.eventType === "CONVERSATION_UPDATED" ||
+          event.eventType === "UNREAD_COUNT_UPDATED" ||
+          event.eventType === "TOTAL_UNREAD_UPDATED" ||
+          event.eventType === "NEW_MESSAGE" ||
+          event.eventType === "MESSAGE_SENT"
+        ) {
+          if (event.conversationId) {
+            upsertConversation({
+              id: event.conversationId,
+              lastMessage: event.lastMessage ?? undefined,
+              lastMessageAt: event.lastMessageAt ?? undefined,
+              unreadCount: event.unreadCount ?? undefined,
+            });
+          }
+          if (typeof event.totalUnreadCount === "number") {
+            syncTotalUnread(event.totalUnreadCount);
+          }
+
+          // Keep sidebar and unread counters accurate even when realtime payload is partial.
+          scheduleConversationsRefresh();
+        }
+
         const payload = event.message;
         if (!payload) {
           return;
+        }
+
+        const messageKey = `${event.eventType}:${payload.messageId}`;
+        if (event.eventType === "NEW_MESSAGE") {
+          if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
+            return;
+          }
+          processedRealtimeMessageIdsRef.current.add(messageKey);
+          if (processedRealtimeMessageIdsRef.current.size > 500) {
+            const first = processedRealtimeMessageIdsRef.current.values().next().value;
+            if (first) {
+              processedRealtimeMessageIdsRef.current.delete(first);
+            }
+          }
         }
 
         const normalizedMessage: MessageItem = {
@@ -296,7 +476,9 @@ export function ChatPage() {
           fileName: payload.fileName,
           reactions: payload.reactions,
           recalled: payload.recalled,
+          edited: payload.edited,
           deletedForUsers: payload.deletedForUsers,
+          deliveredTo: payload.deliveredTo,
           seenBy: payload.seenBy,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
@@ -314,37 +496,87 @@ export function ChatPage() {
 
         if (event.conversationId === activeConversationIdRef.current) {
           setMessages((prev) => {
-            const exists = prev.some(
+            const existingIndex = prev.findIndex(
               (item) => item.id === normalizedMessage.id,
             );
-            if (exists) {
-              return prev.map((item) =>
-                item.id === normalizedMessage.id ? normalizedMessage : item,
+            let next =
+              existingIndex >= 0
+                ? prev.map((item) =>
+                    item.id === normalizedMessage.id ? normalizedMessage : item,
+                  )
+                : [...prev, normalizedMessage];
+
+            if (
+              event.eventType === "READ_RECEIPT" &&
+              event.actorId &&
+              event.actorId !== myUserIdRef.current
+            ) {
+              const readUpToIndex = next.findIndex(
+                (item) => item.id === normalizedMessage.id,
               );
+              if (readUpToIndex >= 0) {
+                next = next.map((item, index) => {
+                  if (index > readUpToIndex || item.senderId !== myUserIdRef.current) {
+                    return item;
+                  }
+
+                  const seenBy = new Set(item.seenBy ?? []);
+                  seenBy.add(event.actorId);
+
+                  const deliveredTo = new Set(item.deliveredTo ?? []);
+                  deliveredTo.add(event.actorId);
+
+                  return {
+                    ...item,
+                    seenBy: Array.from(seenBy),
+                    deliveredTo: Array.from(deliveredTo),
+                  };
+                });
+              }
             }
-            return [...prev, normalizedMessage];
+
+            return next;
           });
 
           if (
-            event.eventType === "MESSAGE_SENT" &&
+            (event.eventType === "MESSAGE_SENT" || event.eventType === "NEW_MESSAGE") &&
             normalizedMessage.senderId !== myUserIdRef.current
           ) {
-            void markMessageAsRead(event.conversationId, normalizedMessage.id);
+            const canAutoRead =
+              activeTab === "messages" &&
+              document.visibilityState === "visible" &&
+              document.hasFocus();
+            if (canAutoRead) {
+              void markMessageAsRead(event.conversationId, normalizedMessage.id);
+              markConversationReadLocal(event.conversationId);
+            }
           }
         }
 
-        setConversations((prev) =>
-          prev.map((conversation) => {
-            if (conversation.id !== event.conversationId) {
-              return conversation;
-            }
-            return {
-              ...conversation,
-              lastMessage: normalizedMessage.content,
-              lastMessageAt: normalizedMessage.createdAt,
-            };
-          }),
-        );
+        let unreadPatch = event.unreadCount ?? undefined;
+        const isIncomingFromOtherUser =
+          normalizedMessage.senderId !== myUserIdRef.current;
+        const isDifferentConversation =
+          event.conversationId !== activeConversationIdRef.current;
+        const shouldLocalIncrementUnread =
+          unreadPatch === undefined &&
+          isIncomingFromOtherUser &&
+          isDifferentConversation &&
+          (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT");
+
+        if (shouldLocalIncrementUnread) {
+          const currentConversation = useChatStore
+            .getState()
+            .conversations.find((item) => item.id === event.conversationId);
+          unreadPatch = (currentConversation?.unreadCount ?? 0) + 1;
+        }
+
+        upsertConversation({
+          id: event.conversationId,
+          lastMessage: normalizedMessage.content,
+          lastMessageAt: normalizedMessage.createdAt,
+          unreadCount: unreadPatch,
+        });
       },
       onSyncEvent: (event) => {
         if (event.eventType.startsWith("FRIENDSHIP_")) {
@@ -388,26 +620,35 @@ export function ChatPage() {
         window.clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
       }
+      if (refreshConversationsTimeoutRef.current) {
+        window.clearTimeout(refreshConversationsTimeoutRef.current);
+        refreshConversationsTimeoutRef.current = null;
+      }
       realtimeClientRef.current?.disconnect();
       realtimeClientRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!activeConversationId) {
+    if (!isRealtimeConnected) {
       setTypingUserId(null);
       return;
     }
 
     const client = realtimeClientRef.current;
     if (client && client.isConnected()) {
-      client.subscribeConversation(activeConversationId);
+      client.syncConversationSubscriptions(conversations.map((conversation) => conversation.id));
     }
-  }, [activeConversationId, isRealtimeConnected]);
+
+    if (!activeConversationId) {
+      setTypingUserId(null);
+    }
+  }, [activeConversationId, conversations, isRealtimeConnected]);
 
   useEffect(() => {
     if (!activeConversationId) {
       setMessages([]);
+      setNextCursor(null);
       return;
     }
 
@@ -415,10 +656,12 @@ export function ChatPage() {
       try {
         setIsLoadingMessages(true);
         const result = await getMessages(activeConversationId, {
-          page: 0,
-          size: 100,
+          cursor: null,
+          limit: 50,
         });
-        setMessages(result.data ?? []);
+        const items = result.data?.items ?? [];
+        setMessages(items.slice().reverse());
+        setNextCursor(result.data?.nextCursor ?? null);
       } catch (error) {
         setBannerMessage(toApiErrorMessage(error));
       } finally {
@@ -428,6 +671,87 @@ export function ChatPage() {
 
     void loadMessages();
   }, [activeConversationId]);
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    const isViewingMessages =
+      activeTab === "messages" &&
+      document.visibilityState === "visible" &&
+      document.hasFocus();
+    if (!isViewingMessages) {
+      return;
+    }
+
+    const latestMessageId = messages[messages.length - 1]?.id;
+    markConversationReadLocal(activeConversationId);
+    if (!latestMessageId) {
+      return;
+    }
+    void markConversationRead(activeConversationId, latestMessageId).catch(() => {
+      // Keep UI responsive even if API gateway lags behind deployment.
+    });
+  }, [activeConversationId, activeTab, messages, markConversationReadLocal]);
+
+  useEffect(() => {
+    const syncReadWhenFocused = () => {
+      if (!activeConversationIdRef.current) {
+        return;
+      }
+      const isViewingMessages =
+        activeTab === "messages" &&
+        document.visibilityState === "visible" &&
+        document.hasFocus();
+      if (!isViewingMessages) {
+        return;
+      }
+      const latestMessageId = messages[messages.length - 1]?.id;
+      markConversationReadLocal(activeConversationIdRef.current);
+      if (!latestMessageId) {
+        return;
+      }
+      void markConversationRead(activeConversationIdRef.current, latestMessageId).catch(() => {
+        // Ignore read sync errors to avoid breaking incoming message flow.
+      });
+    };
+
+    window.addEventListener("focus", syncReadWhenFocused);
+    document.addEventListener("visibilitychange", syncReadWhenFocused);
+
+    return () => {
+      window.removeEventListener("focus", syncReadWhenFocused);
+      document.removeEventListener("visibilitychange", syncReadWhenFocused);
+    };
+  }, [activeTab, messages, markConversationReadLocal]);
+
+  const onLoadOlderMessages = async () => {
+    if (!activeConversationId || !nextCursor || isLoadingMoreMessages) {
+      return;
+    }
+
+    try {
+      setIsLoadingMoreMessages(true);
+      const result = await getMessages(activeConversationId, {
+        cursor: nextCursor,
+        limit: 50,
+      });
+      const olderItems = (result.data?.items ?? []).slice().reverse();
+      if (olderItems.length > 0) {
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((item) => item.id));
+          const uniqueOlder = olderItems.filter((item) => !existingIds.has(item.id));
+          return [...uniqueOlder, ...prev];
+        });
+      }
+      setNextCursor(result.data?.nextCursor ?? null);
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsLoadingMoreMessages(false);
+    }
+  };
 
   const onSendMessage = async () => {
     const content = draftMessage.trim();
@@ -454,87 +778,238 @@ export function ChatPage() {
     }
   };
 
-  const onSendFile = async (file: File) => {
-    if (!activeConversationId || isSending) return;
+  const validateFileBeforeUpload = (file: File) => {
+    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    const mediaKind = inferMediaKind(file);
+
+    const imageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+    const videoExtensions = new Set(["mp4", "mov", "webm"]);
+    const fileExtensions = new Set([
+      "pdf",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "ppt",
+      "pptx",
+      "zip",
+      "rar",
+      "txt",
+    ]);
+
+    if (mediaKind === "image") {
+      if (!imageExtensions.has(ext)) {
+        return language === "vi"
+          ? "Dinh dang anh khong ho tro"
+          : "Unsupported image format";
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        return language === "vi" ? "Anh vuot 10MB" : "Image exceeds 10MB";
+      }
+      return null;
+    }
+
+    if (mediaKind === "video") {
+      if (!videoExtensions.has(ext)) {
+        return language === "vi"
+          ? "Dinh dang video khong ho tro"
+          : "Unsupported video format";
+      }
+      if (file.size > MAX_VIDEO_BYTES) {
+        return language === "vi"
+          ? "Video vuot 100MB"
+          : "Video exceeds 100MB";
+      }
+      return null;
+    }
+
+    if (!fileExtensions.has(ext)) {
+      return language === "vi"
+        ? "Dinh dang tep khong ho tro"
+        : "Unsupported file format";
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return language === "vi" ? "Tep vuot 100MB" : "File exceeds 100MB";
+    }
+    return null;
+  };
+
+  const sendUploadedMediaMessage = async (
+    conversationId: string,
+    caption: string,
+    uploaded: Awaited<ReturnType<typeof uploadMedia>>,
+    mediaKind: "image" | "video" | "file",
+  ) => {
+    const type = mediaKind === "image" ? "IMAGE" : mediaKind === "video" ? "VIDEO" : "FILE";
+    const content = caption || `📎 ${uploaded.data.fileName}`;
+    const result = await sendMessage(conversationId, content, {
+      type,
+      fileName: uploaded.data.fileName,
+      fileUrl: uploaded.data.fileUrl,
+    });
+
+    setMessages((prev) => {
+      const exists = prev.some((item) => item.id === result.data.id);
+      if (exists) {
+        return prev;
+      }
+      return [...prev, result.data];
+    });
+  };
+
+  const uploadAndDispatch = async (localId: string) => {
+    const payload = uploadFileRegistryRef.current[localId];
+    if (!payload) {
+      return;
+    }
+
+    const { file, caption, conversationId } = payload;
+    const mediaKind = inferMediaKind(file);
+
+    const controller = new AbortController();
+    uploadAbortControllersRef.current[localId] = controller;
 
     try {
-      setIsSending(true);
+      const uploaded = await uploadMedia(file, {
+        signal: controller.signal,
+        onProgress: (percent) => {
+          setPendingUploads((prev) =>
+            prev.map((item) =>
+              item.localId === localId
+                ? { ...item, progress: percent, status: "uploading", errorMessage: undefined }
+                : item,
+            ),
+          );
+        },
+      });
 
-      const typeByMime = file.type.startsWith("image/")
-        ? "IMAGE"
-        : file.type.startsWith("video/")
-          ? "VIDEO"
-          : "FILE";
+      await sendUploadedMediaMessage(conversationId, caption, uploaded, mediaKind);
 
-      const sizeLimit =
-        typeByMime === "IMAGE"
-          ? MAX_IMAGE_BYTES
-          : typeByMime === "VIDEO"
-            ? MAX_VIDEO_BYTES
-            : MAX_FILE_BYTES;
+      setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
+      delete uploadFileRegistryRef.current[localId];
+      delete uploadAbortControllersRef.current[localId];
+    } catch (error) {
+      const message = toApiErrorMessage(error);
+      const isAbort =
+        (error as { name?: string; code?: string })?.name === "CanceledError" ||
+        (error as { name?: string; code?: string })?.name === "AbortError" ||
+        (error as { name?: string; code?: string })?.code === "ERR_CANCELED";
 
-      if (file.size > sizeLimit) {
-        const mb = Math.round((sizeLimit / (1024 * 1024)) * 10) / 10;
-        setBannerMessage(
-          language === "vi"
-            ? `File vuot gioi han dung luong (${mb} MB)`
-            : `File exceeds size limit (${mb} MB)`,
-        );
+      if (isAbort) {
+        setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
+        delete uploadFileRegistryRef.current[localId];
+        delete uploadAbortControllersRef.current[localId];
         return;
       }
 
-      const uploaded = await uploadMedia(file);
-      const content = `📎 ${uploaded.data.fileName}`;
-      const result = await sendMessage(activeConversationId, content, {
-        type: typeByMime,
-        fileName: uploaded.data.fileName,
-        fileUrl: uploaded.data.fileUrl,
-      });
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-      setBannerMessage(
-        language === "vi"
-          ? `Da gui ${typeByMime.toLowerCase()}: ${uploaded.data.fileName}`
-          : `${typeByMime.toLowerCase()} sent: ${uploaded.data.fileName}`,
+      setPendingUploads((prev) =>
+        prev.map((item) =>
+          item.localId === localId
+            ? {
+                ...item,
+                status: "failed",
+                errorMessage: message,
+              }
+            : item,
+        ),
       );
-      await fetchConversations();
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    } finally {
-      setIsSending(false);
+      delete uploadAbortControllersRef.current[localId];
     }
+  };
+
+  const onSendFiles = async (files: File[], caption: string) => {
+    if (!activeConversationId || files.length === 0) {
+      return;
+    }
+
+    const validFiles: Array<{ localId: string; file: File }> = [];
+    const rejectedMessages: string[] = [];
+    const oversizedMessages: string[] = [];
+
+    files.forEach((file) => {
+      const error = validateFileBeforeUpload(file);
+      if (error) {
+        rejectedMessages.push(`${file.name}: ${error}`);
+        if (error.includes("10MB") || error.includes("100MB") || error.includes("exceeds")) {
+          oversizedMessages.push(`${file.name}: ${error}`);
+        }
+        return;
+      }
+
+      const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      validFiles.push({ localId, file });
+      uploadFileRegistryRef.current[localId] = {
+        file,
+        caption,
+        conversationId: activeConversationId,
+      };
+    });
+
+    if (rejectedMessages.length > 0) {
+      setBannerMessage(rejectedMessages.join(" | "));
+    }
+
+    if (oversizedMessages.length > 0) {
+      setUploadLimitModalMessage(oversizedMessages.join("\n"));
+    }
+
+    if (validFiles.length === 0) {
+      return;
+    }
+
+    setPendingUploads((prev) => [
+      ...prev,
+      ...validFiles.map(({ localId, file }) => ({
+        localId,
+        fileName: file.name,
+        fileSizeLabel: formatBytes(file.size),
+        mediaKind: inferMediaKind(file),
+        status: "uploading" as const,
+        progress: 0,
+      })),
+    ]);
+
+    await Promise.all(validFiles.map((item) => uploadAndDispatch(item.localId)));
+    await fetchConversations();
+  };
+
+  const onRetryUpload = async (localId: string) => {
+    const payload = uploadFileRegistryRef.current[localId];
+    if (!payload) {
+      return;
+    }
+
+    setPendingUploads((prev) =>
+      prev.map((item) =>
+        item.localId === localId
+          ? {
+              ...item,
+              progress: 0,
+              status: "uploading",
+              errorMessage: undefined,
+            }
+          : item,
+      ),
+    );
+
+    await uploadAndDispatch(localId);
+    await fetchConversations();
+  };
+
+  const onCancelUpload = (localId: string) => {
+    const controller = uploadAbortControllersRef.current[localId];
+    if (controller) {
+      controller.abort();
+    }
+    delete uploadAbortControllersRef.current[localId];
+    delete uploadFileRegistryRef.current[localId];
+    setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
   };
 
   const onRecallMessage = async (messageId: string) => {
     if (!activeConversationId) return;
     try {
-      const realtimeSent = Boolean(
-        realtimeClientRef.current?.publishRecall(
-          activeConversationId,
-          messageId,
-        ),
-      );
-
-      if (realtimeSent) {
-        setMessages((prev) =>
-          prev.map((item) =>
-            item.id === messageId
-              ? {
-                  ...item,
-                  recalled: true,
-                  content: "This message was recalled",
-                }
-              : item,
-          ),
-        );
-        return;
-      }
-
+      // Persist recall via REST as the source of truth; backend will broadcast realtime to both participants.
       await recallMessage(activeConversationId, messageId);
       setMessages((prev) =>
         prev.map((item) =>
@@ -544,7 +1019,44 @@ export function ChatPage() {
         ),
       );
     } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
+      setBannerMessage(toPolicyViolationMessage(error, "recall", language));
+    }
+  };
+
+  const onEditMessage = async (messageId: string, nextContent: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    const conversationId = activeConversationId;
+    const previousMessage = messages.find((item) => item.id === messageId);
+
+    try {
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === messageId
+            ? {
+                ...item,
+                content: nextContent,
+                edited: true,
+                updatedAt: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+
+      // Single source of truth: REST edit endpoint persists and server broadcasts realtime.
+      await editMessage(conversationId, messageId, nextContent);
+
+      // Re-sync current conversation to guarantee UI consistency after server-side mutation.
+      await reloadConversationMessagesWithRetry(conversationId, 3);
+    } catch (error) {
+      if (previousMessage) {
+        setMessages((prev) =>
+          prev.map((item) => (item.id === messageId ? previousMessage : item)),
+        );
+      }
+      setBannerMessage(toPolicyViolationMessage(error, "edit", language));
     }
   };
 
@@ -842,11 +1354,13 @@ export function ChatPage() {
     for (let index = 0; index < attempts; index += 1) {
       try {
         const result = await getMessages(conversationId, {
-          page: 0,
-          size: 100,
+          cursor: null,
+          limit: 50,
         });
         if (activeConversationIdRef.current === conversationId) {
-          setMessages(result.data ?? []);
+          const items = result.data?.items ?? [];
+          setMessages(items.slice().reverse());
+          setNextCursor(result.data?.nextCursor ?? null);
         }
         return;
       } catch {
@@ -874,8 +1388,7 @@ export function ChatPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [friendContacts, userProfileMap]);
 
-  const messageBadge =
-    conversations.length > 0 ? Math.min(conversations.length, 9) : 0;
+  const messageBadge = totalUnreadCount > 0 ? Math.min(totalUnreadCount, 99) : 0;
 
   const onChangeTab = (tab: ChatTab) => {
     setActiveTab(tab);
@@ -891,7 +1404,10 @@ export function ChatPage() {
         searchText={searchText}
         onTabChange={onChangeTab}
         onSearchTextChange={setSearchText}
-        onSelectChat={setActiveConversationId}
+        onSelectChat={(conversationId) => {
+          setActiveConversationId(conversationId);
+          markConversationReadLocal(conversationId);
+        }}
         onCreateChat={() => setIsAddFriendOpen(true)}
       />
 
@@ -990,7 +1506,7 @@ export function ChatPage() {
                       </span>
                     </div>
                     <div className="ml-3 flex items-center gap-2">
-                      <span className="max-w-[100px] truncate text-xs text-slate-400">
+                      <span className="max-w-25 truncate text-xs text-slate-400">
                         {user.email ?? ""}
                       </span>
                       <button
@@ -1128,13 +1644,20 @@ export function ChatPage() {
                 }, 1200);
               }}
               onSendMessage={onSendMessage}
-              onSendFile={onSendFile}
+              onSendFiles={onSendFiles}
+              onEditMessage={onEditMessage}
               onRecallMessage={onRecallMessage}
               onDeleteForMe={onDeleteForMe}
               onForwardMessage={onForwardMessage}
               onReactMessage={onReactMessage}
+              pendingUploads={pendingUploads}
+              onRetryUpload={onRetryUpload}
+              onCancelUpload={onCancelUpload}
               isSending={isSending}
               typingText={typingUserId ? `${typingUserId} is typing...` : null}
+              hasMoreMessages={Boolean(nextCursor)}
+              isLoadingMoreMessages={isLoadingMoreMessages}
+              onLoadOlderMessages={onLoadOlderMessages}
             />
           </section>
         ) : (
@@ -1192,6 +1715,28 @@ export function ChatPage() {
       {bannerMessage && (
         <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
           {bannerMessage}
+        </div>
+      )}
+
+      {uploadLimitModalMessage && (
+        <div className="fixed inset-0 z-60 grid place-items-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-semibold text-slate-900">
+              {language === "vi" ? "Vuot gioi han dung luong" : "File size limit exceeded"}
+            </h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+              {uploadLimitModalMessage}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setUploadLimitModalMessage(null)}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

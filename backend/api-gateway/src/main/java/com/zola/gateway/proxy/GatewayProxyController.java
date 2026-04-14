@@ -16,6 +16,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -298,13 +299,31 @@ public class GatewayProxyController {
     @GetMapping("/chat/conversations/{conversationId}/messages")
     public ApiResponse<Object> messages(
         @PathVariable("conversationId") String conversationId,
+        @RequestParam(name = "cursor", required = false) String cursor,
+        @RequestParam(name = "limit", defaultValue = "50") int limit,
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
         return getMap(
-            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/messages",
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/messages?limit={limit}&cursor={cursor}",
             null,
-            Map.of("conversationId", conversationId),
+            Map.of("conversationId", conversationId, "cursor", cursor == null ? "" : cursor, "limit", limit),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PatchMapping("/chat/conversations/{conversationId}/messages/{messageId}/edit")
+    public ApiResponse<Object> editMessage(
+        @PathVariable("conversationId") String conversationId,
+        @PathVariable("messageId") String messageId,
+        @Valid @RequestBody EditMessageRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return patchMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/messages/{messageId}/edit",
+            body,
+            Map.of("conversationId", conversationId, "messageId", messageId),
             Map.of("X-User-Id", userId)
         );
     }
@@ -385,6 +404,21 @@ public class GatewayProxyController {
         );
     }
 
+    @PatchMapping("/chat/conversations/{conversationId}/read")
+    public ApiResponse<Object> markConversationRead(
+        @PathVariable("conversationId") String conversationId,
+        @RequestParam(name = "messageId", required = false) String messageId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return patchMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/read?messageId={messageId}",
+            Map.of(),
+            Map.of("conversationId", conversationId, "messageId", messageId == null ? "" : messageId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @PostMapping("/chat/conversations/{conversationId}/messages/{messageId}/reactions")
     public ApiResponse<Object> addReaction(
         @PathVariable("conversationId") String conversationId,
@@ -446,6 +480,18 @@ public class GatewayProxyController {
                 request = request.header(header.getKey(), header.getValue());
             }
             return request.retrieve().body(API_RESPONSE);
+        } catch (RestClientResponseException ex) {
+            throw toStatusException(ex);
+        }
+    }
+
+    private ApiResponse<Object> patchMap(String url, Object body, Map<String, ?> uriVars, Map<String, String> extraHeaders) {
+        try {
+            RestClient.RequestBodySpec request = restClient.patch().uri(url, uriVars == null ? Map.of() : uriVars);
+            for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                request = request.header(header.getKey(), header.getValue());
+            }
+            return request.body(body).retrieve().body(API_RESPONSE);
         } catch (RestClientResponseException ex) {
             throw toStatusException(ex);
         }
@@ -566,6 +612,9 @@ public class GatewayProxyController {
         String fileUrl,
         String fileName
     ) {
+    }
+
+    public record EditMessageRequest(@NotBlank String content) {
     }
 
     public record CreateDirectConversationRequest(@NotBlank String targetUserId) {

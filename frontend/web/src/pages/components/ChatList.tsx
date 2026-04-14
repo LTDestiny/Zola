@@ -19,26 +19,7 @@ export interface ChatListProps {
     onCreateChat: () => void;
 }
 
-const mockChats: ChatListItem[] = [
-    {
-        id: "mock-1",
-        name: "Linh Tran",
-        avatar: "LT",
-        timestamp: "10:24",
-        lastMessage: "Can we review the launch checklist tonight?",
-        unreadCount: 3,
-        isOnline: true,
-    },
-    {
-        id: "mock-2",
-        name: "Minh Pham",
-        avatar: "MP",
-        timestamp: "09:10",
-        lastMessage: "I sent the design tokens in Figma.",
-        unreadCount: 0,
-        isOnline: true,
-    },
-];
+
 
 export function ChatList({
     chats,
@@ -48,7 +29,7 @@ export function ChatList({
     onSelectChat,
     onCreateChat,
 }: ChatListProps) {
-    const displayChats = chats.length > 0 ? chats : mockChats;
+    const displayChats = chats.length > 0 ? chats : [];
 
     return (
         <aside className="flex h-screen w-80 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -100,7 +81,7 @@ export function ChatList({
 
                             <div className="min-w-0 flex-1">
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                    <p className="truncate font-semibold text-slate-900">{chat.name}</p>
+                                    <p className={`truncate font-semibold ${hasUnread ? "text-slate-900" : "text-slate-700"}`}>{chat.name}</p>
                                     <span className="text-xs text-gray-400">{chat.timestamp}</span>
                                 </div>
 

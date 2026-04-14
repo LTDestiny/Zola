@@ -4,8 +4,10 @@ import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.CreateDirectConversationRequest;
 import com.zola.chat.chatrealtime.dto.ConversationListItemResponse;
 import com.zola.chat.chatrealtime.dto.ChatEventResponse;
+import com.zola.chat.chatrealtime.dto.ChatEditRequest;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
+import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.chatrealtime.service.ChatRealtimeService;
 import com.zola.common.response.ApiResponse;
 import com.zola.chat.chatrealtime.dto.ChatDeleteForMeRequest;
@@ -18,6 +20,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,7 +30,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -59,13 +64,13 @@ public class ChatConversationController {
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
-    public ApiResponse<List<MessageItemResponse>> getMessages(
+    public ApiResponse<MessagesPageResponse> getMessages(
         @RequestHeader("X-User-Id") String userId,
         @PathVariable("conversationId") UUID conversationId,
-        @RequestParam(name = "page", defaultValue = "0") int page,
-        @RequestParam(name = "size", defaultValue = "50") int size
+        @RequestParam(name = "cursor", required = false) String cursor,
+        @RequestParam(name = "limit", defaultValue = "50") int limit
     ) {
-        return ApiResponse.ok("Messages fetched", chatRealtimeService.getMessagesHttp(userId, conversationId, page, size));
+        return ApiResponse.ok("Messages fetched", chatRealtimeService.getMessagesHttp(userId, conversationId, cursor, limit));
     }
 
     @PostMapping("/conversations/{conversationId}/messages")
@@ -102,15 +107,34 @@ public class ChatConversationController {
                 response.fileName(),
                 response.reactions(),
                 response.deletedForUsers(),
+                response.deliveredTo(),
                 response.seenBy(),
                 response.createdAt(),
                 response.updatedAt(),
-                response.recalled()
-            )
+                response.recalled(),
+                response.edited()
+            ),
+            null,
+            null,
+            null,
+            null
         );
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        emitUnreadSyncEvents(conversationId, event.message(), userId, response.receiverId());
 
         return ApiResponse.ok("Message sent", response);
+    }
+
+    @PatchMapping("/conversations/{conversationId}/messages/{messageId}/edit")
+    public ApiResponse<Map<String, Object>> editMessage(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @PathVariable("messageId") String messageId,
+        @Valid @RequestBody EditMessageRequest request
+    ) {
+        ChatEventResponse event = chatRealtimeService.editMessage(userId, new ChatEditRequest(conversationId, messageId, request.content()));
+        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        return ApiResponse.ok("Message updated", Map.of("messageId", messageId));
     }
 
     @GetMapping("/users/{userId}/online")
@@ -127,6 +151,9 @@ public class ChatConversationController {
         String fileUrl,
         String fileName
     ) {
+    }
+
+    public record EditMessageRequest(@NotBlank String content) {
     }
 
     @PostMapping("/conversations/{conversationId}/messages/{messageId}/recall")
@@ -175,7 +202,24 @@ public class ChatConversationController {
     ) {
         ChatEventResponse event = chatRealtimeService.readReceipt(userId, new ChatReadReceiptRequest(conversationId, messageId));
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        String peerId = event.message() == null ? null : event.message().senderId();
+        emitUnreadSyncEvents(conversationId, event.message(), userId, peerId);
         return ApiResponse.ok("Read receipt updated", Map.of("messageId", messageId));
+    }
+
+    @PatchMapping("/conversations/{conversationId}/read")
+    public ApiResponse<Map<String, Object>> markConversationRead(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @RequestParam(name = "messageId", required = false) String messageId
+    ) {
+        ChatEventResponse event = chatRealtimeService.markConversationAsRead(userId, conversationId, messageId);
+        String readMessageId = messageId == null ? "" : messageId;
+        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
+        String peerId = event.message() == null ? null : event.message().senderId();
+        emitUnreadSyncEvents(conversationId, null, userId, peerId);
+        return ApiResponse.ok("Conversation marked as read", Map.of("conversationId", conversationId, "messageId", readMessageId));
     }
 
     @PostMapping("/conversations/{conversationId}/messages/{messageId}/reactions")
@@ -212,5 +256,73 @@ public class ChatConversationController {
     }
 
     public record ReactionRequest(@NotBlank String emoji) {
+    }
+
+    private void emitUnreadSyncEvents(UUID conversationId, MessagePayload messagePayload, String... userIds) {
+        Set<String> uniqueUserIds = new LinkedHashSet<>();
+        for (String userId : userIds) {
+            if (userId == null || userId.isBlank()) {
+                continue;
+            }
+            uniqueUserIds.add(userId);
+        }
+
+        for (String userId : uniqueUserIds) {
+            ChatEventResponse base = chatRealtimeService.buildConversationUpdatedEvent(
+                userId,
+                conversationId,
+                "CONVERSATION_UPDATED",
+                messagePayload
+            );
+
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", base);
+
+            ChatEventResponse unreadEvent = new ChatEventResponse(
+                "UNREAD_COUNT_UPDATED",
+                base.actorId(),
+                base.conversationId(),
+                false,
+                false,
+                null,
+                null,
+                base.unreadCount(),
+                base.totalUnreadCount(),
+                base.lastMessage(),
+                base.lastMessageAt()
+            );
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", unreadEvent);
+
+            ChatEventResponse totalUnreadEvent = new ChatEventResponse(
+                "TOTAL_UNREAD_UPDATED",
+                base.actorId(),
+                base.conversationId(),
+                false,
+                false,
+                null,
+                null,
+                base.unreadCount(),
+                base.totalUnreadCount(),
+                base.lastMessage(),
+                base.lastMessageAt()
+            );
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", totalUnreadEvent);
+
+            if (messagePayload != null) {
+                ChatEventResponse newMessageEvent = new ChatEventResponse(
+                    "NEW_MESSAGE",
+                    messagePayload.senderId(),
+                    messagePayload.conversationId(),
+                    false,
+                    false,
+                    null,
+                    messagePayload,
+                    base.unreadCount(),
+                    base.totalUnreadCount(),
+                    base.lastMessage(),
+                    base.lastMessageAt()
+                );
+                messagingTemplate.convertAndSendToUser(userId, "/queue/chat", newMessageEvent);
+            }
+        }
     }
 }

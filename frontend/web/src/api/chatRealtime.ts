@@ -7,6 +7,10 @@ export type ChatRealtimeEvent = {
   typing: boolean;
   online: boolean;
   targetUserId: string | null;
+  unreadCount?: number | null;
+  totalUnreadCount?: number | null;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
   message: {
     messageId: string;
     conversationId: string;
@@ -18,10 +22,12 @@ export type ChatRealtimeEvent = {
     fileName: string | null;
     reactions: string[];
     deletedForUsers: string[];
+    deliveredTo: string[];
     seenBy: string[];
     createdAt: string;
     updatedAt: string;
     recalled: boolean;
+    edited: boolean;
   } | null;
 };
 
@@ -43,7 +49,7 @@ type RealtimeHandlers = {
 
 export class ChatRealtimeClient {
   private readonly client: Client;
-  private conversationSubscription: StompSubscription | null = null;
+  private readonly conversationSubscriptions = new Map<string, StompSubscription>();
   private userQueueSubscription: StompSubscription | null = null;
   private syncQueueSubscription: StompSubscription | null = null;
   private readonly onEvent: (event: ChatRealtimeEvent) => void;
@@ -86,10 +92,12 @@ export class ChatRealtimeClient {
   }
 
   disconnect() {
-    this.conversationSubscription?.unsubscribe();
+    this.conversationSubscriptions.forEach((subscription) => {
+      subscription.unsubscribe();
+    });
+    this.conversationSubscriptions.clear();
     this.userQueueSubscription?.unsubscribe();
     this.syncQueueSubscription?.unsubscribe();
-    this.conversationSubscription = null;
     this.userQueueSubscription = null;
     this.syncQueueSubscription = null;
     this.client.deactivate();
@@ -125,8 +133,11 @@ export class ChatRealtimeClient {
     if (!this.client.connected) {
       return;
     }
-    this.conversationSubscription?.unsubscribe();
-    this.conversationSubscription = this.client.subscribe(
+    if (this.conversationSubscriptions.has(conversationId)) {
+      return;
+    }
+
+    const subscription = this.client.subscribe(
       `/topic/chat/${conversationId}`,
       (message) => {
         try {
@@ -140,6 +151,26 @@ export class ChatRealtimeClient {
         }
       },
     );
+    this.conversationSubscriptions.set(conversationId, subscription);
+  }
+
+  syncConversationSubscriptions(conversationIds: string[]) {
+    if (!this.client.connected) {
+      return;
+    }
+
+    const expected = new Set(conversationIds.filter(Boolean));
+
+    this.conversationSubscriptions.forEach((subscription, id) => {
+      if (!expected.has(id)) {
+        subscription.unsubscribe();
+        this.conversationSubscriptions.delete(id);
+      }
+    });
+
+    expected.forEach((id) => {
+      this.subscribeConversation(id);
+    });
   }
 
   subscribeUserQueue() {
@@ -199,6 +230,14 @@ export class ChatRealtimeClient {
     return this.safePublish("/app/chat.recall", {
       conversationId,
       messageId,
+    });
+  }
+
+  publishEdit(conversationId: string, messageId: string, content: string): boolean {
+    return this.safePublish("/app/chat.edit", {
+      conversationId,
+      messageId,
+      content,
     });
   }
 

@@ -28,6 +28,6 @@ storage:
   path-style: ${S3_PATH_STYLE:false}
 
 media:
-  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:5242880}
-  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:52428800}
-  max-file-bytes: ${MEDIA_MAX_FILE_BYTES:20971520}
+  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
+  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:104857600}
+  max-file-bytes: ${MEDIA_MAX_FILE_BYTES:104857600}
