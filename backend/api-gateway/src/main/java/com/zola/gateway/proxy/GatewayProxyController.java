@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -159,6 +160,28 @@ public class GatewayProxyController {
         return getMap(authServiceUrl + "/api/v1/auth/profile", authorization, null);
     }
 
+    @PutMapping("/users/me/profile")
+    public ApiResponse<Object> updateMyProfile(
+        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+        @RequestBody Map<String, Object> body,
+        HttpServletRequest request
+    ) {
+        ApiResponse<Object> response = putMap(authServiceUrl + "/api/v1/auth/profile", body, null, authorization, Map.of());
+        emitProfileSync(response, "PROFILE_UPDATED", currentUserId(request));
+        return response;
+    }
+
+    @DeleteMapping("/users/me/profile")
+    public ApiResponse<Object> deleteMyProfile(
+        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = deleteMap(authServiceUrl + "/api/v1/auth/profile", null, authorization, Map.of());
+        emitSyncEvent(userId, "PROFILE_DELETED", "{\"userId\":\"" + userId + "\"}");
+        return response;
+    }
+
     @GetMapping("/users/search-by-email")
     public ApiResponse<Object> searchByEmail(
         @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
@@ -173,6 +196,18 @@ public class GatewayProxyController {
         @PathVariable("id") String userId
     ) {
         return getMap(authServiceUrl + "/api/v1/auth/users/{id}/summary", authorization, Map.of("id", userId));
+    }
+
+    @GetMapping("/users/presence")
+    public ApiResponse<Object> usersPresence(
+        @RequestParam("ids") String userIds,
+        @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization
+    ) {
+        return getMap(
+            chatServiceUrl + "/api/v1/chat/users/presence?ids={ids}",
+            authorization,
+            Map.of("ids", userIds)
+        );
     }
 
     @GetMapping("/users/friendships/status")
@@ -217,6 +252,28 @@ public class GatewayProxyController {
         );
     }
 
+    @GetMapping("/users/friendships/pending/unread-count")
+    public ApiResponse<Object> pendingFriendRequestsUnreadCount(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            userServiceUrl + "/api/v1/users/friendships/pending/unread-count",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/users/friendships/pending/mark-read")
+    public ApiResponse<Object> markPendingFriendRequestsRead(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return postMap(
+            userServiceUrl + "/api/v1/users/friendships/pending/mark-read",
+            Map.of(),
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @GetMapping("/users/friendships/friends")
     public ApiResponse<Object> friends(HttpServletRequest request) {
         String userId = currentUserId(request);
@@ -233,13 +290,13 @@ public class GatewayProxyController {
         @PathVariable("friendshipId") String friendshipId,
         HttpServletRequest request
     ) {
-        String userId = currentUserId(request);
         ApiResponse<Object> response = postMap(
             userServiceUrl + "/api/v1/users/friendships/{friendshipId}/accept",
             Map.of(),
             Map.of("friendshipId", friendshipId),
-            Map.of("X-User-Id", userId)
+            Map.of("X-User-Id", currentUserId(request))
         );
+        ensureDirectConversationForFriendship(response);
         emitFriendshipSync(response, "FRIENDSHIP_REQUEST_ACCEPTED");
         return response;
     }
@@ -440,12 +497,45 @@ public class GatewayProxyController {
     }
 
     private ApiResponse<Object> deleteMap(String url, Map<String, ?> uriVars, Map<String, String> extraHeaders) {
+        return deleteMap(url, uriVars, null, extraHeaders);
+    }
+
+    private ApiResponse<Object> deleteMap(
+        String url,
+        Map<String, ?> uriVars,
+        String authorization,
+        Map<String, String> extraHeaders
+    ) {
         try {
             RestClient.RequestHeadersSpec<?> request = restClient.delete().uri(url, uriVars == null ? Map.of() : uriVars);
+            if (authorization != null) {
+                request = request.header(HttpHeaders.AUTHORIZATION, authorization);
+            }
             for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
                 request = request.header(header.getKey(), header.getValue());
             }
             return request.retrieve().body(API_RESPONSE);
+        } catch (RestClientResponseException ex) {
+            throw toStatusException(ex);
+        }
+    }
+
+    private ApiResponse<Object> putMap(
+        String url,
+        Object body,
+        Map<String, ?> uriVars,
+        String authorization,
+        Map<String, String> extraHeaders
+    ) {
+        try {
+            RestClient.RequestBodySpec request = restClient.put().uri(url, uriVars == null ? Map.of() : uriVars);
+            if (authorization != null) {
+                request = request.header(HttpHeaders.AUTHORIZATION, authorization);
+            }
+            for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                request = request.header(header.getKey(), header.getValue());
+            }
+            return request.body(body).retrieve().body(API_RESPONSE);
         } catch (RestClientResponseException ex) {
             throw toStatusException(ex);
         }
@@ -507,7 +597,7 @@ public class GatewayProxyController {
             if (errorNode != null && !errorNode.isNull() && !errorNode.asText().isBlank()) {
                 return errorNode.asText();
             }
-        } catch (Exception ignored) {
+        } catch (IOException ignored) {
             // Keep fallback flow if body is not JSON.
         }
 
@@ -537,6 +627,89 @@ public class GatewayProxyController {
         String payload = "{\"friendshipId\":\"" + String.valueOf(friendshipId) + "\"}";
         emitSyncEvent(requester, eventType, payload);
         emitSyncEvent(addressee, eventType, payload);
+    }
+
+    private void ensureDirectConversationForFriendship(ApiResponse<Object> response) {
+        if (!(response.data() instanceof Map<?, ?> data)) {
+            return;
+        }
+
+        Object requesterId = data.get("requesterId");
+        Object addresseeId = data.get("addresseeId");
+        Object friendshipId = data.get("friendshipId");
+        if (!(requesterId instanceof String requester) || !(addresseeId instanceof String addressee)) {
+            return;
+        }
+
+        try {
+            ApiResponse<Object> chatResponse = postMap(
+                chatServiceUrl + "/api/v1/chat/conversations/direct",
+                Map.of("targetUserId", addressee),
+                null,
+                Map.of("X-User-Id", requester)
+            );
+
+            String conversationId = null;
+            if (chatResponse != null && chatResponse.data() instanceof Map<?, ?> chatData) {
+                Object id = chatData.get("id");
+                if (id instanceof String conversation) {
+                    conversationId = conversation;
+                }
+            }
+
+            if (conversationId != null) {
+                String payload = "{\"friendshipId\":\"" + String.valueOf(friendshipId) + "\",\"conversationId\":\"" + conversationId + "\"}";
+                emitSyncEvent(requester, "FRIENDSHIP_CHAT_READY", payload);
+                emitSyncEvent(addressee, "FRIENDSHIP_CHAT_READY", payload);
+            }
+        } catch (RuntimeException ignored) {
+            // Ignore cross-service failure, clients still reconcile from friendship sync events.
+        }
+    }
+
+    private void emitProfileSync(ApiResponse<Object> response, String eventType, String fallbackUserId) {
+        String userId = fallbackUserId;
+        if (response != null && response.data() instanceof Map<?, ?> data) {
+            Object responseUserId = data.get("id");
+            if (responseUserId instanceof String id && !id.isBlank()) {
+                userId = id;
+            }
+        }
+
+        if (userId == null || userId.isBlank()) {
+            return;
+        }
+
+        String payload = "{\"userId\":\"" + userId + "\"}";
+        emitSyncEvent(userId, eventType, payload);
+        emitProfileSyncToFriends(userId, payload, eventType);
+    }
+
+    private void emitProfileSyncToFriends(String userId, String payload, String eventType) {
+        try {
+            ApiResponse<Object> friendsResponse = getMap(
+                userServiceUrl + "/api/v1/users/friendships/friends",
+                null,
+                null,
+                Map.of("X-User-Id", userId)
+            );
+
+            if (!(friendsResponse.data() instanceof java.util.List<?> friends)) {
+                return;
+            }
+
+            for (Object item : friends) {
+                if (!(item instanceof Map<?, ?> friendMap)) {
+                    continue;
+                }
+                Object friendIdObj = friendMap.get("userId");
+                if (friendIdObj instanceof String friendId && !friendId.isBlank()) {
+                    emitSyncEvent(friendId, eventType, payload);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Ignore friend sync failures to keep profile API reliable.
+        }
     }
 
     private void emitSyncEvent(String userId, String eventType, String payload) {

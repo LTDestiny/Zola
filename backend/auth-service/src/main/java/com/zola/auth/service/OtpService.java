@@ -4,14 +4,19 @@ import com.zola.auth.dto.AuthDtos;
 import com.zola.auth.entity.OtpLogEntity;
 import com.zola.auth.repository.OtpLogRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailAuthenticationException;
+import org.springframework.mail.MailSendException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.UUID;
 
 @Service
@@ -27,6 +32,7 @@ public class OtpService {
     private final int maxFailAttempts;
     private final int lockDurationMinutes;
     private final int otpTtlSeconds;
+    private final String otpHashSalt;
 
     public OtpService(
         StringRedisTemplate redisTemplate,
@@ -37,7 +43,8 @@ public class OtpService {
         @Value("${security.otp.resend-delay-seconds}") int resendDelaySeconds,
         @Value("${security.otp.max-fail-attempts}") int maxFailAttempts,
         @Value("${security.otp.lock-duration-minutes}") int lockDurationMinutes,
-        @Value("${security.otp.ttl-seconds}") int otpTtlSeconds
+        @Value("${security.otp.ttl-seconds}") int otpTtlSeconds,
+        @Value("${security.otp.hash-salt:change-this-otp-salt}") String otpHashSalt
     ) {
         this.redisTemplate = redisTemplate;
         this.otpLogRepository = otpLogRepository;
@@ -48,6 +55,7 @@ public class OtpService {
         this.maxFailAttempts = maxFailAttempts;
         this.lockDurationMinutes = lockDurationMinutes;
         this.otpTtlSeconds = otpTtlSeconds;
+        this.otpHashSalt = otpHashSalt;
     }
 
     public void issueOtp(UUID userId, AuthDtos.ForgotPasswordRequest request, String ip, String userAgent) {
@@ -98,11 +106,23 @@ public class OtpService {
 
         String otp = String.format("%06d", secureRandom.nextInt(1_000_000));
         String otpKey = otpKey(otpType, identifier);
-        redisTemplate.opsForHash().put(otpKey, "code", otp);
+        redisTemplate.opsForHash().put(otpKey, "codeHash", hashOtp(identifier, otpType, otp));
         redisTemplate.opsForHash().put(otpKey, "attempts", "0");
         redisTemplate.expire(otpKey, Duration.ofSeconds(otpTtlSeconds));
 
-        emailSenderService.sendOtpEmail(identifier, otp, otpType, otpTtlSeconds);
+        try {
+            emailSenderService.sendOtpEmail(identifier, otp, otpType, otpTtlSeconds);
+        } catch (MailAuthenticationException ex) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "SMTP authentication failed. Please verify SMTP_USER and SMTP_PASSWORD (use Gmail App Password)."
+            );
+        } catch (MailSendException ex) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Cannot send OTP email. Please verify SMTP_HOST/SMTP_PORT and network connectivity."
+            );
+        }
 
         otpLogRepository.save(OtpLogEntity.builder()
             .id(UUID.randomUUID())
@@ -135,14 +155,22 @@ public class OtpService {
         String userAgent
     ) {
         String otpKey = otpKey(otpType, identifier);
-        Object codeObj = redisTemplate.opsForHash().get(otpKey, "code");
+        Object codeHashObj = redisTemplate.opsForHash().get(otpKey, "codeHash");
+        Object legacyCodeObj = redisTemplate.opsForHash().get(otpKey, "code");
         Object attemptsObj = redisTemplate.opsForHash().get(otpKey, "attempts");
-        if (codeObj == null) {
+        if (codeHashObj == null && legacyCodeObj == null) {
             return new AuthDtos.OtpVerifyResponse(false, "OTP expired or not found");
         }
 
         int attempts = attemptsObj == null ? 0 : Integer.parseInt(attemptsObj.toString());
-        if (!codeObj.toString().equals(code)) {
+        boolean valid;
+        if (codeHashObj != null) {
+            valid = codeHashObj.toString().equals(hashOtp(identifier, otpType, code));
+        } else {
+            valid = legacyCodeObj.toString().equals(code);
+        }
+
+        if (!valid) {
             attempts += 1;
             redisTemplate.opsForHash().put(otpKey, "attempts", String.valueOf(attempts));
             if (attempts >= maxFailAttempts) {
@@ -160,5 +188,16 @@ public class OtpService {
 
     private String otpKey(String type, String identifier) {
         return "otp:" + type + ":" + identifier;
+    }
+
+    private String hashOtp(String identifier, String otpType, String otp) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String value = otpHashSalt + "|" + identifier + "|" + otpType + "|" + otp;
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot hash OTP", ex);
+        }
     }
 }

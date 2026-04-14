@@ -102,12 +102,18 @@ export function toErrorMessage(error: unknown): string {
   const axiosError = error as AxiosError<ErrorResponseShape>;
   const payload = axiosError.response?.data;
   const firstValidationError = payload?.errors?.[0]?.defaultMessage;
+  const backendMessage =
+    payload?.message ?? firstValidationError ?? payload?.error;
 
-  return (
-    payload?.message ??
-    firstValidationError ??
-    payload?.error ??
-    axiosError.message ??
-    "Unexpected error"
-  );
+  if (typeof backendMessage === "string") {
+    const normalized = backendMessage.toLowerCase();
+    if (
+      normalized.includes("smtp authentication failed") ||
+      normalized.includes("authentication failed")
+    ) {
+      return "SMTP dang bi sai tai khoan/mat khau. Neu dung Gmail, hay dung App Password (16 ky tu), khong dung mat khau dang nhap thuong.";
+    }
+  }
+
+  return backendMessage ?? axiosError.message ?? "Unexpected error";
 }

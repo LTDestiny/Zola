@@ -33,9 +33,16 @@ export type SyncRealtimeEvent = {
   timestamp: string;
 };
 
+export type PresenceRealtimeEvent = {
+  userId: string;
+  online: boolean;
+  lastChangedAt: string;
+};
+
 type RealtimeHandlers = {
   onEvent: (event: ChatRealtimeEvent) => void;
   onSyncEvent?: (event: SyncRealtimeEvent) => void;
+  onPresenceEvent?: (event: PresenceRealtimeEvent) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (message: string) => void;
@@ -46,13 +53,16 @@ export class ChatRealtimeClient {
   private conversationSubscription: StompSubscription | null = null;
   private userQueueSubscription: StompSubscription | null = null;
   private syncQueueSubscription: StompSubscription | null = null;
+  private presenceSubscription: StompSubscription | null = null;
   private readonly onEvent: (event: ChatRealtimeEvent) => void;
   private readonly onSyncEvent?: (event: SyncRealtimeEvent) => void;
+  private readonly onPresenceEvent?: (event: PresenceRealtimeEvent) => void;
   private readonly onError?: (message: string) => void;
 
   constructor(accessToken: string, handlers: RealtimeHandlers) {
     this.onEvent = handlers.onEvent;
     this.onSyncEvent = handlers.onSyncEvent;
+    this.onPresenceEvent = handlers.onPresenceEvent;
     this.onError = handlers.onError;
 
     const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
@@ -89,9 +99,11 @@ export class ChatRealtimeClient {
     this.conversationSubscription?.unsubscribe();
     this.userQueueSubscription?.unsubscribe();
     this.syncQueueSubscription?.unsubscribe();
+    this.presenceSubscription?.unsubscribe();
     this.conversationSubscription = null;
     this.userQueueSubscription = null;
     this.syncQueueSubscription = null;
+    this.presenceSubscription = null;
     this.client.deactivate();
   }
 
@@ -167,6 +179,18 @@ export class ChatRealtimeClient {
           this.onSyncEvent?.(event);
         } catch {
           this.onError?.("Cannot parse sync realtime event");
+        }
+      },
+    );
+
+    this.presenceSubscription = this.client.subscribe(
+      "/topic/presence",
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as PresenceRealtimeEvent;
+          this.onPresenceEvent?.(event);
+        } catch {
+          this.onError?.("Cannot parse presence realtime event");
         }
       },
     );

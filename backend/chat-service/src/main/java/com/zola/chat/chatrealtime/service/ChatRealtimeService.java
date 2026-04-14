@@ -12,6 +12,7 @@ import com.zola.chat.chatrealtime.dto.ConversationListItemResponse;
 import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
+import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -349,6 +351,41 @@ public class ChatRealtimeService {
 
     public boolean isOnline(String userId) {
         return onlineUserChecker.isOnline(userId);
+    }
+
+    public UserPresenceResponse getUserPresence(String userId) {
+        return new UserPresenceResponse(
+            userId,
+            onlineUserChecker.isOnline(userId),
+            onlineUserChecker.lastChangedAt(userId)
+        );
+    }
+
+    public List<UserPresenceResponse> getUsersPresence(List<String> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> normalizedUserIds = userIds.stream()
+            .filter(id -> id != null && !id.isBlank())
+            .map(String::trim)
+            .distinct()
+            .toList();
+
+        if (normalizedUserIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, RedisOnlineUserChecker.PresenceStatus> presenceMap = onlineUserChecker.getPresence(normalizedUserIds);
+        return normalizedUserIds.stream()
+            .map(userId -> {
+                RedisOnlineUserChecker.PresenceStatus presence = presenceMap.get(userId);
+                if (presence == null) {
+                    return new UserPresenceResponse(userId, false, null);
+                }
+                return new UserPresenceResponse(userId, presence.online(), presence.lastChangedAt());
+            })
+            .toList();
     }
 
     private void ensureMember(ConversationEntity conversation, String userId) {

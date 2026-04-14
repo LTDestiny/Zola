@@ -1,13 +1,32 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Heart, ImagePlus, Info, Phone, SendHorizontal, Smile, Sparkles, Sticker, Video } from "lucide-react";
-import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
-import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
+import {
+  Heart,
+  ImagePlus,
+  Info,
+  Phone,
+  SendHorizontal,
+  Smile,
+  Sparkles,
+  Sticker,
+  Video,
+} from "lucide-react";
+import {
+  type ConversationItem,
+  type MessageItem,
+  type UserProfile,
+} from "../api/chatApi";
+import {
+  MessageRenderer,
+  type ChatMessage,
+} from "./components/MessageRenderer";
 
 const currentUserIdFallback = "me";
 
 type ChatProps = {
   language: "vi" | "en";
   activeConversation: ConversationItem | null;
+  activeConversationOnline: boolean;
+  activeConversationPresenceLabel: string;
   messages: MessageItem[];
   myProfile: UserProfile | null;
   isLoadingMessages: boolean;
@@ -37,7 +56,8 @@ function buildReactionSummary(reactions: string[] | undefined) {
 function formatTime(value: string | null, language: "vi" | "en") {
   if (!value) return language === "vi" ? "Khong ro" : "N/A";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return language === "vi" ? "Khong ro" : "N/A";
+  if (Number.isNaN(date.getTime()))
+    return language === "vi" ? "Khong ro" : "N/A";
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -46,7 +66,10 @@ function formatTime(value: string | null, language: "vi" | "en") {
   }).format(date);
 }
 
-function toStatus(item: MessageItem, myId: string | undefined): ChatMessage["status"] {
+function toStatus(
+  item: MessageItem,
+  myId: string | undefined,
+): ChatMessage["status"] {
   const seenCount = item.seenBy?.length ?? 0;
   if (item.senderId === myId && seenCount > 1) {
     return "seen";
@@ -69,7 +92,11 @@ function inferMessageType(item: MessageItem): ChatMessage["type"] {
   return "text";
 }
 
-function mapToUiMessage(item: MessageItem, language: "vi" | "en", myId?: string): ChatMessage {
+function mapToUiMessage(
+  item: MessageItem,
+  language: "vi" | "en",
+  myId?: string,
+): ChatMessage {
   const rawType = (item.type ?? "TEXT").toUpperCase();
   return {
     id: item.id,
@@ -91,6 +118,8 @@ function mapToUiMessage(item: MessageItem, language: "vi" | "en", myId?: string)
 export function Chat({
   language,
   activeConversation,
+  activeConversationOnline,
+  activeConversationPresenceLabel,
   messages,
   myProfile,
   isLoadingMessages,
@@ -116,7 +145,9 @@ export function Chat({
   const currentUserId = myProfile?.id ?? currentUserIdFallback;
 
   const mappedFromServer = useMemo(() => {
-    return messages.map((item) => mapToUiMessage(item, language, currentUserId));
+    return messages.map((item) =>
+      mapToUiMessage(item, language, currentUserId),
+    );
   }, [messages, language, currentUserId]);
 
   useEffect(() => {
@@ -155,15 +186,17 @@ export function Chat({
       prev.map((item) =>
         item.id === localId
           ? {
-            ...item,
-            status: "sent",
-          }
+              ...item,
+              status: "sent",
+            }
           : item,
       ),
     );
   };
 
-  const handleKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = async (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       await handleSendMessage();
@@ -188,7 +221,9 @@ export function Chat({
             </div>
           </div>
 
-          <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-slate-900">Welcome back!</h2>
+          <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-slate-900">
+            Welcome back!
+          </h2>
           <p className="mx-auto mb-10 max-w-md text-lg leading-relaxed text-slate-600">
             {language === "vi"
               ? "Khong tu dong mo hoi thoai. Chon mot nguoi ben trai de bat dau nhan tin."
@@ -198,11 +233,15 @@ export function Chat({
           <div className="grid grid-cols-1 gap-4 text-left sm:grid-cols-2">
             <article className="rounded-2xl bg-[#f5f2ff] p-6">
               <h4 className="mb-1 text-sm font-bold">AI Summaries</h4>
-              <p className="text-xs text-slate-600">Get quick recaps of long threads instantly.</p>
+              <p className="text-xs text-slate-600">
+                Get quick recaps of long threads instantly.
+              </p>
             </article>
             <article className="rounded-2xl bg-[#f5f2ff] p-6">
               <h4 className="mb-1 text-sm font-bold">Editorial Drafts</h4>
-              <p className="text-xs text-slate-600">Switch seamlessly between chat and drafting mode.</p>
+              <p className="text-xs text-slate-600">
+                Switch seamlessly between chat and drafting mode.
+              </p>
             </article>
           </div>
         </div>
@@ -216,22 +255,39 @@ export function Chat({
         <div className="flex items-center gap-3">
           <div className="relative grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
             {activeConversation.name.slice(0, 2).toUpperCase()}
-            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+            <span
+              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-400"}`}
+            />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">{activeConversation.name}</h3>
-            <p className="text-xs text-slate-500">{language === "vi" ? "Dang hoat dong" : "Active now"}</p>
+            <h3 className="text-base font-bold text-slate-900">
+              {activeConversation.name}
+            </h3>
+            <p
+              className={`text-xs ${activeConversationOnline ? "text-emerald-600" : "text-slate-500"}`}
+            >
+              {activeConversationPresenceLabel}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1 text-slate-500">
-          <button type="button" className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800">
+          <button
+            type="button"
+            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
+          >
             <Phone size={18} />
           </button>
-          <button type="button" className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800">
+          <button
+            type="button"
+            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
+          >
             <Video size={18} />
           </button>
-          <button type="button" className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800">
+          <button
+            type="button"
+            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
+          >
             <Info size={18} />
           </button>
         </div>
@@ -257,25 +313,36 @@ export function Chat({
                 const showAvatar = !isMine && !sameAsNext;
                 const showMeta = !sameAsNext;
                 return (
-                  <div key={message.id} className={sameAsPrev ? "mt-1.5" : "mt-3"}>
+                  <div
+                    key={message.id}
+                    className={sameAsPrev ? "mt-1.5" : "mt-3"}
+                  >
                     <MessageRenderer
                       message={{
                         ...message,
-                        reactions: messages.find((item) => item.id === message.id)?.reactions,
+                        reactions: messages.find(
+                          (item) => item.id === message.id,
+                        )?.reactions,
                       }}
                       isMine={isMine}
                       language={language}
-                      recipientAvatar={activeConversation.name.slice(0, 2).toUpperCase()}
+                      recipientAvatar={activeConversation.name
+                        .slice(0, 2)
+                        .toUpperCase()}
                       showAvatar={showAvatar}
                       showMeta={showMeta}
                       menuPlacement={index <= 1 ? "below" : "above"}
                       onDelete={(messageId) => onDeleteForMe(messageId)}
                       onReply={(target) => {
-                        onDraftChange(`${language === "vi" ? "Tra loi" : "Reply"}: ${target.text}\n`);
+                        onDraftChange(
+                          `${language === "vi" ? "Tra loi" : "Reply"}: ${target.text}\n`,
+                        );
                       }}
                       onForward={(messageId) => onForwardMessage(messageId)}
                       onRecall={(messageId) => onRecallMessage(messageId)}
-                      onReact={(messageId, emoji) => onReactMessage(messageId, emoji)}
+                      onReact={(messageId, emoji) =>
+                        onReactMessage(messageId, emoji)
+                      }
                     />
                   </div>
                 );
@@ -290,7 +357,9 @@ export function Chat({
 
       <footer className="sticky bottom-0 border-t border-slate-200/80 bg-white px-2 py-2 shadow-[0_-4px_16px_rgba(15,23,42,0.06)] sm:px-3">
         {isTyping && (
-          <div className="mb-2 text-xs text-slate-500">{language === "vi" ? "Dang go..." : "Typing..."}</div>
+          <div className="mb-2 text-xs text-slate-500">
+            {language === "vi" ? "Dang go..." : "Typing..."}
+          </div>
         )}
 
         {showEmojiPanel && (
@@ -354,7 +423,9 @@ export function Chat({
             className="max-h-24 min-h-9 resize-none rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300"
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
-            placeholder={language === "vi" ? "Nhap tin nhan..." : "Type a message..."}
+            placeholder={
+              language === "vi" ? "Nhap tin nhan..." : "Type a message..."
+            }
             onKeyDown={(event) => {
               void handleKeyDown(event);
             }}

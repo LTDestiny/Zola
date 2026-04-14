@@ -94,8 +94,20 @@ public final class AuthDtos {
         UUID id,
         String fullName,
         String email,
+        String phone,
         String avatarUrl,
         String gender,
+        String birthdate,
+        Boolean isOnline,
+        String lastSeenAt
+    ) {
+    }
+
+    public record UpdateProfileRequest(
+        @NotBlank @Size(max = 100) String fullName,
+        @Size(max = 20) String phone,
+        @Size(max = 1000) String avatarUrl,
+        @Size(max = 10) String gender,
         String birthdate
     ) {
     }

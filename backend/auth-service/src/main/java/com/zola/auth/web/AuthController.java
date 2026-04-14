@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -125,6 +126,29 @@ public class AuthController {
         return ApiResponse.ok("Profile fetched", toProfile(user));
     }
 
+    @PutMapping("/profile")
+    public ApiResponse<AuthDtos.UserProfileResponse> updateProfile(
+        @RequestHeader("Authorization") String authorization,
+        @Valid @RequestBody AuthDtos.UpdateProfileRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Claims claims = parseBearer(authorization);
+        UUID userId = UUID.fromString(claims.get("userId", String.class));
+        UserEntity user = authService.updateProfile(userId, request, clientIp(httpRequest), userAgent(httpRequest));
+        return ApiResponse.ok("Profile updated", toProfile(user));
+    }
+
+    @DeleteMapping("/profile")
+    public ApiResponse<Map<String, Object>> deleteProfile(
+        @RequestHeader("Authorization") String authorization,
+        HttpServletRequest httpRequest
+    ) {
+        Claims claims = parseBearer(authorization);
+        UUID userId = UUID.fromString(claims.get("userId", String.class));
+        authService.deleteAccount(userId, clientIp(httpRequest), userAgent(httpRequest));
+        return ApiResponse.ok("Profile deleted", Map.of("ok", true));
+    }
+
     @GetMapping("/users/search-by-email")
     public ApiResponse<AuthDtos.UserProfileResponse> searchByEmail(@RequestHeader("Authorization") String authorization, @org.springframework.web.bind.annotation.RequestParam("email") String email) {
         parseBearer(authorization);
@@ -166,13 +190,17 @@ public class AuthController {
 
     private AuthDtos.UserProfileResponse toProfile(UserEntity user) {
         String birthdate = user.getBirthdate() == null ? null : user.getBirthdate().toString();
+        String lastSeenAt = user.getLastSeenAt() == null ? null : user.getLastSeenAt().toString();
         return new AuthDtos.UserProfileResponse(
             user.getId(),
             user.getFullName(),
             user.getEmail(),
+            user.getPhone(),
             user.getAvatarUrl(),
             user.getGender(),
-            birthdate
+            birthdate,
+            user.getIsOnline(),
+            lastSeenAt
         );
     }
 }
