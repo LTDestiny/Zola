@@ -41,7 +41,7 @@ type Handlers = {
 export class ChatSocketClient {
   private client: Client;
   private conversationSubs = new Map<string, StompSubscription>();
-  private userQueueSub: StompSubscription | null = null;
+  private userQueueSubs = new Map<string, StompSubscription>();
   private handlers: Handlers;
 
   constructor(accessToken: string, handlers: Handlers) {
@@ -76,20 +76,32 @@ export class ChatSocketClient {
   disconnect() {
     this.conversationSubs.forEach((sub) => sub.unsubscribe());
     this.conversationSubs.clear();
-    this.userQueueSub?.unsubscribe();
-    this.userQueueSub = null;
+    this.userQueueSubs.forEach((sub) => sub.unsubscribe());
+    this.userQueueSubs.clear();
     this.client.deactivate();
   }
 
   subscribeUserQueue() {
     if (!this.client.connected) return;
-    this.userQueueSub?.unsubscribe();
-    this.userQueueSub = this.client.subscribe("/user/queue/chat", (message) => {
-      try {
-        this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
-      } catch {
-        this.handlers.onError("Cannot parse /user/queue/chat payload");
-      }
+    const userQueueDestinations = [
+      "/user/queue/chat",
+      "/user/queue/notifications",
+      "/user/queue/sync",
+    ];
+
+    this.userQueueSubs.forEach((sub) => sub.unsubscribe());
+    this.userQueueSubs.clear();
+
+    userQueueDestinations.forEach((destination) => {
+      const sub = this.client.subscribe(destination, (message) => {
+        try {
+          this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
+        } catch {
+          this.handlers.onError(`Cannot parse ${destination} payload`);
+        }
+      });
+
+      this.userQueueSubs.set(destination, sub);
     });
   }
 
@@ -104,17 +116,48 @@ export class ChatSocketClient {
       }
     });
 
-    expected.forEach((id) => {
-      if (this.conversationSubs.has(id)) return;
-      const sub = this.client.subscribe(`/topic/chat/${id}`, (message) => {
-        try {
-          this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
-        } catch {
-          this.handlers.onError("Cannot parse /topic/chat payload");
-        }
-      });
-      this.conversationSubs.set(id, sub);
+    expected.forEach((id) => this.subscribeConversation(id));
+  }
+
+  subscribeConversation(conversationId: string) {
+    if (!this.client.connected) return;
+    if (!conversationId || this.conversationSubs.has(conversationId)) return;
+
+    const sub = this.client.subscribe(`/topic/chat.${conversationId}`, (message) => {
+      try {
+        this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
+      } catch {
+        this.handlers.onError("Cannot parse /topic/chat.{conversationId} payload");
+      }
     });
+
+    this.conversationSubs.set(conversationId, sub);
+  }
+
+  subscribeConversationLegacy(conversationId: string) {
+    if (!this.client.connected) return;
+    const key = `${conversationId}::legacy`;
+    if (!conversationId || this.conversationSubs.has(key)) return;
+
+    const sub = this.client.subscribe(`/topic/chat/${conversationId}`, (message) => {
+      try {
+        this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
+      } catch {
+        this.handlers.onError("Cannot parse /topic/chat/{conversationId} payload");
+      }
+    });
+
+    this.conversationSubs.set(key, sub);
+  }
+
+  unsubscribeConversation(conversationId: string) {
+    const direct = this.conversationSubs.get(conversationId);
+    direct?.unsubscribe();
+    this.conversationSubs.delete(conversationId);
+
+    const legacy = this.conversationSubs.get(`${conversationId}::legacy`);
+    legacy?.unsubscribe();
+    this.conversationSubs.delete(`${conversationId}::legacy`);
   }
 
   publishTyping(conversationId: string, typing: boolean) {

@@ -12,7 +12,6 @@ export function useSocket() {
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const meId = useAuthStore((s) => s.me?.id);
-  const conversations = useChatStore((s) => s.conversations);
   const setConversations = useChatStore((s) => s.setConversations);
   const upsertConversation = useChatStore((s) => s.upsertConversation);
   const addUnreadForConversation = useChatStore((s) => s.addUnreadForConversation);
@@ -217,16 +216,11 @@ export function useSocket() {
         setConnected(true);
         setConnectedGlobal(true);
         client.subscribeUserQueue();
-        const latestConversationIds = new Set(
-          useChatStore
-          .getState()
-          .conversations.map((item) => item.id),
-        );
         const latestActiveConversationId = useChatStore.getState().activeConversationId;
         if (latestActiveConversationId) {
-          latestConversationIds.add(latestActiveConversationId);
+          client.subscribeConversation(latestActiveConversationId);
+          client.subscribeConversationLegacy(latestActiveConversationId);
         }
-        client.syncConversationSubscriptions([...latestConversationIds]);
       },
       onDisconnect: () => {
         setConnected(false);
@@ -257,12 +251,21 @@ export function useSocket() {
   }, [accessToken, onEvent, setConnectedGlobal, setPublishTyping]);
 
   useEffect(() => {
-    const ids = new Set(conversations.map((item) => item.id));
-    if (activeConversationId) {
-      ids.add(activeConversationId);
+    if (!clientRef.current) {
+      return;
     }
-    clientRef.current?.syncConversationSubscriptions([...ids]);
-  }, [activeConversationId, conversations]);
+
+    if (activeConversationId) {
+      clientRef.current.subscribeConversation(activeConversationId);
+      clientRef.current.subscribeConversationLegacy(activeConversationId);
+    }
+
+    return () => {
+      if (activeConversationId) {
+        clientRef.current?.unsubscribeConversation(activeConversationId);
+      }
+    };
+  }, [activeConversationId]);
 
   return {
     connected,
