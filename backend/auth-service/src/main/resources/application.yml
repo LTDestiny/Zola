@@ -1,5 +1,8 @@
 server:
   port: 8081
+  error:
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
@@ -42,6 +45,9 @@ jwt:
   access-token-expiry-seconds: 900
   refresh-token-expiry-seconds: 604800
 
+services:
+  chat-url: ${CHAT_SERVICE_URL:http://chat-service:8083}
+
 security:
   otp:
     max-attempts-per-hour: 5
@@ -49,7 +55,10 @@ security:
     max-fail-attempts: 3
     lock-duration-minutes: 15
     ttl-seconds: 600
+    hash-salt: ${OTP_HASH_SALT:change-this-otp-salt}
 
 app:
+  session:
+    same-platform-policy: ${SAME_PLATFORM_SESSION_POLICY:REVOKE}
   mail:
     from: ${MAIL_FROM:${SMTP_USER:noreply@zola.app}}

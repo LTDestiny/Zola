@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -28,7 +29,9 @@ public class AuthService {
     private final OtpService otpService;
     private final SessionRedisService sessionRedisService;
     private final SecurityLogService securityLogService;
+    private final SessionSyncPublisher sessionSyncPublisher;
     private final long refreshTtlSeconds;
+    private final String samePlatformPolicy;
 
     public AuthService(
         UserRepository userRepository,
@@ -38,7 +41,9 @@ public class AuthService {
         OtpService otpService,
         SessionRedisService sessionRedisService,
         SecurityLogService securityLogService,
-        @Value("${jwt.refresh-token-expiry-seconds}") long refreshTtlSeconds
+        SessionSyncPublisher sessionSyncPublisher,
+        @Value("${jwt.refresh-token-expiry-seconds}") long refreshTtlSeconds,
+        @Value("${app.session.same-platform-policy:REVOKE}") String samePlatformPolicy
     ) {
         this.userRepository = userRepository;
         this.userSessionRepository = userSessionRepository;
@@ -47,7 +52,9 @@ public class AuthService {
         this.otpService = otpService;
         this.sessionRedisService = sessionRedisService;
         this.securityLogService = securityLogService;
+        this.sessionSyncPublisher = sessionSyncPublisher;
         this.refreshTtlSeconds = refreshTtlSeconds;
+        this.samePlatformPolicy = samePlatformPolicy;
     }
 
     @Transactional
@@ -214,6 +221,7 @@ public class AuthService {
         session.setIsActive(false);
         userSessionRepository.save(session);
         sessionRedisService.revokeSession(userId, sessionId);
+        refreshUserOnlineStatus(userId);
         securityLogService.write(userId, "LOGOUT", ip, userAgent, "{\"sessionId\":\"" + sessionId + "\"}");
     }
 
@@ -225,6 +233,7 @@ public class AuthService {
             sessionRedisService.revokeSession(userId, session.getId());
         }
         userSessionRepository.saveAll(sessions);
+        refreshUserOnlineStatus(userId);
         securityLogService.write(userId, "LOGOUT_ALL", ip, userAgent, "{}");
     }
 
@@ -262,6 +271,62 @@ public class AuthService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
+    @Transactional
+    public UserEntity updateProfile(UUID userId, AuthDtos.UpdateProfileRequest request, String ip, String userAgent) {
+        UserEntity user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (!Boolean.TRUE.equals(user.getIsActive()) || Boolean.TRUE.equals(user.getIsDeleted())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is inactive");
+        }
+
+        String normalizedPhone = normalizeOptional(request.phone());
+        if (normalizedPhone != null) {
+            userRepository.findByPhone(normalizedPhone)
+                .filter(existing -> !existing.getId().equals(userId))
+                .ifPresent(existing -> {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone already in use");
+                });
+        }
+
+        user.setFullName(request.fullName().trim());
+        user.setPhone(normalizedPhone);
+        user.setAvatarUrl(normalizeOptional(request.avatarUrl()));
+        user.setGender(normalizeGender(request.gender()));
+        user.setBirthdate(parseBirthdate(request.birthdate()));
+        user.setUpdatedAt(Instant.now());
+
+        UserEntity saved = userRepository.save(user);
+        securityLogService.write(userId, "PROFILE_UPDATED", ip, userAgent, "{}");
+        return saved;
+    }
+
+    @Transactional
+    public void deleteAccount(UUID userId, String ip, String userAgent) {
+        UserEntity user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (Boolean.TRUE.equals(user.getIsDeleted())) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        user.setIsDeleted(true);
+        user.setIsActive(false);
+        user.setIsOnline(false);
+        user.setDeletedAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
+
+        List<UserSessionEntity> sessions = userSessionRepository.findByUserIdAndIsActiveTrue(userId);
+        for (UserSessionEntity session : sessions) {
+            session.setIsActive(false);
+            sessionRedisService.revokeSession(userId, session.getId());
+        }
+        userSessionRepository.saveAll(sessions);
+        securityLogService.write(userId, "ACCOUNT_DELETED", ip, userAgent, "{}");
+    }
+
     private java.util.Optional<UserEntity> findByIdentifier(String identifier) {
         String normalized = identifier.trim().toLowerCase(Locale.ROOT);
         if (normalized.contains("@")) {
@@ -291,6 +356,7 @@ public class AuthService {
             .build();
         userSessionRepository.save(session);
         sessionRedisService.activateSession(user.getId(), sessionId, Duration.ofSeconds(refreshTtlSeconds));
+        markUserOnline(user);
 
         String subject = user.getEmail() != null ? user.getEmail() : user.getPhone();
         String accessToken = jwtService.generateAccessToken(user.getId(), sessionId, subject);
@@ -304,6 +370,35 @@ public class AuthService {
         );
     }
 
+    private void markUserOnline(UserEntity user) {
+        Instant now = Instant.now();
+        user.setIsOnline(true);
+        user.setLastSeenAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
+    }
+
+    private void refreshUserOnlineStatus(UUID userId) {
+        boolean hasActiveSession = !userSessionRepository.findByUserIdAndIsActiveTrue(userId).isEmpty();
+        UserEntity user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        Instant now = Instant.now();
+        if (hasActiveSession) {
+            if (!Boolean.TRUE.equals(user.getIsOnline())) {
+                user.setIsOnline(true);
+                user.setUpdatedAt(now);
+                userRepository.save(user);
+            }
+            return;
+        }
+
+        user.setIsOnline(false);
+        user.setLastSeenAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
+    }
+
     private String requestDeviceName(String deviceName) {
         return deviceName == null || deviceName.isBlank() ? "Unknown Device" : deviceName;
     }
@@ -314,7 +409,10 @@ public class AuthService {
         }
 
         String normalized = deviceType.trim().toUpperCase(Locale.ROOT);
-        return "MOBILE".equals(normalized) ? "MOBILE" : "WEB";
+        if ("MOBILE".equals(normalized) || "ANDROID".equals(normalized) || "IOS".equals(normalized)) {
+            return "MOBILE";
+        }
+        return "WEB";
     }
 
     private void enforceSingleActiveSessionPerDeviceType(UUID userId, String deviceType) {
@@ -323,9 +421,19 @@ public class AuthService {
             return;
         }
 
+        String policy = samePlatformPolicy == null ? "REVOKE" : samePlatformPolicy.trim().toUpperCase(Locale.ROOT);
+        if ("REJECT".equals(policy)) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "An active " + deviceType + " session already exists"
+            );
+        }
+
         for (UserSessionEntity session : sameDeviceSessions) {
             session.setIsActive(false);
             sessionRedisService.revokeSession(userId, session.getId());
+            String payload = "{\"sessionId\":\"" + session.getId() + "\",\"deviceType\":\"" + deviceType + "\",\"reason\":\"NEW_LOGIN\"}";
+            sessionSyncPublisher.publish(userId, "SESSION_REVOKED", payload);
         }
         userSessionRepository.saveAll(sameDeviceSessions);
     }
@@ -342,5 +450,42 @@ public class AuthService {
             return null;
         }
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private LocalDate parseBirthdate(String value) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(normalized);
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid birthdate format. Use yyyy-MM-dd");
+        }
+    }
+
+    private String normalizeGender(String value) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            return null;
+        }
+
+        String key = normalized.toLowerCase(Locale.ROOT);
+        return switch (key) {
+            case "nam", "male" -> "MALE";
+            case "nu", "nữ", "female" -> "FEMALE";
+            case "khac", "khác", "other" -> "OTHER";
+            default -> throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Gender must be one of: nam, nu, khac"
+            );
+        };
     }
 }

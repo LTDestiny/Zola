@@ -9,7 +9,7 @@
 @layer base {
   body {
     @apply m-0 bg-zalo-sky text-slate-800 antialiased;
-    font-family: "Segoe UI", "Tahoma", sans-serif;
+    font-family: "Inter", "Roboto", "Segoe UI", "Tahoma", sans-serif;
   }
 
   button,
@@ -44,4 +44,13 @@
   input:disabled {
     cursor: not-allowed;
   }
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

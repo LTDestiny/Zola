@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: file-service
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:20MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:25MB}
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:zola_file_db}
     username: ${DB_USER:zola}
@@ -17,3 +21,17 @@ management:
     web:
       exposure:
         include: health,info
+
+storage:
+  endpoint: ${S3_ENDPOINT:}
+  public-endpoint: ${S3_PUBLIC_ENDPOINT:${S3_ENDPOINT:}}
+  access-key: ${AWS_ACCESS_KEY:}
+  secret-key: ${AWS_SECRET_KEY:}
+  bucket: ${S3_BUCKET:zola-shared-files-dev}
+  region: ${AWS_REGION:ap-southeast-1}
+  path-style: ${S3_PATH_STYLE:false}
+
+media:
+  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
+  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:104857600}
+  max-file-bytes: ${MEDIA_MAX_FILE_BYTES:104857600}

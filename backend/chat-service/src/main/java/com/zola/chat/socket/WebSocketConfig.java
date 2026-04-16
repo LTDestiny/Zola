@@ -19,7 +19,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
+        // /topic/chat/{conversationId} is used by clients to receive realtime events.
         registry.enableSimpleBroker("/topic", "/queue");
+        // All client sends should start with /app (ex: /app/chat.send).
         registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
     }

@@ -8,11 +8,15 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 @Component
 public class SocketAuthChannelInterceptor implements ChannelInterceptor {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(SocketAuthChannelInterceptor.class);
 
     private final SocketJwtService socketJwtService;
 
@@ -25,12 +29,27 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
             String authorization = accessor.getFirstNativeHeader("Authorization");
-            if (authorization == null || !authorization.startsWith("Bearer ")) {
-                throw new IllegalArgumentException("Missing bearer token");
+            if (authorization == null || authorization.isBlank()) {
+                authorization = accessor.getFirstNativeHeader("authorization");
             }
-            Claims claims = socketJwtService.parse(authorization.substring(7));
-            String userId = claims.get("userId", String.class);
-            accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+
+            if (authorization == null || !authorization.startsWith("Bearer ")) {
+                LOGGER.warn("Reject websocket CONNECT without bearer token");
+                return null;
+            }
+
+            try {
+                Claims claims = socketJwtService.parse(authorization.substring(7));
+                String userId = claims.get("userId", String.class);
+                if (userId == null || userId.isBlank()) {
+                    LOGGER.warn("Reject websocket CONNECT with invalid token payload");
+                    return null;
+                }
+                accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+            } catch (Exception ex) {
+                LOGGER.warn("Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
+                return null;
+            }
         }
         return message;
     }

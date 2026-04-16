@@ -1,9 +1,15 @@
 server:
   port: 8080
+  error:
+    include-message: always
 
 spring:
   application:
     name: api-gateway
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:20MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:25MB}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -24,3 +30,4 @@ services:
   auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}
   user-url: ${USER_SERVICE_URL:http://localhost:8082}
   chat-url: ${CHAT_SERVICE_URL:http://localhost:8083}
+  file-url: ${FILE_SERVICE_URL:http://localhost:8084}

@@ -4,6 +4,20 @@ server:
 spring:
   application:
     name: chat-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${CHAT_DB_NAME:zola_chat_db}
+    username: ${DB_USER:zola}
+    password: ${DB_PASSWORD:zola_pass}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   data:
     mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/zola_chat_db}
@@ -21,3 +35,8 @@ management:
 jwt:
   secret: ${JWT_SECRET:dev-secret-key-dev-secret-key-dev-secret-key-12345}
   issuer: zola-auth-service
+
+app:
+  chat:
+    edit-window-seconds: ${CHAT_EDIT_WINDOW_SECONDS:900}
+    recall-window-seconds: ${CHAT_RECALL_WINDOW_SECONDS:86400}

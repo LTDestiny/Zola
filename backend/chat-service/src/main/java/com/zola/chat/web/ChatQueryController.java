@@ -25,7 +25,7 @@ import java.util.Comparator;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/chat")
+@RequestMapping("/api/v1/chat-legacy")
 public class ChatQueryController {
 
     private final ConversationRepository conversationRepository;

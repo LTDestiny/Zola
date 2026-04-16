@@ -1,9 +1,12 @@
 package com.zola.file;
 
+import com.zola.common.storage.ObjectStorageProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
+@EnableConfigurationProperties(ObjectStorageProperties.class)
 public class FileServiceApplication {
 
     public static void main(String[] args) {
