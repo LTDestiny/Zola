@@ -10,11 +10,11 @@ type Dictionary = {
 };
 
 const dictionary: Dictionary = {
-  appName: { vi: "Zola", en: "Zola" },
+  appName: { vi: "Zalo", en: "Zalo" },
   loginTitle: { vi: "Dang nhap tai khoan", en: "Sign in" },
   loginSub: {
-    vi: "Dang nhap bang email va OTP de ket noi voi Zola Web",
-    en: "Sign in with email OTP to access Zola Web",
+    vi: "Dang nhap bang email va OTP de ket noi voi Zalo Web",
+    en: "Sign in with email OTP to access Zalo Web",
   },
   loginPasswordSub: {
     vi: "Dang nhap bang email va mat khau",

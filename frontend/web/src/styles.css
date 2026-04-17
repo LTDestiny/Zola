@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  --color-zola-blue: #0068ff;
-  --color-zola-sky: #dce8f4;
+  --color-zalo-blue: #0068ff;
+  --color-zalo-sky: #dce8f4;
   --shadow-card: 0 10px 24px rgba(33, 59, 94, 0.08);
 }
 
 @layer base {
   body {
-    @apply m-0 bg-zola-sky text-slate-800 antialiased;
+    @apply m-0 bg-zalo-sky text-slate-800 antialiased;
     font-family: "Inter", "Roboto", "Segoe UI", "Tahoma", sans-serif;
   }
 

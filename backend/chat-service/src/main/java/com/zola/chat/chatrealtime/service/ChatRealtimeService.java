@@ -54,7 +54,7 @@ public class ChatRealtimeService {
         RedisOnlineUserChecker onlineUserChecker,
         PostgresMessageHiddenRepository messageHiddenRepository,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
-        @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
+        @Value("${app.chat.recall-window-seconds:900}") long recallWindowSeconds
     ) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;

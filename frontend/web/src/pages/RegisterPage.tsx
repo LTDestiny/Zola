@@ -70,25 +70,25 @@ export function RegisterPage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-8 md:py-12 bg-zola-sky flex flex-col items-center gap-4">
+    <main className="min-h-screen px-4 py-8 md:py-12 bg-zalo-sky flex flex-col items-center gap-4">
       <div className="flex gap-2">
         <button
           type="button"
-          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "vi" ? "border-blue-400 text-zola-blue bg-white" : "border-slate-300 text-slate-600 bg-white"}`}
+          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "vi" ? "border-blue-400 text-zalo-blue bg-white" : "border-slate-300 text-slate-600 bg-white"}`}
           onClick={() => setLanguage("vi")}
         >
           Tieng Viet
         </button>
         <button
           type="button"
-          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "en" ? "border-blue-400 text-zola-blue bg-white" : "border-slate-300 text-slate-600 bg-white"}`}
+          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "en" ? "border-blue-400 text-zalo-blue bg-white" : "border-slate-300 text-slate-600 bg-white"}`}
           onClick={() => setLanguage("en")}
         >
           English
         </button>
       </div>
 
-      <div className="text-zola-blue text-6xl font-bold leading-none tracking-tight">
+      <div className="text-zalo-blue text-6xl font-bold leading-none tracking-tight">
         {t("appName")}
       </div>
       <p className="text-center text-slate-600">{t("createAccountTitle")}</p>
@@ -150,13 +150,13 @@ export function RegisterPage() {
 
           <Link
             to="/policy"
-            className="text-sm text-zola-blue hover:text-blue-700 text-center"
+            className="text-sm text-zalo-blue hover:text-blue-700 text-center"
           >
             {t("readPolicy")}
           </Link>
 
           <button
-            className="h-11 rounded-lg bg-zola-blue text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-11 rounded-lg bg-zalo-blue text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             type="button"
             onClick={() => void onRegister()}
             disabled={
@@ -184,7 +184,7 @@ export function RegisterPage() {
               </label>
 
               <button
-                className="h-11 rounded-lg border border-zola-blue text-zola-blue font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11 rounded-lg border border-zalo-blue text-zalo-blue font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 type="button"
                 onClick={() => void onVerifyRegisterOtp()}
                 disabled={loading || !otp.trim()}
@@ -211,7 +211,7 @@ export function RegisterPage() {
 
           <div className="flex justify-center gap-2 text-sm">
             <span>{t("loginTitle")}</span>
-            <Link className="text-zola-blue hover:text-blue-700" to="/login">
+            <Link className="text-zalo-blue hover:text-blue-700" to="/login">
               {t("backToLogin")}
             </Link>
           </div>

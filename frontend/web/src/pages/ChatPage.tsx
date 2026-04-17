@@ -1491,8 +1491,6 @@ export function ChatPage() {
     try {
       // Persist recall via REST as the source of truth; backend will broadcast realtime to both participants.
       await recallMessage(activeConversationId, messageId);
-      const recalledText =
-        language === "vi" ? "Bạn đã thu hồi một tin nhắn" : "You recalled a message";
       setMessages((prev) =>
         prev.map((item) =>
           item.id === messageId
@@ -1500,12 +1498,6 @@ export function ChatPage() {
             : item,
         ),
       );
-      // Optimistically update sidebar so it doesn't wait for the STOMP echo.
-      upsertConversation({
-        id: activeConversationId,
-        lastMessage: recalledText,
-        lastMessageAt: new Date().toISOString(),
-      });
     } catch (error) {
       setBannerMessage(toPolicyViolationMessage(error, "recall", language));
     }

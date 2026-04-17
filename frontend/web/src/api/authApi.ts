@@ -98,19 +98,6 @@ export async function verifyForgotOtp(email: string, code: string) {
   return response.data;
 }
 
-export async function resetPassword(email: string, code: string, newPassword: string) {
-  const response = await httpClient.post<ApiResponse<{ ok: boolean }>>(
-    "/api/v1/auth/reset-password",
-    {
-      identifier: email,
-      otpType: "EMAIL",
-      code,
-      newPassword,
-    },
-  );
-  return response.data;
-}
-
 export function toErrorMessage(error: unknown): string {
   const axiosError = error as AxiosError<ErrorResponseShape>;
   if (axiosError.code === "ECONNABORTED") {

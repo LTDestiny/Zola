@@ -1,6 +1,6 @@
 TAI LIEU FULL CHAT APP 1-1 (BACKEND + FRONTEND) - BAN CHI TIET
 
-Muc tieu: Dac ta day du kien truc, contract API, contract realtime, schema du lieu, bao mat, kha nang mo rong, va lo trinh trien khai cho ung dung chat 1-1 theo mo hinh Zola/Messenger.
+Muc tieu: Dac ta day du kien truc, contract API, contract realtime, schema du lieu, bao mat, kha nang mo rong, va lo trinh trien khai cho ung dung chat 1-1 theo mo hinh Zalo/Messenger.
 
 ==================================================
 1) TAM NHIN SAN PHAM

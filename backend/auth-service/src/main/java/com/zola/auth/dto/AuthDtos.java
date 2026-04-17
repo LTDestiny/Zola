@@ -65,14 +65,6 @@ public final class AuthDtos {
     public record VerifyOtpRequest(@NotBlank String identifier, @NotBlank String otpType, @NotBlank String code) {
     }
 
-    public record ResetPasswordRequest(
-        @NotBlank String identifier,
-        @NotBlank String otpType,
-        @NotBlank String code,
-        @NotBlank @Size(min = 8, max = 100) String newPassword
-    ) {
-    }
-
     public record AuthTokenResponse(
         UUID userId,
         UUID sessionId,
