@@ -58,7 +58,8 @@ Examples:
 
 Note:
 
-- Default service DB host is local PostgreSQL (`host.docker.internal`) with defaults `postgres/admin`.
+- Default Docker DB host is `host.docker.internal` with defaults `postgres/root`.
+- If you use Docker PostgreSQL (`local-pg-bootstrap`), set `DB_HOST_DOCKER=postgres` before `docker compose up`.
 - If you only use local PostgreSQL (pgAdmin), do not enable `local-pg-bootstrap`.
 
 ## Docker Web Modes (Dev and Prod)

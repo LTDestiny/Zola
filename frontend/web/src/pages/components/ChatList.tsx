@@ -20,24 +20,7 @@ export interface ChatListProps {
 }
 
 const mockChats: ChatListItem[] = [
-    {
-        id: "mock-1",
-        name: "Linh Tran",
-        avatar: "LT",
-        timestamp: "10:24",
-        lastMessage: "Can we review the launch checklist tonight?",
-        unreadCount: 3,
-        isOnline: true,
-    },
-    {
-        id: "mock-2",
-        name: "Minh Pham",
-        avatar: "MP",
-        timestamp: "09:10",
-        lastMessage: "I sent the design tokens in Figma.",
-        unreadCount: 0,
-        isOnline: true,
-    },
+    
 ];
 
 export function ChatList({

@@ -44,8 +44,8 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: postgres
-      POSTGRES_USER: zola
-      POSTGRES_PASSWORD: zola_pass
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
     ports:
       - "5432:5432"
     volumes:
@@ -78,15 +78,15 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_DB: postgres
-      POSTGRES_USER: zola
-      POSTGRES_PASSWORD: zola_pass
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
     volumes:
       - ./bootstrap/postgres-bootstrap.sh:/bootstrap/postgres-bootstrap.sh
     entrypoint:
       [
         "sh",
         "-c",
-        "chmod +x /bootstrap/postgres-bootstrap.sh && /bootstrap/postgres-bootstrap.sh",
+        "tr -d '\r' < /bootstrap/postgres-bootstrap.sh > /tmp/postgres-bootstrap.sh && chmod +x /tmp/postgres-bootstrap.sh && sh /tmp/postgres-bootstrap.sh",
       ]
     restart: "no"
 
@@ -145,7 +145,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
@@ -170,7 +170,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
     depends_on:
@@ -186,7 +186,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       CHAT_DB_NAME: ${CHAT_DB_NAME:-zola_chat_db}
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
@@ -206,7 +206,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${CALL_DB_NAME:-zola_call_db}
       REDIS_HOST: redis
       TURN_SECRET: ${TURN_SECRET}
@@ -223,7 +223,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
@@ -243,7 +243,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${AI_META_DB_NAME:-zola_ai_meta_db}
       MONGO_URI: ${AI_MONGO_URI:-mongodb://mongodb:27017/zola_ai_db}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -262,7 +262,7 @@ services:
       REDIS_HOST: redis
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${NOTIFICATION_DB_NAME:-zola_notification_db}
     depends_on:
       redis:
@@ -278,7 +278,7 @@ services:
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
 
   zola-web:

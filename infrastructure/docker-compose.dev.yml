@@ -18,3 +18,4 @@ services:
 
 volumes:
   zola_web_node_modules:
+  
