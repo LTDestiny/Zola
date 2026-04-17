@@ -23,4 +23,17 @@ public interface ConversationJpaRepository extends JpaRepository<ConversationEnt
         order by c.updatedAt desc
         """)
     List<ConversationEntity> findByParticipant(@Param("userId") String userId);
+
+    @Query("""
+        select coalesce(sum(
+            case
+                when c.user1Id = :userId then c.user1UnreadCount
+                when c.user2Id = :userId then c.user2UnreadCount
+                else 0
+            end
+        ), 0)
+        from ConversationEntity c
+        where c.user1Id = :userId or c.user2Id = :userId
+        """)
+    int sumUnreadByParticipant(@Param("userId") String userId);
 }

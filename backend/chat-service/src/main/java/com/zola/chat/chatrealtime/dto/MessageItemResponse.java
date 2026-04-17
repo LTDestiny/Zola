@@ -15,8 +15,10 @@ public record MessageItemResponse(
     List<String> reactions,
     boolean recalled,
     Set<String> deletedForUsers,
+    Set<String> deliveredTo,
     Set<String> seenBy,
     String createdAt,
-    String updatedAt
+    String updatedAt,
+    boolean edited
 ) {
 }

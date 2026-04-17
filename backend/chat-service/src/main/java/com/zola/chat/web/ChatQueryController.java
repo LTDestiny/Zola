@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.bson.types.ObjectId;
 import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,10 +30,16 @@ public class ChatQueryController {
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public ChatQueryController(ConversationRepository conversationRepository, MessageRepository messageRepository) {
+    public ChatQueryController(
+        ConversationRepository conversationRepository,
+        MessageRepository messageRepository,
+        SimpMessagingTemplate messagingTemplate
+    ) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @GetMapping("/conversations")
@@ -73,15 +80,47 @@ public class ChatQueryController {
         @PathVariable("conversationId") String conversationId,
         @Valid @RequestBody SendMessageRequest request
     ) {
-        ensureConversationMember(userId, conversationId);
+        ConversationDocument conversation = ensureConversationMember(userId, conversationId);
+        Instant now = Instant.now();
         MessageDocument message = new MessageDocument();
         message.setId(new ObjectId());
         message.setConversationId(parseObjectId(conversationId));
         message.setSenderId(userId);
         message.setType("TEXT");
         message.setContent(request.content().trim());
-        message.setCreatedAt(Instant.now());
+        message.setCreatedAt(now);
         MessageDocument saved = messageRepository.save(message);
+
+        conversation.setUpdatedAt(now);
+        conversationRepository.save(conversation);
+
+        ChatRealtimeMessage realtimeMessage = new ChatRealtimeMessage(
+            saved.getId().toHexString(),
+            saved.getId().toHexString(),
+            conversationId,
+            saved.getSenderId(),
+            saved.getContent(),
+            saved.getCreatedAt()
+        );
+
+        ChatRealtimeEvent event = new ChatRealtimeEvent(
+            "NEW_MESSAGE",
+            conversationId,
+            userId,
+            null,
+            saved.getContent(),
+            saved.getCreatedAt(),
+            realtimeMessage
+        );
+
+        messagingTemplate.convertAndSend("/topic/chat." + conversationId, event);
+        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        if (conversation.getParticipants() != null) {
+            for (String participantId : conversation.getParticipants()) {
+                messagingTemplate.convertAndSendToUser(participantId, "/queue/chat", event);
+                messagingTemplate.convertAndSendToUser(participantId, "/queue/notifications", event);
+            }
+        }
 
         return ApiResponse.ok("Message sent", new MessageResponse(
             saved.getId().toHexString(),
@@ -159,5 +198,26 @@ public class ChatQueryController {
     }
 
     public record SendMessageRequest(@NotBlank String content) {
+    }
+
+    public record ChatRealtimeEvent(
+        String eventType,
+        String conversationId,
+        String actorId,
+        Integer unreadCount,
+        String lastMessage,
+        Instant lastMessageAt,
+        ChatRealtimeMessage message
+    ) {
+    }
+
+    public record ChatRealtimeMessage(
+        String id,
+        String messageId,
+        String conversationId,
+        String senderId,
+        String content,
+        Instant createdAt
+    ) {
     }
 }

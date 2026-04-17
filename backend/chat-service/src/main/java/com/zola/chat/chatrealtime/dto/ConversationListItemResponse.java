@@ -8,6 +8,11 @@ public record ConversationListItemResponse(
     String name,
     String lastMessage,
     Instant lastMessageAt,
-    List<String> participants
+    int unreadCount,
+    Instant lastReadAt,
+    String lastReadMessageId,
+    List<String> participants,
+    String otherUserId,
+    boolean isOnline
 ) {
 }

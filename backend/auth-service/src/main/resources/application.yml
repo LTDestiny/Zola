@@ -55,6 +55,7 @@ security:
     max-fail-attempts: 3
     lock-duration-minutes: 15
     ttl-seconds: 600
+    hash-salt: ${OTP_HASH_SALT:change-this-otp-salt}
 
 app:
   session:

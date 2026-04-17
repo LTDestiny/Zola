@@ -10,6 +10,7 @@ type MessageActionsProps = {
   visible: boolean;
   onDelete: (messageId: string) => void | Promise<void>;
   onReply: (message: ChatMessage) => void;
+  onEdit?: (messageId: string, currentText: string) => void | Promise<void>;
   onForward?: (messageId: string) => void | Promise<void>;
   onRecall?: (messageId: string) => void | Promise<void>;
   onReact?: (messageId: string, emoji: string) => void | Promise<void>;
@@ -26,6 +27,7 @@ export function MessageActions({
   visible,
   onDelete,
   onReply,
+  onEdit,
   onForward,
   onRecall,
   onReact,
@@ -76,6 +78,7 @@ export function MessageActions({
   };
 
   const sideClass = isMine ? "right-full mr-2" : "left-full ml-2";
+  const isRecalled = Boolean(message.isRecalled);
   const verticalClass = placement === "below" ? "top-1/2 -translate-y-[45%]" : "top-1/2 -translate-y-1/2";
   const visibleClass = visible
     ? "pointer-events-auto opacity-100"
@@ -90,10 +93,11 @@ export function MessageActions({
           <button
             key={emoji}
             type="button"
+            disabled={isRecalled}
             onClick={() => {
               void onReact?.(message.id, emoji);
             }}
-            className="rounded-md px-1.5 py-1 text-sm transition-all duration-200 hover:bg-slate-100"
+            className="rounded-md px-1.5 py-1 text-sm transition-all duration-200 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {emoji}
           </button>
@@ -103,8 +107,9 @@ export function MessageActions({
       <div className="grid grid-cols-4 gap-1 text-slate-600">
         <button
           type="button"
+          disabled={isRecalled}
           onClick={() => onReply(message)}
-          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-100"
+          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Reply size={14} />
           <span>{language === "vi" ? "Tra loi" : "Reply"}</span>
@@ -153,7 +158,19 @@ export function MessageActions({
               >
                 {language === "vi" ? "Sao chep" : "Copy"}
               </button>
-              {isMine && onRecall && (
+              {isMine && onEdit && !isRecalled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onEdit(message.id, message.text);
+                    setIsMoreOpen(false);
+                  }}
+                  className="w-full rounded-md px-2 py-1.5 text-left text-indigo-700 hover:bg-indigo-50"
+                >
+                  {language === "vi" ? "Chinh sua" : "Edit"}
+                </button>
+              )}
+              {isMine && onRecall && !isRecalled && (
                 <button
                   type="button"
                   onClick={() => {

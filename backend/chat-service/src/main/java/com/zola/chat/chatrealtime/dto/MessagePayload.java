@@ -14,9 +14,11 @@ public record MessagePayload(
     String fileName,
     List<String> reactions,
     Set<String> deletedForUsers,
+    Set<String> deliveredTo,
     Set<String> seenBy,
     String createdAt,
     String updatedAt,
-    boolean recalled
+    boolean recalled,
+    boolean edited
 ) {
 }

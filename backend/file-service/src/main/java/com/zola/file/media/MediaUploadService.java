@@ -24,8 +24,9 @@ import java.util.UUID;
 @Service
 public class MediaUploadService {
 
-    private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp", "svg");
-    private static final Set<String> VIDEO_EXTENSIONS = Set.of("mp4", "mov", "avi", "mkv", "webm", "m4v");
+    private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
+    private static final Set<String> VIDEO_EXTENSIONS = Set.of("mp4", "mov", "webm");
+    private static final Set<String> FILE_EXTENSIONS = Set.of("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "txt");
 
     private final S3Client s3Client;
     private final ObjectStorageProperties storageProperties;
@@ -107,11 +108,29 @@ public class MediaUploadService {
         String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
         String ext = extension.toLowerCase(Locale.ROOT);
 
-        if (ct.startsWith("image/") || IMAGE_EXTENSIONS.contains(ext)) {
+        if (IMAGE_EXTENSIONS.contains(ext)) {
+            if (!ct.isBlank() && !ct.startsWith("image/")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid image content type");
+            }
             return "IMAGE";
         }
-        if (ct.startsWith("video/") || VIDEO_EXTENSIONS.contains(ext)) {
+        if (VIDEO_EXTENSIONS.contains(ext)) {
+            if (!ct.isBlank() && !ct.startsWith("video/")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid video content type");
+            }
             return "VIDEO";
+        }
+        if (FILE_EXTENSIONS.contains(ext)) {
+            if (!ct.isBlank() && (ct.startsWith("image/") || ct.startsWith("video/"))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid generic file content type");
+            }
+            return "FILE";
+        }
+
+        // Unknown extension: reject only if content type explicitly indicates image/video mismatch,
+        // otherwise treat as generic FILE to support all document formats.
+        if (!ct.isBlank() && (ct.startsWith("image/") || ct.startsWith("video/"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported file extension for media type");
         }
         return "FILE";
     }

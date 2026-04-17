@@ -21,9 +21,14 @@ public class MessageDocument {
     private String fileName;
     private List<String> reactions;
     private boolean recalled;
+    private boolean edited;
     private String recalledBy;
     private String recalledAt;
+    private String editedAt;
+    private String originalContent;
+    private String auditRecalledContent;
     private Set<String> deletedForUsers = new HashSet<>();
+    private Set<String> deliveredTo = new HashSet<>();
     private Set<String> seenBy = new HashSet<>();
     private String createdAt;
     private String updatedAt;
@@ -108,6 +113,14 @@ public class MessageDocument {
         this.recalled = recalled;
     }
 
+    public boolean isEdited() {
+        return edited;
+    }
+
+    public void setEdited(boolean edited) {
+        this.edited = edited;
+    }
+
     public String getRecalledBy() {
         return recalledBy;
     }
@@ -124,12 +137,44 @@ public class MessageDocument {
         this.recalledAt = recalledAt;
     }
 
+    public String getEditedAt() {
+        return editedAt;
+    }
+
+    public void setEditedAt(String editedAt) {
+        this.editedAt = editedAt;
+    }
+
+    public String getOriginalContent() {
+        return originalContent;
+    }
+
+    public void setOriginalContent(String originalContent) {
+        this.originalContent = originalContent;
+    }
+
+    public String getAuditRecalledContent() {
+        return auditRecalledContent;
+    }
+
+    public void setAuditRecalledContent(String auditRecalledContent) {
+        this.auditRecalledContent = auditRecalledContent;
+    }
+
     public Set<String> getDeletedForUsers() {
         return deletedForUsers;
     }
 
     public void setDeletedForUsers(Set<String> deletedForUsers) {
         this.deletedForUsers = deletedForUsers;
+    }
+
+    public Set<String> getDeliveredTo() {
+        return deliveredTo;
+    }
+
+    public void setDeliveredTo(Set<String> deliveredTo) {
+        this.deliveredTo = deliveredTo;
     }
 
     public Set<String> getSeenBy() {

@@ -3,6 +3,7 @@ package com.zola.user.web;
 import com.zola.common.response.ApiResponse;
 import com.zola.user.entity.FriendshipEntity;
 import com.zola.user.repository.FriendshipRepository;
+import com.zola.user.service.FriendEventPublisher;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
@@ -17,7 +18,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,10 +30,18 @@ import java.util.UUID;
 @RequestMapping("/api/v1/users/friendships")
 public class FriendshipController {
 
-    private final FriendshipRepository friendshipRepository;
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_ACCEPTED = "ACCEPTED";
+    private static final String STATUS_REJECTED = "REJECTED";
+    private static final String STATUS_DECLINED = "DECLINED";
+    private static final String STATUS_CANCELLED = "CANCELLED";
 
-    public FriendshipController(FriendshipRepository friendshipRepository) {
+    private final FriendshipRepository friendshipRepository;
+    private final FriendEventPublisher friendEventPublisher;
+
+    public FriendshipController(FriendshipRepository friendshipRepository, FriendEventPublisher friendEventPublisher) {
         this.friendshipRepository = friendshipRepository;
+        this.friendEventPublisher = friendEventPublisher;
     }
 
     @PostMapping
@@ -54,18 +65,43 @@ public class FriendshipController {
 
         if (existing.isPresent()) {
             FriendshipEntity relation = existing.get();
+
+            if (isResendAllowedStatus(relation.getStatus())) {
+                Instant now = Instant.now();
+                relation.setRequesterId(requesterId);
+                relation.setAddresseeId(request.addresseeId());
+                relation.setStatus(STATUS_PENDING);
+                relation.setAddresseeViewedAt(null);
+                relation.setUpdatedAt(now);
+                relation.setCreatedAt(now);
+
+                FriendshipEntity resent = friendshipRepository.save(relation);
+                friendEventPublisher.publishFriendRequestReceived(resent.getAddresseeId(), resent.getId(), resent.getRequesterId());
+                return ApiResponse.ok("Friend request sent", Map.of(
+                    "friendshipId", resent.getId().toString(),
+                    "status", resent.getStatus(),
+                    "requesterId", resent.getRequesterId().toString(),
+                    "addresseeId", resent.getAddresseeId().toString()
+                ));
+            }
+
             return ApiResponse.ok("Friendship already exists", Map.of(
                 "friendshipId", relation.getId().toString(),
                 "status", relation.getStatus()
             ));
         }
 
+        Instant now = Instant.now();
         FriendshipEntity entity = new FriendshipEntity();
         entity.setId(UUID.randomUUID());
         entity.setRequesterId(requesterId);
         entity.setAddresseeId(request.addresseeId());
-        entity.setStatus("PENDING");
+        entity.setStatus(STATUS_PENDING);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        entity.setAddresseeViewedAt(null);
         FriendshipEntity created = friendshipRepository.save(entity);
+        friendEventPublisher.publishFriendRequestReceived(created.getAddresseeId(), created.getId(), created.getRequesterId());
 
         return ApiResponse.ok("Friend request sent", Map.of(
             "friendshipId", created.getId().toString(),
@@ -107,7 +143,7 @@ public class FriendshipController {
     ) {
         UUID addresseeId = parseUserId(userIdHeader);
         List<PendingFriendRequest> requests = friendshipRepository
-            .findAllByAddresseeIdAndStatus(addresseeId, "PENDING")
+            .findAllByAddresseeIdAndStatus(addresseeId, STATUS_PENDING)
             .stream()
             .map(relation -> new PendingFriendRequest(
                 relation.getId(),
@@ -126,7 +162,7 @@ public class FriendshipController {
     ) {
         UUID userId = parseUserId(userIdHeader);
         List<FriendContact> friends = friendshipRepository
-            .findAllByUserIdAndStatus(userId, "ACCEPTED")
+            .findAllByUserIdAndStatus(userId, STATUS_ACCEPTED)
             .stream()
             .map(relation -> {
                 UUID friendId = relation.getRequesterId().equals(userId)
@@ -151,12 +187,14 @@ public class FriendshipController {
         if (!relation.getAddresseeId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot accept this request");
         }
-        if (!"PENDING".equalsIgnoreCase(relation.getStatus())) {
+        if (!STATUS_PENDING.equalsIgnoreCase(relation.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request is not pending");
         }
 
-        relation.setStatus("ACCEPTED");
+        relation.setStatus(STATUS_ACCEPTED);
+        relation.setUpdatedAt(Instant.now());
         FriendshipEntity updated = friendshipRepository.save(relation);
+        friendEventPublisher.publishFriendRequestAccepted(updated.getRequesterId(), updated.getAddresseeId(), updated.getId());
         return ApiResponse.ok("Friend request accepted", Map.of(
             "friendshipId", updated.getId().toString(),
             "status", updated.getStatus(),
@@ -177,18 +215,40 @@ public class FriendshipController {
         if (!relation.getAddresseeId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot decline this request");
         }
-        if (!"PENDING".equalsIgnoreCase(relation.getStatus())) {
+        if (!STATUS_PENDING.equalsIgnoreCase(relation.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request is not pending");
         }
 
-        relation.setStatus("DECLINED");
+        relation.setStatus(STATUS_REJECTED);
+        relation.setUpdatedAt(Instant.now());
         FriendshipEntity updated = friendshipRepository.save(relation);
-        return ApiResponse.ok("Friend request declined", Map.of(
+        friendEventPublisher.publishFriendRequestDeclined(updated.getRequesterId(), updated.getId());
+        return ApiResponse.ok("Friend request rejected", Map.of(
             "friendshipId", updated.getId().toString(),
             "status", updated.getStatus(),
             "requesterId", updated.getRequesterId().toString(),
             "addresseeId", updated.getAddresseeId().toString()
         ));
+    }
+
+    @GetMapping("/pending/unread-count")
+    public ApiResponse<Map<String, Object>> getUnreadPendingCount(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        UUID addresseeId = parseUserId(userIdHeader);
+        long unread = friendshipRepository.countByAddresseeIdAndStatusAndAddresseeViewedAtIsNull(addresseeId, STATUS_PENDING);
+        return ApiResponse.ok("Unread pending friend request count", Map.of("count", unread));
+    }
+
+    @PostMapping("/pending/mark-read")
+    @Transactional
+    public ApiResponse<Map<String, Object>> markPendingAsRead(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        UUID addresseeId = parseUserId(userIdHeader);
+        Instant now = Instant.now();
+        int updated = friendshipRepository.markPendingAsViewed(addresseeId, STATUS_PENDING, now);
+        return ApiResponse.ok("Pending friend requests marked as read", Map.of("updated", updated));
     }
 
     @DeleteMapping("/{friendshipId}")
@@ -208,7 +268,7 @@ public class FriendshipController {
         friendshipRepository.delete(relation);
         return ApiResponse.ok("Friendship removed", Map.of(
             "friendshipId", relation.getId().toString(),
-            "status", "DELETED",
+            "status", "NONE",
             "requesterId", relation.getRequesterId().toString(),
             "addresseeId", relation.getAddresseeId().toString()
         ));
@@ -237,5 +297,16 @@ public class FriendshipController {
         UUID friendshipId,
         UUID userId
     ) {
+    }
+
+    private boolean isResendAllowedStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+
+        String normalized = status.trim().toUpperCase();
+        return STATUS_REJECTED.equals(normalized)
+            || STATUS_DECLINED.equals(normalized)
+            || STATUS_CANCELLED.equals(normalized);
     }
 }

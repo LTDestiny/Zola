@@ -7,6 +7,10 @@ public record ChatEventResponse(
     boolean typing,
     boolean online,
     String targetUserId,
-    MessagePayload message
+    MessagePayload message,
+    Integer unreadCount,
+    Integer totalUnreadCount,
+    String lastMessage,
+    String lastMessageAt
 ) {
 }

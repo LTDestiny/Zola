@@ -98,16 +98,43 @@ export async function verifyForgotOtp(email: string, code: string) {
   return response.data;
 }
 
+export async function resetPassword(email: string, code: string, newPassword: string) {
+  const response = await httpClient.post<ApiResponse<{ ok: boolean }>>(
+    "/api/v1/auth/reset-password",
+    {
+      identifier: email,
+      otpType: "EMAIL",
+      code,
+      newPassword,
+    },
+  );
+  return response.data;
+}
+
 export function toErrorMessage(error: unknown): string {
   const axiosError = error as AxiosError<ErrorResponseShape>;
+  if (axiosError.code === "ECONNABORTED") {
+    return "Ket noi den may chu bi timeout. Vui long thu lai sau vai giay.";
+  }
+
+  if (axiosError.code === "ERR_NETWORK") {
+    return "Khong the ket noi den may chu. Hay kiem tra backend va URL API.";
+  }
+
   const payload = axiosError.response?.data;
   const firstValidationError = payload?.errors?.[0]?.defaultMessage;
+  const backendMessage =
+    payload?.message ?? firstValidationError ?? payload?.error;
 
-  return (
-    payload?.message ??
-    firstValidationError ??
-    payload?.error ??
-    axiosError.message ??
-    "Unexpected error"
-  );
+  if (typeof backendMessage === "string") {
+    const normalized = backendMessage.toLowerCase();
+    if (
+      normalized.includes("smtp authentication failed") ||
+      normalized.includes("authentication failed")
+    ) {
+      return "SMTP dang bi sai tai khoan/mat khau. Neu dung Gmail, hay dung App Password (16 ky tu), khong dung mat khau dang nhap thuong.";
+    }
+  }
+
+  return backendMessage ?? axiosError.message ?? "Unexpected error";
 }

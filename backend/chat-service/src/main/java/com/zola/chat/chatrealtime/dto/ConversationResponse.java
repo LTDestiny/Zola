@@ -8,6 +8,10 @@ public record ConversationResponse(
     String user1Id,
     String user2Id,
     String lastMessage,
+    Instant lastMessageAt,
+    int requesterUnreadCount,
+    Instant requesterLastReadAt,
+    String requesterLastReadMessageId,
     Instant updatedAt
 ) {
 }
