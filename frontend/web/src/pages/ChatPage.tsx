@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import {
@@ -51,6 +51,7 @@ import { Sidebar } from "./components/Sidebar";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
+import { useTyping } from "../hooks/useTyping";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -262,6 +263,18 @@ export function ChatPage() {
   const messageLoadRequestIdRef = useRef(0);
   const uploadAbortControllersRef = useRef<Record<string, AbortController>>({});
   const uploadFileRegistryRef = useRef<Record<string, { file: File; caption: string; conversationId: string }>>({});
+
+  // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
+  const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
+    const client = realtimeClientRef.current;
+    if (!client || !client.isConnected()) return false;
+    return client.publishTyping(conversationId, typing);
+  }, []);
+
+  const {
+    onTextChange: onTypingTextChange,
+    onSendMessage: onTypingSendMessage
+  } = useTyping(activeConversationId, publishTypingFn);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
@@ -576,18 +589,22 @@ export function ChatPage() {
         }
       }
 
-      if (!activeId && items.length > 0) {
-        hasUserOpenedConversationRef.current = false;
-        manuallyOpenedConversationIdRef.current = null;
-        setActiveConversationId(items[0].id);
-      } else if (
+      // ═══════════════════════════════════════════════════════════════════════
+      // FIX: Do NOT auto-select first conversation on initial load
+      // This ensures:
+      // - Login → /messages shows Welcome Screen
+      // - Refresh /messages → shows Welcome Screen  
+      // - Tab switch → shows Welcome Screen
+      // Only clear selection if the selected conversation no longer exists
+      // ═══════════════════════════════════════════════════════════════════════
+      if (
         !silent &&
         activeId &&
         !items.some((conversation) => conversation.id === activeId)
       ) {
         hasUserOpenedConversationRef.current = false;
         manuallyOpenedConversationIdRef.current = null;
-        setActiveConversationId(items[0]?.id ?? null);
+        setActiveConversationId(null);  // Clear, don't auto-select first
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -761,6 +778,15 @@ export function ChatPage() {
         if (event.eventType === "TYPING") {
           if (event.actorId !== myUserIdRef.current) {
             setTypingUserId(event.typing ? event.actorId : null);
+
+            // Auto-clear typing after 5s if stuck (anti-stuck protection)
+            if (event.typing) {
+              setTimeout(() => {
+                setTypingUserId((current) =>
+                  current === event.actorId ? null : current
+                );
+              }, 5000);
+            }
           }
           return;
         }
@@ -791,12 +817,28 @@ export function ChatPage() {
           return;
         }
 
+        // Clear typing indicator when message arrives from this conversation
+        if (
+          (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") &&
+          event.conversationId === activeConversationIdRef.current
+        ) {
+          setTypingUserId(null);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // CRITICAL FIX: Deduplicate by messageId ONLY (not by eventType)
+        // Backend sends same message to BOTH topic and user queue
+        // MESSAGE_SENT and NEW_MESSAGE for same messageId = duplicate!
+        // ═══════════════════════════════════════════════════════════════════════
         if (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") {
-          const sendKey = `${event.eventType}:${payload.messageId}`;
-          if (processedRealtimeSendIdsRef.current.has(sendKey)) {
+          // Use just messageId - NOT including eventType
+          // This catches duplicates across MESSAGE_SENT and NEW_MESSAGE
+          const dedupKey = `msg:${payload.messageId}`;
+          if (processedRealtimeSendIdsRef.current.has(dedupKey)) {
+            console.log(`[ChatPage] Duplicate message ignored: ${dedupKey}`);
             return;
           }
-          processedRealtimeSendIdsRef.current.add(sendKey);
+          processedRealtimeSendIdsRef.current.add(dedupKey);
           if (processedRealtimeSendIdsRef.current.size > 800) {
             const first = processedRealtimeSendIdsRef.current.values().next().value;
             if (first) {
@@ -805,7 +847,8 @@ export function ChatPage() {
           }
         }
 
-        const messageKey = `${event.eventType}:${payload.messageId}`;
+        // Secondary dedup check (legacy, now unified above)
+        const messageKey = `msg:${payload.messageId}`;
         if (event.eventType === "NEW_MESSAGE") {
           if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
             return;
@@ -1020,7 +1063,7 @@ export function ChatPage() {
           {
             userId: event.userId,
             online: event.online,
-            lastChangedAt: event.lastChangedAt ?? null,
+            lastChangedAt: event.lastSeenAt ?? event.lastChangedAt ?? null,
           },
         ]);
       },
@@ -1236,6 +1279,9 @@ export function ChatPage() {
   const onSendMessage = async () => {
     const content = draftMessage.trim();
     if (!content || !activeConversationId || isSending) return;
+
+    // Stop typing indicator immediately when sending
+    onTypingSendMessage();
 
     try {
       setIsSending(true);
@@ -1641,6 +1687,14 @@ export function ChatPage() {
         setActiveConversationId(primaryTargetId);
         if (primaryTargetId) {
           void reloadConversationMessagesWithRetry(primaryTargetId, 4);
+          // Clear unread when opening forwarded conversation target
+          const targetConversation = useChatStore
+            .getState()
+            .conversations.find((c) => c.id === primaryTargetId);
+          if (targetConversation && (targetConversation.unreadCount ?? 0) > 0) {
+            markConversationReadLocal(primaryTargetId);
+            void markConversationRead(primaryTargetId).catch(() => { });
+          }
         }
       }
 
@@ -1831,6 +1885,17 @@ export function ChatPage() {
       pendingReadSyncOnOpenRef.current = true;
       setActiveConversationId(conversation.data.id);
       setActiveTab("messages");
+
+      // Clear unread immediately when opening friend conversation
+      const currentConversation = useChatStore
+        .getState()
+        .conversations.find((c) => c.id === conversation.data.id);
+      if (currentConversation && (currentConversation.unreadCount ?? 0) > 0) {
+        markConversationReadLocal(conversation.data.id);
+        void markConversationRead(conversation.data.id).catch(() => {
+          // Silently handle - local state is already cleared
+        });
+      }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -2009,6 +2074,17 @@ export function ChatPage() {
       : 0;
 
   const onChangeTab = (tab: ChatTab) => {
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX: Clear selected conversation when switching back to messages tab
+    // This ensures:
+    // - Leaving contacts/profile tab → returning to messages → Welcome Screen
+    // - Not keeping the old conversation selected
+    // ═══════════════════════════════════════════════════════════════════════
+    if (tab === "messages" && activeTab !== "messages") {
+      hasUserOpenedConversationRef.current = false;
+      manuallyOpenedConversationIdRef.current = null;
+      setActiveConversationId(null);
+    }
     setActiveTab(tab);
   };
 
@@ -2039,6 +2115,23 @@ export function ChatPage() {
           manuallyOpenedConversationIdRef.current = conversationId;
           pendingReadSyncOnOpenRef.current = true;
           setActiveConversationId(conversationId);
+
+          // ═══════════════════════════════════════════════════════════════════════
+          // FIX: Clear unread IMMEDIATELY when user clicks on a conversation
+          // This ensures the UI updates instantly without waiting for messages to load
+          // The API call syncs with backend; realtime will notify other tabs
+          // ═══════════════════════════════════════════════════════════════════════
+          const currentConversation = useChatStore
+            .getState()
+            .conversations.find((c) => c.id === conversationId);
+          if (currentConversation && (currentConversation.unreadCount ?? 0) > 0) {
+            // 1. Clear unread locally (synchronous - UI updates immediately)
+            markConversationReadLocal(conversationId);
+            // 2. Sync with backend (async - don't block the click)
+            void markConversationRead(conversationId).catch(() => {
+              // Silently handle - local state is already cleared, backend will sync on next refresh
+            });
+          }
         }}
         onCreateChat={() => setIsAddFriendOpen(true)}
       />
@@ -2384,19 +2477,8 @@ export function ChatPage() {
               draftMessage={draftMessage}
               onDraftChange={(value) => {
                 setDraftMessage(value);
-                const client = realtimeClientRef.current;
-                if (!activeConversationId || !client || !client.isConnected()) {
-                  return;
-                }
-
-                client.publishTyping(activeConversationId, true);
-                if (typingTimeoutRef.current) {
-                  window.clearTimeout(typingTimeoutRef.current);
-                }
-                typingTimeoutRef.current = window.setTimeout(() => {
-                  client.publishTyping(activeConversationId, false);
-                  typingTimeoutRef.current = null;
-                }, 1200);
+                // Use debounced typing indicator
+                onTypingTextChange(value);
               }}
               onSendMessage={onSendMessage}
               onSendFiles={onSendFiles}

@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@stomp/stompjs": "^7.3.0",
+    "axios": "^1.15.0",
+    "socket.io-client": "^4.8.3",
+    "ws": "^8.20.0"
+  }
+}

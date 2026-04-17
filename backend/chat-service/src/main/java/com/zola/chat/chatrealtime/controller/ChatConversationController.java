@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -141,11 +142,11 @@ public class ChatConversationController {
     @GetMapping("/users/{userId}/online")
     public ApiResponse<Map<String, Object>> onlineStatus(@PathVariable("userId") String userId) {
         UserPresenceResponse presence = chatRealtimeService.getUserPresence(userId);
-        return ApiResponse.ok("Online status", Map.of(
-            "userId", userId,
-            "online", presence.online(),
-            "lastChangedAt", presence.lastChangedAt()
-        ));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", userId);
+        payload.put("online", presence.online());
+        payload.put("lastChangedAt", presence.lastChangedAt());
+        return ApiResponse.ok("Online status", payload);
     }
 
     @GetMapping("/users/presence")

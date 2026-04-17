@@ -21,6 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   bootstrap: async () => {
     const [ok, token] = await Promise.all([isAuthenticated(), getAccessToken()]);
+    console.log("[authStore][bootstrap]", { ok, tokenLength: token?.length ?? 0 });
     set({
       bootstrapped: true,
       isLoggedIn: ok,

@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useActionSheet } from "@expo/react-native-action-sheet";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { addReaction, deleteForMe, recallMessage, sendMessage } from "@/modules/chat/api/chatApi";
@@ -7,35 +17,127 @@ import { inferMessageType, pickDocumentFile, pickMediaFromLibrary, uploadMedia }
 import { MessageBubble } from "@/modules/chat/components/MessageBubble";
 import { MessageInput } from "@/modules/chat/components/MessageInput";
 import { TypingIndicator } from "@/modules/chat/components/TypingIndicator";
+import { PresenceBadge } from "@/modules/chat/components/PresenceBadge";
 import { useMessages } from "@/modules/chat/hooks/useMessages";
+import { useTyping } from "@/modules/chat/hooks/useTyping";
+import { fetchUserProfile, getConversationDisplayName, getPeerUserId } from "@/modules/chat/utils/conversationUtils";
+import { getPresenceLabel } from "@/modules/chat/utils/timeFormatter";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { useChatStore } from "@/modules/chat/store/chatStore";
-import { useSocketStore } from "@/modules/chat/store/socketStore";
+import { usePresenceStore, getPresenceLabel as getStoredPresenceLabel } from "@/modules/chat/store/presenceStore";
 import type { ChatStackParamList } from "@/shared/types/navigation";
 import type { MessageItem } from "@/shared/types/api";
-import { colors } from "@/shared/theme/colors";
+import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT DETAIL SCREEN - Premium iOS Style (iMessage + Zalo)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DEBUG = false;
+
+function log(tag: string, ...args: unknown[]) {
+  if (DEBUG) {
+    console.log(`[ChatDetail][${tag}]`, ...args);
+  }
+}
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatDetail">;
 
+const keyExtractor = (item: MessageItem) => item.id;
+
 export function ChatDetailScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const conversation = route.params.conversation;
+  const conversationId = conversation.id;
+
   const me = useAuthStore((s) => s.me);
-  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
-  const typing = useChatStore((s) => s.typingByConversation[conversation.id] ?? false);
-  const publishTyping = useSocketStore((s) => s.publishTyping);
-  const { showActionSheetWithOptions } = useActionSheet();
+  const meId = me?.id;
 
-  const { messages, loading, hasMore, loadInitial, loadMore, sendText } = useMessages(conversation.id);
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const initialDisplayName = useMemo(
+    () => getConversationDisplayName(conversation, meId),
+    [conversation, meId],
+  );
 
   useEffect(() => {
-    setActiveConversation(conversation.id);
-    void loadInitial();
-    return () => setActiveConversation(null);
-  }, [conversation.id, loadInitial, setActiveConversation]);
+    const peerUserId = getPeerUserId(conversation, meId);
+    if (!peerUserId) return;
 
-  const onLongPressMessage = (message: MessageItem) => {
+    void fetchUserProfile(peerUserId).then((profile) => {
+      if (profile?.fullName) {
+        setResolvedName(profile.fullName);
+      }
+    });
+  }, [conversation, meId]);
+
+  const displayName = resolvedName ?? initialDisplayName;
+
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+
+  const typing = useChatStore(
+    useCallback((s) => s.typingByConversation[conversationId] ?? false, [conversationId]),
+  );
+
+  const peerUserId = useMemo(
+    () => getPeerUserId(conversation, meId),
+    [conversation, meId],
+  );
+
+  const presenceState = usePresenceStore(
+    useCallback((s) => peerUserId ? s.presenceMap[peerUserId] : null, [peerUserId]),
+  );
+  const isOnline = presenceState?.online ?? false;
+  const lastSeenAt = presenceState?.lastSeenAt ?? null;
+
+  useEffect(() => {
+    if (peerUserId && !presenceState) {
+      usePresenceStore.getState().fetchPresenceBatch([peerUserId]);
+    }
+  }, [peerUserId, presenceState]);
+
+  const presenceLabel = useMemo(() => {
+    if (typing) {
+      return 'Đang nhập...';
+    }
+    return getStoredPresenceLabel(isOnline, lastSeenAt, 'vi');
+  }, [typing, isOnline, lastSeenAt]);
+
+  const presenceColor = useMemo(() => {
+    if (typing) return colors.primary;
+    if (isOnline) return colors.success;
+    return colors.muted;
+  }, [typing, isOnline]);
+
+  const { onTextChange, onSendMessage } = useTyping(conversationId);
+
+  const { showActionSheetWithOptions } = useActionSheet();
+
+  const { messages, loading, hasMore, loadInitial, loadMore, sendText } = useMessages(conversationId);
+
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const flatListRef = useRef<FlatList<MessageItem>>(null);
+
+  useEffect(() => {
+    log("mount", `Setting active conversation: ${conversationId.slice(0, 8)}`);
+    setActiveConversation(conversationId);
+    void loadInitial();
+
+    return () => {
+      log("unmount", "Clearing active conversation");
+      setActiveConversation(null);
+    };
+  }, [conversationId, loadInitial, setActiveConversation]);
+
+  const prevLengthRef = useRef(messages.length);
+  useEffect(() => {
+    if (messages.length !== prevLengthRef.current) {
+      log("messages", `Count changed: ${prevLengthRef.current} → ${messages.length}`);
+      prevLengthRef.current = messages.length;
+    }
+  }, [messages.length]);
+
+  const onLongPressMessage = useCallback((message: MessageItem) => {
     const options = ["Copy", "Reply", "Recall", "Delete for me", "Forward", "👍", "❤️", "😂", "😮", "😢", "Cancel"];
     const cancelButtonIndex = options.length - 1;
 
@@ -47,22 +149,22 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           Alert.alert("Copy", message.content);
         }
         if (selectedIndex === 2) {
-          await recallMessage(conversation.id, message.id);
+          await recallMessage(conversationId, message.id);
         }
         if (selectedIndex === 3) {
-          await deleteForMe(conversation.id, message.id);
+          await deleteForMe(conversationId, message.id);
         }
         if (selectedIndex >= 5 && selectedIndex <= 9) {
           const emojis = ["👍", "❤️", "😂", "😮", "😢"];
-          await addReaction(conversation.id, message.id, emojis[selectedIndex - 5]);
+          await addReaction(conversationId, message.id, emojis[selectedIndex - 5]);
         }
       } catch {
-        Alert.alert("Thong bao", "Khong thuc hien duoc hanh dong");
+        Alert.alert("Thông báo", "Không thực hiện được hành động");
       }
     });
-  };
+  }, [conversationId, showActionSheetWithOptions]);
 
-  const onPickImage = async () => {
+  const onPickImage = useCallback(async () => {
     const asset = await pickMediaFromLibrary();
     if (!asset) return;
     const uploaded = await uploadMedia({
@@ -70,7 +172,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       name: asset.fileName ?? `image-${Date.now()}.jpg`,
       mimeType: asset.mimeType ?? "image/jpeg",
     });
-    await sendMessage(conversation.id, asset.fileName ?? "Anh", {
+    await sendMessage(conversationId, asset.fileName ?? "Ảnh", {
       type: inferMessageType(uploaded.data.contentType),
       fileUrl: uploaded.data.fileUrl,
       fileName: uploaded.data.fileName,
@@ -78,9 +180,9 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     if ((uploaded.data.contentType ?? "").startsWith("image/")) {
       setSelectedImage(uploaded.data.fileUrl);
     }
-  };
+  }, [conversationId]);
 
-  const onPickFile = async () => {
+  const onPickFile = useCallback(async () => {
     const doc = await pickDocumentFile();
     if (!doc) return;
     const uploaded = await uploadMedia({
@@ -88,87 +190,265 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       name: doc.name,
       mimeType: doc.mimeType ?? "application/octet-stream",
     });
-    await sendMessage(conversation.id, doc.name, {
+    await sendMessage(conversationId, doc.name, {
       type: inferMessageType(uploaded.data.contentType),
       fileUrl: uploaded.data.fileUrl,
       fileName: uploaded.data.fileName,
     });
-  };
+  }, [conversationId]);
 
-  const reversed = useMemo(() => [...messages].reverse(), [messages]);
+  const onSend = useCallback((value: string) => {
+    void sendText(value);
+    onSendMessage();
+  }, [sendText, onSendMessage]);
+
+  const reversed = useMemo(() => {
+    log("reversed", `Computing reversed messages, count: ${messages.length}`);
+    return [...messages].reverse();
+  }, [messages]);
+
+  const renderItem = useCallback(({ item }: { item: MessageItem }) => (
+    <View style={styles.messageRow}>
+      <MessageBubble
+        message={item}
+        mine={item.senderId === meId}
+        onLongPress={() => onLongPressMessage(item)}
+      />
+    </View>
+  ), [meId, onLongPressMessage]);
+
+  const onEndReached = useCallback(() => {
+    if (hasMore && !loading) {
+      log("loadMore", "Loading more messages...");
+      void loadMore();
+    }
+  }, [hasMore, loading, loadMore]);
+
+  const extraData = useMemo(() => {
+    const lastMsg = messages[messages.length - 1];
+    return `${messages.length}-${lastMsg?.id ?? "none"}-${lastMsg?.content?.slice(0, 10) ?? ""}`;
+  }, [messages]);
+
+  const avatarLetter = displayName.charAt(0).toUpperCase();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View
-        style={{
-          paddingHorizontal: 14,
-          paddingTop: 14,
-          paddingBottom: 10,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-          backgroundColor: colors.card,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-          <Pressable hitSlop={10} onPress={() => navigation.goBack()}>
-            <Text style={{ color: colors.text, fontSize: 24 }}>‹</Text>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontWeight: "700", fontSize: 30 }} numberOfLines={1}>
-              {conversation.name}
-            </Text>
-            <Text style={{ color: colors.muted, marginTop: 2, fontSize: 14 }}>{typing ? "dang go..." : "online"}</Text>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => [
+            styles.backButton,
+            pressed && styles.backButtonPressed,
+          ]}
+        >
+          <Text style={styles.backIcon}>‹</Text>
+        </Pressable>
+
+        <Pressable style={styles.headerInfo}>
+          <View style={styles.headerAvatarContainer}>
+            <View style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarText}>{avatarLetter}</Text>
+            </View>
+            {peerUserId && (
+              <View style={styles.headerPresenceBadge}>
+                <PresenceBadge online={isOnline} size="sm" bordered />
+              </View>
+            )}
           </View>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Text style={{ color: colors.text, fontSize: 21 }}>📞</Text>
-          <Text style={{ color: colors.text, fontSize: 21 }}>🎥</Text>
-          <Text style={{ color: colors.text, fontSize: 21 }}>☰</Text>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerName} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <View style={styles.headerStatusRow}>
+              <Text style={[styles.headerStatus, { color: presenceColor }]}>
+                {presenceLabel}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+
+        <View style={styles.headerActions}>
+          <Pressable style={styles.headerActionButton}>
+            <Text style={styles.headerActionIcon}>📞</Text>
+          </Pressable>
+          <Pressable style={styles.headerActionButton}>
+            <Text style={styles.headerActionIcon}>🎥</Text>
+          </Pressable>
+          <Pressable style={styles.headerActionButton}>
+            <Text style={styles.headerActionIcon}>☰</Text>
+          </Pressable>
         </View>
       </View>
 
+      {/* Typing Indicator */}
       <TypingIndicator visible={typing} />
 
+      {/* Messages */}
       <FlatList
+        ref={flatListRef}
         data={reversed}
-        keyExtractor={(item) => item.id}
-        style={{ backgroundColor: colors.bg }}
-        contentContainerStyle={{ paddingTop: 10, paddingBottom: 8 }}
-        renderItem={({ item }) => (
-          <View style={{ paddingHorizontal: 12 }}>
-            <MessageBubble
-              message={item}
-              mine={item.senderId === me?.id}
-              onLongPress={() => onLongPressMessage(item)}
-            />
-          </View>
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        style={styles.messageList}
+        contentContainerStyle={styles.messageListContent}
         inverted
-        onEndReached={() => {
-          if (hasMore && !loading) {
-            void loadMore();
-          }
-        }}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={20}
+        windowSize={15}
+        initialNumToRender={20}
+        updateCellsBatchingPeriod={50}
+        extraData={extraData}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        showsVerticalScrollIndicator={false}
       />
 
-      <MessageInput
-        onSend={(value) => void sendText(value)}
-        onPickImage={() => void onPickImage()}
-        onPickFile={() => void onPickFile()}
-        onCamera={() => Alert.alert("Camera", "Ban co the mo rong bang expo-camera")}
-        onRecordAudio={() => Alert.alert("Audio", "Ban co the mo rong bang expo-av")}
-        onTyping={(value) => publishTyping(conversation.id, value)}
-      />
+      {/* Input Bar */}
+      <View style={[styles.inputContainer, { paddingBottom: insets.bottom || spacing.md }]}>
+        <MessageInput
+          onSend={onSend}
+          onPickImage={() => void onPickImage()}
+          onPickFile={() => void onPickFile()}
+          onCamera={() => Alert.alert("Camera", "Bạn có thể mở rộng bằng expo-camera")}
+          onRecordAudio={() => Alert.alert("Audio", "Bạn có thể mở rộng bằng expo-av")}
+          onTextChange={onTextChange}
+          onSendComplete={onSendMessage}
+        />
+      </View>
 
+      {/* Image Preview Modal */}
       <Modal visible={Boolean(selectedImage)} transparent animationType="fade" onRequestClose={() => setSelectedImage(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.8)", alignItems: "center", justifyContent: "center" }} onPress={() => setSelectedImage(null)}>
-          <Text style={{ color: "white", marginBottom: 12 }}>Da gui anh. Bam de dong.</Text>
-          <Text style={{ color: "white", paddingHorizontal: 16 }}>{selectedImage}</Text>
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedImage(null)}>
+          <Text style={styles.modalText}>Đã gửi ảnh. Bấm để đóng.</Text>
+          <Text style={styles.modalUrl}>{selectedImage}</Text>
         </Pressable>
       </Modal>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    ...shadows.sm,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: borderRadius.pill,
+  },
+  backButtonPressed: {
+    backgroundColor: colors.bgSecondary,
+  },
+  backIcon: {
+    fontSize: 32,
+    color: colors.primary,
+    marginTop: -4,
+  },
+  headerInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: spacing.sm,
+  },
+  headerAvatarContainer: {
+    position: "relative",
+  },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.avatarBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerAvatarText: {
+    ...typography.headline,
+    color: colors.avatarText,
+  },
+  headerPresenceBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+  },
+  headerTextContainer: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  headerName: {
+    ...typography.headline,
+    color: colors.text,
+  },
+  headerStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  headerStatus: {
+    ...typography.caption1,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: borderRadius.pill,
+  },
+  headerActionIcon: {
+    fontSize: 20,
+  },
+  messageList: {
+    flex: 1,
+    backgroundColor: colors.bgSecondary,
+  },
+  messageListContent: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  messageRow: {
+    paddingHorizontal: spacing.md,
+  },
+  inputContainer: {
+    backgroundColor: colors.bg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  modalText: {
+    ...typography.body,
+    color: "#FFFFFF",
+    marginBottom: spacing.md,
+  },
+  modalUrl: {
+    ...typography.caption1,
+    color: "#FFFFFF",
+    opacity: 0.8,
+    textAlign: "center",
+  },
+});

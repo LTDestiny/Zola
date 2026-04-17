@@ -2,6 +2,21 @@ import Constants from "expo-constants";
 import { Client, type StompSubscription } from "@stomp/stompjs";
 import type { MessageItem } from "@/shared/types/api";
 
+function resolveSocketUrl() {
+  const explicit = Constants.expoConfig?.extra?.socketUrl as string | undefined;
+  if (explicit) {
+    return explicit;
+  }
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  const host = hostUri?.split(":")[0];
+  if (host) {
+    return `ws://${host}:8083/ws`;
+  }
+
+  return "ws://10.0.2.2:8083/ws";
+}
+
 export type ChatRealtimeEvent = {
   eventType:
   | "message:new"
@@ -44,11 +59,16 @@ export class ChatSocketClient {
   private userQueueSubs = new Map<string, StompSubscription>();
   private handlers: Handlers;
 
+  private conversationDestinations(conversationId: string) {
+    return [
+      `/topic/chat.${conversationId}`,
+      `/topic/chat/${conversationId}`,
+    ];
+  }
+
   constructor(accessToken: string, handlers: Handlers) {
     this.handlers = handlers;
-    const wsUrl =
-      (Constants.expoConfig?.extra?.socketUrl as string | undefined) ??
-      "ws://192.168.2.93:8083/ws";
+    const wsUrl = resolveSocketUrl();
 
     this.client = new Client({
       webSocketFactory: () => new WebSocket(wsUrl),
@@ -60,12 +80,22 @@ export class ChatSocketClient {
         Authorization: `Bearer ${accessToken}`,
         authorization: `Bearer ${accessToken}`,
       },
-      debug: () => undefined,
+      debug: () => {
+        // Keep STOMP debug noise off by default (tokens are never logged here).
+        // Turn on when diagnosing connection issues.
+        return undefined;
+      },
       onConnect: () => this.handlers.onConnect(),
       onDisconnect: () => this.handlers.onDisconnect(),
-      onStompError: (frame) => this.handlers.onError(frame.headers.message ?? "STOMP error"),
+      onStompError: (frame) =>
+        this.handlers.onError(frame.headers.message ?? "STOMP error"),
       onWebSocketError: () => this.handlers.onError("WebSocket error"),
-      onWebSocketClose: () => this.handlers.onDisconnect(),
+      onWebSocketClose: (event) => {
+        this.handlers.onError(
+          `WebSocket closed (code=${event.code}, reason=${event.reason || "n/a"})`,
+        );
+        this.handlers.onDisconnect();
+      },
     });
   }
 
@@ -108,56 +138,57 @@ export class ChatSocketClient {
   syncConversationSubscriptions(conversationIds: string[]) {
     if (!this.client.connected) return;
 
-    const expected = new Set(conversationIds.filter(Boolean));
-    this.conversationSubs.forEach((sub, id) => {
-      if (!expected.has(id)) {
+    const uniqueConversationIds = [...new Set(
+      conversationIds
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean),
+    )];
+
+    const expectedDestinations = new Set(
+      uniqueConversationIds.flatMap((id) => this.conversationDestinations(id)),
+    );
+
+    this.conversationSubs.forEach((sub, destination) => {
+      if (!expectedDestinations.has(destination)) {
         sub.unsubscribe();
-        this.conversationSubs.delete(id);
+        this.conversationSubs.delete(destination);
       }
     });
 
-    expected.forEach((id) => this.subscribeConversation(id));
+    expectedDestinations.forEach((destination) => {
+      if (this.conversationSubs.has(destination)) {
+        return;
+      }
+
+      const sub = this.client.subscribe(destination, (message) => {
+        try {
+          this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
+        } catch {
+          this.handlers.onError(`Cannot parse ${destination} payload`);
+        }
+      });
+
+      this.conversationSubs.set(destination, sub);
+    });
   }
 
   subscribeConversation(conversationId: string) {
     if (!this.client.connected) return;
-    if (!conversationId || this.conversationSubs.has(conversationId)) return;
+    if (!conversationId) return;
 
-    const sub = this.client.subscribe(`/topic/chat.${conversationId}`, (message) => {
-      try {
-        this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
-      } catch {
-        this.handlers.onError("Cannot parse /topic/chat.{conversationId} payload");
+    const currentConversationIds = new Set<string>();
+    this.conversationSubs.forEach((_sub, destination) => {
+      const dotPrefix = "/topic/chat.";
+      const slashPrefix = "/topic/chat/";
+      if (destination.startsWith(dotPrefix)) {
+        currentConversationIds.add(destination.slice(dotPrefix.length));
+      } else if (destination.startsWith(slashPrefix)) {
+        currentConversationIds.add(destination.slice(slashPrefix.length));
       }
     });
 
-    this.conversationSubs.set(conversationId, sub);
-  }
-
-  subscribeConversationLegacy(conversationId: string) {
-    if (!this.client.connected) return;
-    const key = `${conversationId}::legacy`;
-    if (!conversationId || this.conversationSubs.has(key)) return;
-
-    const sub = this.client.subscribe(`/topic/chat/${conversationId}`, (message) => {
-      try {
-        this.handlers.onEvent(JSON.parse(message.body) as ChatRealtimeEvent);
-      } catch {
-        this.handlers.onError("Cannot parse /topic/chat/{conversationId} payload");
-      }
-    });
-
-    this.conversationSubs.set(key, sub);
-  }
-
-  unsubscribeConversation(conversationId: string) {
-    const direct = this.conversationSubs.get(conversationId);
-    direct?.unsubscribe();
-    this.conversationSubs.delete(conversationId);
-
-    const legacy = this.conversationSubs.get(`${conversationId}::legacy`);
-    legacy?.unsubscribe();
-    this.conversationSubs.delete(`${conversationId}::legacy`);
+    currentConversationIds.add(conversationId);
+    this.syncConversationSubscriptions([...currentConversationIds]);
   }
 
   publishTyping(conversationId: string, typing: boolean) {

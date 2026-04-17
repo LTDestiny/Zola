@@ -1,3 +1,6 @@
+// CRITICAL: Must be imported FIRST before any STOMP usage
+import "text-encoding-polyfill";
+
 import "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";

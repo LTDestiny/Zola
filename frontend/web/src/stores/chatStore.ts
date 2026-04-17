@@ -8,6 +8,7 @@ type ChatState = {
     setConversations: (items: ConversationItem[]) => void;
     upsertConversation: (patch: Partial<ConversationItem> & { id: string }) => void;
     setSelectedConversationId: (conversationId: string | null) => void;
+    clearSelectedConversation: () => void;  // NEW: Clear selection for Welcome Screen
     markConversationRead: (conversationId: string) => void;
     syncTotalUnread: (value: number) => void;
 };
@@ -52,8 +53,17 @@ export const useChatStore = create<ChatState>((set) => ({
                 const existing = existingById.get(item.id);
                 const incomingUnread = Math.max(0, item.unreadCount ?? 0);
                 const existingUnread = Math.max(0, existingUnreadById.get(item.id) ?? 0);
+
+                // ═══════════════════════════════════════════════════════════════════════
+                // FIX: Allow unread to be set to 0 from server (read receipts synced)
+                // Only preserve higher local counts for race conditions with new messages
+                // This ensures multi-tab sync works: if Tab A read conversation,
+                // Tab B's refetch should also show unread=0
+                // ═══════════════════════════════════════════════════════════════════════
                 const shouldPreserveUnread =
-                    item.id !== state.selectedConversationId && incomingUnread < existingUnread;
+                    incomingUnread > 0 &&  // Allow 0 to always update (read from other tabs)
+                    item.id !== state.selectedConversationId &&
+                    incomingUnread < existingUnread;
 
                 const incomingLastMessageAtMs = toMillis(item.lastMessageAt);
                 const existingLastMessageAtMs = toMillis(existing?.lastMessageAt);
@@ -73,10 +83,20 @@ export const useChatStore = create<ChatState>((set) => ({
             });
 
             const sorted = sortByLatest(normalized);
-            const selectedConversationExists = sorted.some((item) => item.id === state.selectedConversationId);
+            // ═══════════════════════════════════════════════════════════════════════
+            // FIX: Do NOT auto-select first conversation when selectedConversationId is null
+            // This allows the Welcome Screen to be shown by default on:
+            // - Fresh login → /messages shows Welcome
+            // - Refresh /messages → shows Welcome
+            // - Tab switch → shows Welcome
+            // Only preserve selection if user manually selected a conversation AND it still exists
+            // ═══════════════════════════════════════════════════════════════════════
+            const selectedConversationExists = state.selectedConversationId
+                ? sorted.some((item) => item.id === state.selectedConversationId)
+                : false;
             return {
                 conversations: sorted,
-                selectedConversationId: selectedConversationExists ? state.selectedConversationId : sorted[0]?.id ?? null,
+                selectedConversationId: selectedConversationExists ? state.selectedConversationId : null,
                 totalUnreadCount: sumUnread(sorted),
             };
         });
@@ -114,7 +134,16 @@ export const useChatStore = create<ChatState>((set) => ({
                     }
 
                     const normalizedPatchedUnread = Math.max(0, patchedUnread);
+
+                    // ═══════════════════════════════════════════════════════════════════════
+                    // FIX: Allow unread to be set to 0 (read receipts) from any source
+                    // Only preserve higher counts when receiving stale NEW_MESSAGE events
+                    // This ensures multi-tab sync works correctly:
+                    // - Tab A reads conversation → unread becomes 0
+                    // - Tab B receives event with unreadCount=0 → must update to 0, not keep old count
+                    // ═══════════════════════════════════════════════════════════════════════
                     const shouldPreserveUnread =
+                        normalizedPatchedUnread > 0 &&  // Allow 0 to always update (read receipts)
                         patch.id !== state.selectedConversationId &&
                         normalizedPatchedUnread < currentUnread;
 
@@ -132,6 +161,9 @@ export const useChatStore = create<ChatState>((set) => ({
     },
     setSelectedConversationId: (conversationId) => {
         set({ selectedConversationId: conversationId });
+    },
+    clearSelectedConversation: () => {
+        set({ selectedConversationId: null });
     },
     markConversationRead: (conversationId) => {
         set((state) => {

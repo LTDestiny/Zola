@@ -109,6 +109,9 @@ public class ChatStompController {
     }
 
     private void broadcast(String conversationId, ChatEventResponse event) {
+        // CRITICAL FIX: Publish to BOTH topic formats for compatibility
+        // Some clients subscribe to /topic/chat.{id} (dot), others to /topic/chat/{id} (slash)
+        messagingTemplate.convertAndSend("/topic/chat." + conversationId, event);
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
     }
 

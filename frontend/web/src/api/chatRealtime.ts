@@ -1,5 +1,22 @@
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRODUCTION-READY WEB REALTIME CLIENT
+// 
+// FIXES:
+// 1. Subscribe to /user/queue/notifications for unread count updates
+// 2. Better reconnect handling
+// 3. Proper subscription management
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DEBUG = true;
+
+function log(tag: string, ...args: unknown[]) {
+  if (DEBUG) {
+    console.log(`[chatRealtime][${tag}]`, ...args);
+  }
+}
+
 export type ChatRealtimeEvent = {
   eventType: string;
   actorId: string;
@@ -42,7 +59,8 @@ export type SyncRealtimeEvent = {
 export type PresenceRealtimeEvent = {
   userId: string;
   online: boolean;
-  lastChangedAt: string;
+  lastSeenAt?: string;      // New field from backend
+  lastChangedAt?: string;   // Legacy field name
 };
 
 type RealtimeHandlers = {
@@ -58,12 +76,16 @@ export class ChatRealtimeClient {
   private readonly client: Client;
   private readonly conversationSubscriptions = new Map<string, StompSubscription>();
   private userQueueSubscription: StompSubscription | null = null;
+  private notificationsQueueSubscription: StompSubscription | null = null; // NEW: For unread counts
   private syncQueueSubscription: StompSubscription | null = null;
   private presenceSubscription: StompSubscription | null = null;
   private readonly onEvent: (event: ChatRealtimeEvent) => void;
   private readonly onSyncEvent?: (event: SyncRealtimeEvent) => void;
   private readonly onPresenceEvent?: (event: PresenceRealtimeEvent) => void;
   private readonly onError?: (message: string) => void;
+
+  // Track pending conversation IDs for reconnect
+  private pendingConversationIds = new Set<string>();
 
   constructor(accessToken: string, handlers: RealtimeHandlers) {
     this.onEvent = handlers.onEvent;
@@ -72,6 +94,7 @@ export class ChatRealtimeClient {
     this.onError = handlers.onError;
 
     const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
+    log("constructor", `WebSocket URL: ${wsUrl}`);
 
     this.client = new Client({
       brokerURL: wsUrl,
@@ -79,17 +102,30 @@ export class ChatRealtimeClient {
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`,
       },
-      debug: () => undefined,
+      debug: (str) => {
+        // Log STOMP frames for debugging
+        if (DEBUG && str.includes(">>>") || str.includes("<<<")) {
+          log("stomp", str.slice(0, 100));
+        }
+      },
       onConnect: () => {
+        log("connect", "✅ STOMP CONNECTED");
+        // Resubscribe to user queues
+        this.subscribeUserQueue();
+        // Resubscribe to all pending conversations
+        this.resubscribeAllConversations();
         handlers.onConnect?.();
       },
       onDisconnect: () => {
+        log("disconnect", "STOMP disconnected");
         handlers.onDisconnect?.();
       },
       onStompError: (frame) => {
+        log("error", "STOMP error:", frame.headers.message);
         handlers.onError?.(frame.headers.message ?? "WebSocket STOMP error");
       },
       onWebSocketError: () => {
+        log("error", "WebSocket connection error");
         handlers.onError?.("WebSocket connection error");
       },
     });
@@ -98,18 +134,23 @@ export class ChatRealtimeClient {
   }
 
   connect() {
+    log("connect", "Activating STOMP client...");
     this.client.activate();
   }
 
   disconnect() {
+    log("disconnect", "Deactivating STOMP client...");
     this.conversationSubscriptions.forEach((subscription) => {
       subscription.unsubscribe();
     });
     this.conversationSubscriptions.clear();
+    this.pendingConversationIds.clear();
     this.userQueueSubscription?.unsubscribe();
+    this.notificationsQueueSubscription?.unsubscribe();
     this.syncQueueSubscription?.unsubscribe();
     this.presenceSubscription?.unsubscribe();
     this.userQueueSubscription = null;
+    this.notificationsQueueSubscription = null;
     this.syncQueueSubscription = null;
     this.presenceSubscription = null;
     this.client.deactivate();
@@ -121,12 +162,14 @@ export class ChatRealtimeClient {
 
   private safePublish(destination: string, body: unknown): boolean {
     if (!this.client.connected || !this.client.active) {
+      log("publish", `Cannot publish to ${destination} - not connected`);
       return false;
     }
     const webSocket = (
       this.client as unknown as { webSocket?: { readyState?: number } }
     ).webSocket;
     if (webSocket?.readyState !== undefined && webSocket.readyState !== 1) {
+      log("publish", `Cannot publish to ${destination} - WebSocket not open`);
       return false;
     }
     try {
@@ -134,15 +177,40 @@ export class ChatRealtimeClient {
         destination,
         body: JSON.stringify(body),
       });
+      log("publish", `✅ Published to ${destination}`);
       return true;
-    } catch {
+    } catch (err) {
+      log("publish", `Failed to publish to ${destination}:`, err);
       this.onError?.("Realtime connection is closing or closed");
       return false;
     }
   }
 
+  // ─── RESUBSCRIBE ALL CONVERSATIONS (after reconnect) ───────────────────────
+
+  private resubscribeAllConversations() {
+    if (!this.client.connected) return;
+
+    log("resubscribe", `Resubscribing to ${this.pendingConversationIds.size} conversations...`);
+
+    // Clear existing subscriptions
+    this.conversationSubscriptions.forEach((sub) => {
+      try { sub.unsubscribe(); } catch { /* ignore */ }
+    });
+    this.conversationSubscriptions.clear();
+
+    // Resubscribe to all pending
+    this.pendingConversationIds.forEach((id) => {
+      this.subscribeConversation(id);
+    });
+  }
+
   subscribeConversation(conversationId: string) {
+    // Always track the conversation ID (even if not connected yet)
+    this.pendingConversationIds.add(conversationId);
+
     if (!this.client.connected) {
+      log("subscribe", `Queued conversation ${conversationId.slice(0, 8)} (not connected)`);
       return;
     }
     if (this.conversationSubscriptions.has(conversationId)) {
@@ -154,6 +222,7 @@ export class ChatRealtimeClient {
       (message) => {
         try {
           const event = JSON.parse(message.body) as ChatRealtimeEvent;
+          log("event", `[topic/chat/${conversationId.slice(0, 8)}] ${event.eventType}`);
           if (event.conversationId !== conversationId) {
             return;
           }
@@ -164,67 +233,110 @@ export class ChatRealtimeClient {
       },
     );
     this.conversationSubscriptions.set(conversationId, subscription);
+    log("subscribe", `✅ Subscribed to conversation ${conversationId.slice(0, 8)}`);
   }
 
   syncConversationSubscriptions(conversationIds: string[]) {
     if (!this.client.connected) {
+      // Even if not connected, track the IDs for later
+      conversationIds.forEach((id) => this.pendingConversationIds.add(id));
+      log("sync", `Queued ${conversationIds.length} conversations (not connected)`);
       return;
     }
 
     const expected = new Set(conversationIds.filter(Boolean));
 
+    // Unsubscribe from removed conversations
     this.conversationSubscriptions.forEach((subscription, id) => {
       if (!expected.has(id)) {
         subscription.unsubscribe();
         this.conversationSubscriptions.delete(id);
+        this.pendingConversationIds.delete(id);
       }
     });
 
+    // Subscribe to new conversations
     expected.forEach((id) => {
       this.subscribeConversation(id);
     });
+
+    log("sync", `Synced ${expected.size} conversations`);
   }
 
   subscribeUserQueue() {
     if (!this.client.connected) {
+      log("subscribe", "Cannot subscribe user queue - not connected");
       return;
     }
+
+    // 1. Subscribe to /user/queue/chat (main chat events)
     this.userQueueSubscription?.unsubscribe();
     this.userQueueSubscription = this.client.subscribe(
       "/user/queue/chat",
       (message) => {
         try {
           const event = JSON.parse(message.body) as ChatRealtimeEvent;
+          log("event", `[user/queue/chat] ${event.eventType}`, {
+            conversationId: event.conversationId?.slice(0, 8),
+          });
           this.onEvent(event);
         } catch {
           this.onError?.("Cannot parse user queue realtime event");
         }
       },
     );
+    log("subscribe", "✅ Subscribed to /user/queue/chat");
 
+    // 2. Subscribe to /user/queue/notifications (CRITICAL: unread counts!)
+    this.notificationsQueueSubscription?.unsubscribe();
+    this.notificationsQueueSubscription = this.client.subscribe(
+      "/user/queue/notifications",
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as ChatRealtimeEvent;
+          log("event", `[user/queue/notifications] ${event.eventType}`, {
+            unreadCount: event.unreadCount,
+            totalUnreadCount: event.totalUnreadCount,
+          });
+          this.onEvent(event);
+        } catch {
+          this.onError?.("Cannot parse notifications queue event");
+        }
+      },
+    );
+    log("subscribe", "✅ Subscribed to /user/queue/notifications");
+
+    // 3. Subscribe to /user/queue/sync
+    this.syncQueueSubscription?.unsubscribe();
     this.syncQueueSubscription = this.client.subscribe(
       "/user/queue/sync",
       (message) => {
         try {
           const event = JSON.parse(message.body) as SyncRealtimeEvent;
+          log("event", `[user/queue/sync] ${event.eventType}`);
           this.onSyncEvent?.(event);
         } catch {
           this.onError?.("Cannot parse sync realtime event");
         }
       },
     );
+    log("subscribe", "✅ Subscribed to /user/queue/sync");
 
+    // 4. Subscribe to /topic/presence
+    this.presenceSubscription?.unsubscribe();
     this.presenceSubscription = this.client.subscribe(
       "/topic/presence",
       (message) => {
         try {
           const event = JSON.parse(message.body) as PresenceRealtimeEvent;
+          log("event", `[topic/presence] userId=${event.userId} online=${event.online}`);
           this.onPresenceEvent?.(event);
         } catch {
           this.onError?.("Cannot parse presence realtime event");
         }
       },
     );
+    log("subscribe", "✅ Subscribed to /topic/presence");
   }
 
   publishSend(

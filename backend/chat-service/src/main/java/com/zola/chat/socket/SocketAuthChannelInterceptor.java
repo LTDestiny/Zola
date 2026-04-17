@@ -27,14 +27,20 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+        StompCommand command = accessor.getCommand();
+        
+        LOGGER.info("[ws-auth] Received STOMP command: {}", command);
+        
+        if (StompCommand.CONNECT.equals(command)) {
             String authorization = accessor.getFirstNativeHeader("Authorization");
             if (authorization == null || authorization.isBlank()) {
                 authorization = accessor.getFirstNativeHeader("authorization");
             }
+            
+            LOGGER.info("[ws-auth] CONNECT frame received, hasAuth={}", authorization != null);
 
             if (authorization == null || !authorization.startsWith("Bearer ")) {
-                LOGGER.warn("Reject websocket CONNECT without bearer token");
+                LOGGER.warn("[ws-auth] Reject websocket CONNECT without bearer token");
                 return null;
             }
 
@@ -42,12 +48,13 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
                 Claims claims = socketJwtService.parse(authorization.substring(7));
                 String userId = claims.get("userId", String.class);
                 if (userId == null || userId.isBlank()) {
-                    LOGGER.warn("Reject websocket CONNECT with invalid token payload");
+                    LOGGER.warn("[ws-auth] Reject websocket CONNECT with invalid token payload (no userId)");
                     return null;
                 }
                 accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                LOGGER.info("[ws-auth] CONNECT authenticated successfully, userId={}", userId);
             } catch (Exception ex) {
-                LOGGER.warn("Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
+                LOGGER.warn("[ws-auth] Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
                 return null;
             }
         }

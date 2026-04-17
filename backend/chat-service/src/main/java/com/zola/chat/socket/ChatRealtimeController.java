@@ -5,13 +5,11 @@ import com.zola.chat.repository.ConversationRepository;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
 import java.time.Instant;
 import java.util.List;
 
-@Controller
 public class ChatRealtimeController {
 
     private final SimpMessagingTemplate messagingTemplate;

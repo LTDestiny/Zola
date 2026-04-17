@@ -24,6 +24,23 @@ export type UserProfile = {
   lastSeenAt?: string | null;
 };
 
+export type PendingFriendRequestItem = {
+  friendshipId: string;
+  requesterId: string;
+  addresseeId: string;
+  status: string;
+  requesterName?: string;
+  requesterAvatar?: string | null;
+  createdAt?: string | null;
+};
+
+export type FriendContactItem = {
+  friendshipId: string;
+  userId: string;
+  fullName?: string;
+  avatarUrl?: string | null;
+};
+
 export type ConversationItem = {
   id: string;
   name: string;
@@ -32,6 +49,8 @@ export type ConversationItem = {
   unreadCount: number;
   isPinned?: boolean;
   participants: string[];
+  isOnline?: boolean | null;
+  otherUserId?: string | null;
 };
 
 export type MessageType =

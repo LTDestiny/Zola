@@ -143,9 +143,9 @@ services:
     ports:
       - "8081:8081"
     environment:
-      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_HOST: ${DB_HOST_DOCKER:-postgres}
+      DB_USER: ${DB_USER:-zola}
+      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
       DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
@@ -168,9 +168,9 @@ services:
     ports:
       - "8082:8082"
     environment:
-      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_HOST: ${DB_HOST_DOCKER:-postgres}
+      DB_USER: ${DB_USER:-zola}
+      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
     depends_on:
@@ -184,12 +184,13 @@ services:
     ports:
       - "8083:8083"
     environment:
-      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_HOST: ${DB_HOST_DOCKER:-postgres}
+      DB_USER: ${DB_USER:-zola}
+      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
       CHAT_DB_NAME: ${CHAT_DB_NAME:-zola_chat_db}
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
     depends_on:
       mongo-bootstrap:
         condition: service_completed_successfully
@@ -221,9 +222,9 @@ services:
     ports:
       - "8084:8084"
     environment:
-      DB_HOST: ${DB_HOST_DOCKER:-host.docker.internal}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_HOST: ${DB_HOST_DOCKER:-postgres}
+      DB_USER: ${DB_USER:-zola}
+      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}

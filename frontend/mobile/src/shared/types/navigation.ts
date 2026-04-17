@@ -12,5 +12,6 @@ export type ChatStackParamList = {
 
 export type RootTabParamList = {
   Chats: undefined;
+  FriendRequests: undefined;
   Profile: undefined;
 };

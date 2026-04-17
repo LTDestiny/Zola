@@ -19,12 +19,14 @@ import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
 import com.zola.chat.infrastructure.persistence.mongo.MessageDocument;
+import com.zola.chat.presence.PresenceManager;
 import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
 import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,6 +46,7 @@ public class ChatRealtimeService {
     private final PostgresConversationRepository conversationRepository;
     private final RealtimeMessageRepository messageRepository;
     private final RedisOnlineUserChecker onlineUserChecker;
+    private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
@@ -52,6 +55,7 @@ public class ChatRealtimeService {
         PostgresConversationRepository conversationRepository,
         RealtimeMessageRepository messageRepository,
         RedisOnlineUserChecker onlineUserChecker,
+        PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
         @Value("${app.chat.recall-window-seconds:900}") long recallWindowSeconds
@@ -59,6 +63,7 @@ public class ChatRealtimeService {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.onlineUserChecker = onlineUserChecker;
+        this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
@@ -72,6 +77,12 @@ public class ChatRealtimeService {
         return toConversationResponse(conversation, requesterId);
     }
 
+    /**
+     * Send a new message - atomic PostgreSQL transaction.
+     * Note: MongoDB save is not transactional with PostgreSQL.
+     * If PostgreSQL fails after MongoDB save, message is orphaned (acceptable tradeoff).
+     */
+    @Transactional
     public ChatEventResponse sendMessage(String senderId, ChatSendRequest request) {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, senderId);
@@ -160,6 +171,7 @@ public class ChatRealtimeService {
         );
     }
 
+    @Transactional
     public ChatEventResponse editMessage(String senderId, ChatEditRequest request) {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, senderId);
@@ -258,6 +270,7 @@ public class ChatRealtimeService {
         );
     }
 
+    @Transactional
     public ChatEventResponse forwardMessage(String senderId, ChatForwardRequest request) {
         ConversationEntity source = conversationRepository.findById(request.sourceConversationId());
         ConversationEntity target = conversationRepository.findById(request.targetConversationId());
@@ -311,6 +324,7 @@ public class ChatRealtimeService {
         );
     }
 
+    @Transactional
     public ChatEventResponse readReceipt(String userId, ChatReadReceiptRequest request) {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, userId);
@@ -388,9 +402,23 @@ public class ChatRealtimeService {
     }
 
     public List<ConversationListItemResponse> listConversations(String userId) {
+        List<ConversationEntity> entities = conversationRepository.findByParticipant(userId);
+
+        // Batch-fetch peer presence to avoid N+1 Redis calls
+        List<String> peerIds = entities.stream()
+            .map(e -> e.getUser1Id().equals(userId) ? e.getUser2Id() : e.getUser1Id())
+            .distinct()
+            .collect(Collectors.toList());
+
+        Map<String, RedisOnlineUserChecker.PresenceStatus> presenceMap =
+            peerIds.isEmpty() ? Map.of() : onlineUserChecker.getPresence(peerIds);
+
         List<ConversationListItemResponse> items = new ArrayList<>();
-        for (ConversationEntity entity : conversationRepository.findByParticipant(userId)) {
+        for (ConversationEntity entity : entities) {
             String peerUserId = entity.getUser1Id().equals(userId) ? entity.getUser2Id() : entity.getUser1Id();
+            boolean online = Optional.ofNullable(presenceMap.get(peerUserId))
+                .map(RedisOnlineUserChecker.PresenceStatus::online)
+                .orElse(false);
             items.add(new ConversationListItemResponse(
                 entity.getId().toString(),
                 peerUserId,
@@ -399,12 +427,15 @@ public class ChatRealtimeService {
                 entity.unreadCountOf(userId),
                 entity.getUser1Id().equals(userId) ? entity.getUser1LastReadAt() : entity.getUser2LastReadAt(),
                 entity.lastReadMessageIdOf(userId),
-                List.of(entity.getUser1Id(), entity.getUser2Id())
+                List.of(entity.getUser1Id(), entity.getUser2Id()),
+                peerUserId,
+                online
             ));
         }
         return items;
     }
 
+    @Transactional
     public ChatEventResponse markConversationAsRead(String userId, UUID conversationId, String explicitMessageId) {
         ConversationEntity conversation = conversationRepository.findById(conversationId);
         ensureMember(conversation, userId);
@@ -544,14 +575,18 @@ public class ChatRealtimeService {
     }
 
     public boolean isOnline(String userId) {
-        return onlineUserChecker.isOnline(userId);
+        // Use PresenceManager for consistent presence (with delayed offline support)
+        PresenceManager.PresenceState state = presenceManager.getPresence(userId);
+        return state.online();
     }
 
     public UserPresenceResponse getUserPresence(String userId) {
+        // Use PresenceManager for consistent presence
+        PresenceManager.PresenceState state = presenceManager.getPresence(userId);
         return new UserPresenceResponse(
             userId,
-            onlineUserChecker.isOnline(userId),
-            onlineUserChecker.lastChangedAt(userId)
+            state.online(),
+            state.lastSeenAt()
         );
     }
 
@@ -570,14 +605,15 @@ public class ChatRealtimeService {
             return List.of();
         }
 
-        Map<String, RedisOnlineUserChecker.PresenceStatus> presenceMap = onlineUserChecker.getPresence(normalizedUserIds);
+        // Use PresenceManager for consistent presence (with delayed offline support)
+        Map<String, PresenceManager.PresenceState> presenceMap = presenceManager.getPresenceBatch(normalizedUserIds);
         return normalizedUserIds.stream()
             .map(userId -> {
-                RedisOnlineUserChecker.PresenceStatus presence = presenceMap.get(userId);
-                if (presence == null) {
+                PresenceManager.PresenceState state = presenceMap.get(userId);
+                if (state == null) {
                     return new UserPresenceResponse(userId, false, null);
                 }
-                return new UserPresenceResponse(userId, presence.online(), presence.lastChangedAt());
+                return new UserPresenceResponse(userId, state.online(), state.lastSeenAt());
             })
             .toList();
     }
