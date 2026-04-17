@@ -1,9 +1,11 @@
 import { useEffect, useRef, useCallback } from "react";
+import { Alert } from "react-native";
 import { socketService, type ChatRealtimeEvent } from "@/modules/chat/socket/socketService";
 import { reconnectManager } from "@/modules/chat/socket/reconnectManager";
 import { getConversations, getMessages, markConversationRead } from "@/modules/chat/api/chatApi";
 import { useChatStore } from "@/modules/chat/store/chatStore";
 import { usePresenceStore } from "@/modules/chat/store/presenceStore";
+import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { useSocketStore } from "@/modules/chat/store/socketStore";
 
@@ -41,11 +43,17 @@ const DEDUP_WINDOW_MS = 5000; // 5 second window
 const processedEvents = new Map<string, number>(); // eventKey → timestamp
 
 function getEventKey(event: ChatRealtimeEvent): string | null {
-  const messageId = event.message?.id ?? event.message?.messageId;
-  if (messageId) {
-    return `msg:${messageId}`;
+  // Only deduplicate message-creation events (backend sends to BOTH topic AND user queue).
+  // Update events (RECALLED, UPDATED, READ_RECEIPT) must NEVER be deduplicated —
+  // they need to overwrite the same messageId in the store.
+  const isCreateEvent =
+    event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT";
+  if (isCreateEvent) {
+    const messageId = event.message?.id ?? event.message?.messageId;
+    if (messageId) {
+      return `msg:${messageId}`;
+    }
   }
-  // For non-message events (typing, unread), use eventType + conversationId + timestamp approximation
   if (event.eventType === "TYPING") {
     return `typing:${event.conversationId}:${event.typing}`;
   }
@@ -172,6 +180,25 @@ export function useSocket() {
           lastSeenAt: event.lastSeenAt,
         });
       }
+      return;
+    }
+
+    // ─── FRIENDSHIP EVENTS (no conversationId) ───────────────────────────────
+    if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
+      log("friend", "👥 Friend request received");
+      useFriendRequestStore.getState().increment();
+      Alert.alert("Lời mời kết bạn", "Bạn có lời mời kết bạn mới!");
+      return;
+    }
+
+    if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED") {
+      log("friend", "✅ Friend request accepted");
+      Alert.alert("Kết bạn thành công", "Lời mời kết bạn của bạn đã được chấp nhận!");
+      return;
+    }
+
+    if (event.eventType === "FRIENDSHIP_REQUEST_DECLINED") {
+      log("friend", "❌ Friend request declined");
       return;
     }
 

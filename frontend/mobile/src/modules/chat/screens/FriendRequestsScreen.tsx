@@ -18,6 +18,7 @@ import {
     markPendingFriendRequestsRead,
     getUserProfile,
 } from "@/modules/chat/api/chatApi";
+import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
 import type { PendingFriendRequestItem, UserProfile } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
@@ -87,6 +88,7 @@ export function FriendRequestsScreen() {
     useFocusEffect(
         useCallback(() => {
             void loadRequests(true);
+            useFriendRequestStore.getState().reset();
         }, [loadRequests]),
     );
 

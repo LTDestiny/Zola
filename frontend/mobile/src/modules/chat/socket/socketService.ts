@@ -51,7 +51,10 @@ export type ChatRealtimeEvent = {
     | "UNREAD_COUNT_UPDATED"
     | "TOTAL_UNREAD_UPDATED"
     | "PRESENCE_UPDATED"
-    | "USER_LAST_SEEN_UPDATE";
+    | "USER_LAST_SEEN_UPDATE"
+    | "FRIENDSHIP_REQUEST_RECEIVED"
+    | "FRIENDSHIP_REQUEST_ACCEPTED"
+    | "FRIENDSHIP_REQUEST_DECLINED";
     conversationId: string;
     actorId?: string;
     typing?: boolean;

@@ -76,9 +76,7 @@ export function RegisterScreen({ navigation }: Props) {
         acceptedPolicy: true,
         policyVersion: "1.0",
       });
-      Alert.alert("Thành công", "Đăng ký thành công, vui lòng đăng nhập", [
-        { text: "OK", onPress: () => navigation.navigate("Login") },
-      ]);
+      navigation.navigate("VerifyRegisterOtp", { email });
     } catch (error) {
       Alert.alert("Đăng ký thất bại", toErrorMessage(error));
     } finally {

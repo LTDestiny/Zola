@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { LoginScreen } from "@/modules/auth/screens/LoginScreen";
 import { RegisterScreen } from "@/modules/auth/screens/RegisterScreen";
+import { ForgotPasswordScreen } from "@/modules/auth/screens/ForgotPasswordScreen";
+import { VerifyRegisterOtpScreen } from "@/modules/auth/screens/VerifyRegisterOtpScreen";
 import { ChatListScreen } from "@/modules/chat/screens/ChatListScreen";
 import { ChatDetailScreen } from "@/modules/chat/screens/ChatDetailScreen";
 import { FriendRequestsScreen } from "@/modules/chat/screens/FriendRequestsScreen";
@@ -14,11 +16,12 @@ import { ProfileScreen } from "@/modules/profile/screens/ProfileScreen";
 import { getMyProfile } from "@/modules/chat/api/chatApi";
 import { useSocket } from "@/modules/chat/hooks/useSocket";
 import { useUnread } from "@/modules/chat/hooks/useUnread";
+import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
 import type { AuthStackParamList, ChatStackParamList, RootTabParamList } from "@/shared/types/navigation";
 import { colors, spacing, typography, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// iOS PREMIUM TAB BAR - Zalo + iMessage Style
+// iOS PREMIUM TAB BAR - Zola + iMessage Style
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -73,6 +76,7 @@ function ChatStackNavigator() {
 function MainTabs() {
   useSocket();
   const { totalUnreadCount } = useUnread();
+  const friendRequestUnread = useFriendRequestStore((s) => s.unreadCount);
   const insets = useSafeAreaInsets();
 
   return (
@@ -110,7 +114,12 @@ function MainTabs() {
         component={FriendRequestsScreen}
         options={{
           title: "Lời mời",
-          tabBarIcon: ({ focused }) => <TabBarIcon name="friend" focused={focused} />,
+          tabBarIcon: ({ focused }) => (
+            <View>
+              <TabBarIcon name="friend" focused={focused} />
+              <TabBarBadge count={friendRequestUnread} />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
@@ -165,6 +174,8 @@ export function AppNavigator() {
         >
           <AuthStack.Screen name="Login" component={LoginScreen} />
           <AuthStack.Screen name="Register" component={RegisterScreen} />
+          <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <AuthStack.Screen name="VerifyRegisterOtp" component={VerifyRegisterOtpScreen} />
         </AuthStack.Navigator>
       )}
     </NavigationContainer>

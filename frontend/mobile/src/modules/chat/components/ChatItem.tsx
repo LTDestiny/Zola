@@ -8,7 +8,7 @@ import { usePresenceStore } from "@/modules/chat/store/presenceStore";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHAT ITEM - Premium iOS Style (iMessage + Zalo)
+// CHAT ITEM - Premium iOS Style (iMessage + Zola)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type Props = {

@@ -132,7 +132,7 @@ export function LoginScreen({ navigation }: Props) {
             </View>
 
             {/* Forgot Password */}
-            <Pressable style={styles.forgotPassword}>
+            <Pressable style={styles.forgotPassword} onPress={() => navigation.navigate("ForgotPassword")}>
               <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
             </Pressable>
 

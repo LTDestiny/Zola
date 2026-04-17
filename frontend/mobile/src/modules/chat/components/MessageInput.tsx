@@ -3,7 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MESSAGE INPUT - Premium iOS Style (iMessage + Zalo)
+// MESSAGE INPUT - Premium iOS Style (iMessage + Zola)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type Props = {

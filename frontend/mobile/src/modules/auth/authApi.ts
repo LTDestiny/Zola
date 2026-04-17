@@ -35,6 +35,40 @@ export async function getUserSummary(userId: string) {
   return response.data;
 }
 
+export async function verifyRegisterOtp(input: {
+  email: string;
+  code: string;
+  deviceName: string;
+  deviceType: "WEB" | "MOBILE";
+}) {
+  const response = await httpClient.post<ApiResponse<AuthTokenPayload>>(
+    "/api/v1/auth/register/verify-otp",
+    input,
+  );
+  return response.data;
+}
+
+export async function requestForgotOtp(email: string) {
+  const response = await httpClient.post<ApiResponse<{ identifier: string }>>(
+    "/api/v1/auth/forgot-password",
+    { identifier: email.trim().toLowerCase(), otpType: "EMAIL" },
+  );
+  return response.data;
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string) {
+  const response = await httpClient.post<ApiResponse<{ ok: boolean }>>(
+    "/api/v1/auth/reset-password",
+    {
+      identifier: email.trim().toLowerCase(),
+      otpType: "EMAIL",
+      code,
+      newPassword,
+    },
+  );
+  return response.data;
+}
+
 export function toErrorMessage(error: unknown) {
   const axiosError = error as AxiosError<{ message?: string; error?: string }>;
   return axiosError.response?.data?.message ?? axiosError.response?.data?.error ?? axiosError.message ?? "Unexpected error";

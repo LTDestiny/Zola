@@ -3,6 +3,7 @@ package com.zola.user.web;
 import com.zola.common.response.ApiResponse;
 import com.zola.user.entity.FriendshipEntity;
 import com.zola.user.repository.FriendshipRepository;
+import com.zola.user.service.FriendEventPublisher;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
@@ -36,9 +37,11 @@ public class FriendshipController {
     private static final String STATUS_CANCELLED = "CANCELLED";
 
     private final FriendshipRepository friendshipRepository;
+    private final FriendEventPublisher friendEventPublisher;
 
-    public FriendshipController(FriendshipRepository friendshipRepository) {
+    public FriendshipController(FriendshipRepository friendshipRepository, FriendEventPublisher friendEventPublisher) {
         this.friendshipRepository = friendshipRepository;
+        this.friendEventPublisher = friendEventPublisher;
     }
 
     @PostMapping
@@ -73,6 +76,7 @@ public class FriendshipController {
                 relation.setCreatedAt(now);
 
                 FriendshipEntity resent = friendshipRepository.save(relation);
+                friendEventPublisher.publishFriendRequestReceived(resent.getAddresseeId(), resent.getId(), resent.getRequesterId());
                 return ApiResponse.ok("Friend request sent", Map.of(
                     "friendshipId", resent.getId().toString(),
                     "status", resent.getStatus(),
@@ -97,6 +101,7 @@ public class FriendshipController {
         entity.setUpdatedAt(now);
         entity.setAddresseeViewedAt(null);
         FriendshipEntity created = friendshipRepository.save(entity);
+        friendEventPublisher.publishFriendRequestReceived(created.getAddresseeId(), created.getId(), created.getRequesterId());
 
         return ApiResponse.ok("Friend request sent", Map.of(
             "friendshipId", created.getId().toString(),
@@ -189,6 +194,7 @@ public class FriendshipController {
         relation.setStatus(STATUS_ACCEPTED);
         relation.setUpdatedAt(Instant.now());
         FriendshipEntity updated = friendshipRepository.save(relation);
+        friendEventPublisher.publishFriendRequestAccepted(updated.getRequesterId(), updated.getAddresseeId(), updated.getId());
         return ApiResponse.ok("Friend request accepted", Map.of(
             "friendshipId", updated.getId().toString(),
             "status", updated.getStatus(),
@@ -216,6 +222,7 @@ public class FriendshipController {
         relation.setStatus(STATUS_REJECTED);
         relation.setUpdatedAt(Instant.now());
         FriendshipEntity updated = friendshipRepository.save(relation);
+        friendEventPublisher.publishFriendRequestDeclined(updated.getRequesterId(), updated.getId());
         return ApiResponse.ok("Friend request rejected", Map.of(
             "friendshipId", updated.getId().toString(),
             "status", updated.getStatus(),

@@ -5,7 +5,7 @@ import { colors, spacing, typography, borderRadius, shadows } from "@/shared/the
 import { formatTime } from "@/modules/chat/utils/format";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MESSAGE BUBBLE - Premium iOS Style (iMessage + Zalo)
+// MESSAGE BUBBLE - Premium iOS Style (iMessage + Zola)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function MessageBubbleComponent({
@@ -68,7 +68,7 @@ function MessageBubbleComponent({
             </Text>
             {mine && (
               <Text style={[styles.status, mine && styles.statusMine]}>
-                {(message.seenBy?.length ?? 0) > 1 ? "✓✓" : "✓"}
+                {(message.seenBy?.length ?? 0) > 1 ? "seen" : "sent"}
               </Text>
             )}
           </View>

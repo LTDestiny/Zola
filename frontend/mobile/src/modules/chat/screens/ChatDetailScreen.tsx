@@ -30,7 +30,7 @@ import type { MessageItem } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHAT DETAIL SCREEN - Premium iOS Style (iMessage + Zalo)
+// CHAT DETAIL SCREEN - Premium iOS Style (iMessage + Zola)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DEBUG = false;
@@ -137,32 +137,106 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     }
   }, [messages.length]);
 
+  const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
   const onLongPressMessage = useCallback((message: MessageItem) => {
-    const options = ["Copy", "Reply", "Recall", "Delete for me", "Forward", "👍", "❤️", "😂", "😮", "😢", "Cancel"];
+    const isMine = message.senderId === meId;
+    const isRecalled = Boolean(message.recalled);
+    const isWithin24h = message.createdAt
+      ? Date.now() - Date.parse(message.createdAt) < RECALL_WINDOW_MS
+      : false;
+
+    type ActionHandler = () => Promise<void> | void;
+    const actions: { label: string; handler: ActionHandler }[] = [];
+
+    // Copy — always available, but no-op on recalled messages
+    actions.push({
+      label: "Sao chép",
+      handler: () => {
+        if (!isRecalled) Alert.alert("Sao chép", message.content);
+      },
+    });
+
+    // Recall — only own, not yet recalled, within 24h
+    if (isMine && !isRecalled && isWithin24h) {
+      actions.push({
+        label: "Thu hồi",
+        handler: async () => {
+          try {
+            await recallMessage(conversationId, message.id);
+            // Optimistic update — real state also arrives via STOMP MESSAGE_RECALLED
+            useChatStore.getState().appendMessageRealtime(conversationId, {
+              ...message,
+              recalled: true,
+              content: "Tin nhắn đã thu hồi",
+              updatedAt: new Date().toISOString(),
+            });
+          } catch {
+            Alert.alert("Thông báo", "Không thể thu hồi tin nhắn");
+          }
+        },
+      });
+    }
+
+    // Recall expired hint — own message past 24h
+    if (isMine && !isRecalled && !isWithin24h) {
+      actions.push({
+        label: "Thu hồi (hết hạn)",
+        handler: () => {
+          Alert.alert("Thông báo", "Không thể thu hồi tin nhắn sau 24 giờ");
+        },
+      });
+    }
+
+    // Delete for me — only own messages
+    if (isMine) {
+      actions.push({
+        label: "Xóa phía tôi",
+        handler: async () => {
+          try {
+            await deleteForMe(conversationId, message.id);
+          } catch {
+            Alert.alert("Thông báo", "Không thể xóa tin nhắn");
+          }
+        },
+      });
+    }
+
+    // Forward — not available on recalled messages
+    if (!isRecalled) {
+      actions.push({
+        label: "Chuyển tiếp",
+        handler: () => {
+          // Forward not yet implemented on mobile
+        },
+      });
+    }
+
+    // Emoji reactions — not on recalled messages
+    if (!isRecalled) {
+      const emojis = ["👍", "❤️", "😂", "😮", "😢"];
+      for (const emoji of emojis) {
+        actions.push({
+          label: emoji,
+          handler: async () => {
+            try {
+              await addReaction(conversationId, message.id, emoji);
+            } catch {
+              Alert.alert("Thông báo", "Không thể thêm cảm xúc");
+            }
+          },
+        });
+      }
+    }
+
+    const options = [...actions.map((a) => a.label), "Hủy"];
     const cancelButtonIndex = options.length - 1;
 
     showActionSheetWithOptions({ options, cancelButtonIndex }, async (selectedIndex) => {
       if (selectedIndex === undefined || selectedIndex === cancelButtonIndex) return;
-
-      try {
-        if (selectedIndex === 0) {
-          Alert.alert("Copy", message.content);
-        }
-        if (selectedIndex === 2) {
-          await recallMessage(conversationId, message.id);
-        }
-        if (selectedIndex === 3) {
-          await deleteForMe(conversationId, message.id);
-        }
-        if (selectedIndex >= 5 && selectedIndex <= 9) {
-          const emojis = ["👍", "❤️", "😂", "😮", "😢"];
-          await addReaction(conversationId, message.id, emojis[selectedIndex - 5]);
-        }
-      } catch {
-        Alert.alert("Thông báo", "Không thực hiện được hành động");
-      }
+      await actions[selectedIndex]?.handler();
     });
-  }, [conversationId, showActionSheetWithOptions]);
+  }, [conversationId, meId, showActionSheetWithOptions]);
 
   const onPickImage = useCallback(async () => {
     const asset = await pickMediaFromLibrary();

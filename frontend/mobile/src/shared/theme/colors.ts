@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// iOS PREMIUM THEME - Zalo + iMessage + Telegram Style
+// iOS PREMIUM THEME - Zola + iMessage + Telegram Style
 // White elegant, minimalist, modern, smooth
 // ═══════════════════════════════════════════════════════════════════════════════
 

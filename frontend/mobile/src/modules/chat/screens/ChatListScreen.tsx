@@ -25,7 +25,7 @@ import type { ConversationItem } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHAT LIST SCREEN - Premium iOS Style (Zalo + iMessage)
+// CHAT LIST SCREEN - Premium iOS Style (Zola + iMessage)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DEBUG = false;
