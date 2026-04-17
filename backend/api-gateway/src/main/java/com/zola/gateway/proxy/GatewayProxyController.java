@@ -135,6 +135,11 @@ public class GatewayProxyController {
         return postMap(authServiceUrl + "/api/v1/auth/verify-otp", body, null, null, Map.of());
     }
 
+    @PostMapping("/auth/reset-password")
+    public ApiResponse<Object> resetPassword(@RequestBody Map<String, Object> body) {
+        return postMap(authServiceUrl + "/api/v1/auth/reset-password", body, null, null, Map.of());
+    }
+
     @PostMapping("/auth/refresh")
     public ApiResponse<Object> refresh(@RequestBody Map<String, Object> body) {
         return postMap(authServiceUrl + "/api/v1/auth/refresh", body, null, null, Map.of());

@@ -46,33 +46,31 @@ export function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-8 md:py-12 bg-zalo-sky flex flex-col items-center gap-4">
+    <main className="min-h-screen px-4 py-8 md:py-12 bg-zola-sky flex flex-col items-center gap-4">
       <div className="flex gap-2">
         <button
           type="button"
-          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-            language === "vi"
-              ? "border-blue-400 text-zalo-blue bg-white"
-              : "border-slate-300 text-slate-600 bg-white"
-          }`}
+          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "vi"
+            ? "border-blue-400 text-zola-blue bg-white"
+            : "border-slate-300 text-slate-600 bg-white"
+            }`}
           onClick={() => setLanguage("vi")}
         >
           Tieng Viet
         </button>
         <button
           type="button"
-          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-            language === "en"
-              ? "border-blue-400 text-zalo-blue bg-white"
-              : "border-slate-300 text-slate-600 bg-white"
-          }`}
+          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${language === "en"
+            ? "border-blue-400 text-zola-blue bg-white"
+            : "border-slate-300 text-slate-600 bg-white"
+            }`}
           onClick={() => setLanguage("en")}
         >
           English
         </button>
       </div>
 
-      <div className="text-zalo-blue text-6xl font-bold leading-none tracking-tight">
+      <div className="text-zola-blue text-6xl font-bold leading-none tracking-tight">
         {t("appName")}
       </div>
       <p className="text-center text-slate-600 max-w-md">
@@ -106,7 +104,7 @@ export function LoginPage() {
           </label>
 
           <button
-            className="h-11 rounded-lg bg-zalo-blue text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-11 rounded-lg bg-zola-blue text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             type="button"
             onClick={() => void onLogin()}
             disabled={loading || !email.trim() || !password.trim()}
@@ -122,14 +120,14 @@ export function LoginPage() {
 
           <Link
             to="/forgot-password"
-            className="text-center text-sm text-slate-600 hover:text-zalo-blue"
+            className="text-center text-sm text-slate-600 hover:text-zola-blue"
           >
             {t("forgotPassword")}
           </Link>
 
           <Link
             to="/register"
-            className="text-center text-base font-semibold text-zalo-blue hover:text-blue-700"
+            className="text-center text-base font-semibold text-zola-blue hover:text-blue-700"
           >
             {t("register")}
           </Link>
@@ -138,7 +136,7 @@ export function LoginPage() {
         <div className="m-3 md:m-4 p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <strong className="block text-sm text-slate-900">
-              Nang cao hieu qua cong viec voi Zalo PC
+              Nang cao hieu qua cong viec voi Zola PC
             </strong>
             <p className="mt-1 text-sm text-slate-600">
               Gui file lon len den 1 GB, chup man hinh, goi video va nhieu tien
@@ -147,14 +145,14 @@ export function LoginPage() {
           </div>
           <Link
             to="/"
-            className="h-10 px-5 w-40 rounded-lg bg-zalo-blue text-white inline-flex items-center justify-center font-semibold hover:bg-blue-700 transition-colors"
+            className="h-10 px-5 w-40 rounded-lg bg-zola-blue text-white inline-flex items-center justify-center font-semibold hover:bg-blue-700 transition-colors"
           >
             Tai ngay
           </Link>
         </div>
       </section>
 
-      <Link to="/chat" className="text-sm text-zalo-blue hover:text-blue-700">
+      <Link to="/chat" className="text-sm text-zola-blue hover:text-blue-700">
         Mobile/Chat View
       </Link>
     </main>

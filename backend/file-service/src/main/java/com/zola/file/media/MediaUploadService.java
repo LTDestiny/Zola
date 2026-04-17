@@ -127,7 +127,12 @@ public class MediaUploadService {
             return "FILE";
         }
 
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported file extension");
+        // Unknown extension: reject only if content type explicitly indicates image/video mismatch,
+        // otherwise treat as generic FILE to support all document formats.
+        if (!ct.isBlank() && (ct.startsWith("image/") || ct.startsWith("video/"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported file extension for media type");
+        }
+        return "FILE";
     }
 
     private String buildPublicUrl(String objectKey) {

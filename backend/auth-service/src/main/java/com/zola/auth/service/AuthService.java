@@ -302,6 +302,27 @@ public class AuthService {
     }
 
     @Transactional
+    public void resetPassword(UUID userId, AuthDtos.ResetPasswordRequest request, String ip, String userAgent) {
+        AuthDtos.VerifyOtpRequest verifyRequest = new AuthDtos.VerifyOtpRequest(
+            request.identifier(),
+            request.otpType(),
+            request.code()
+        );
+        AuthDtos.OtpVerifyResponse result = otpService.verifyOtp(userId, verifyRequest, ip, userAgent);
+        if (!result.valid()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, result.message());
+        }
+
+        UserEntity user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setUpdatedAt(Instant.now());
+        userRepository.save(user);
+        securityLogService.write(userId, "PASSWORD_RESET", ip, userAgent, "{}");
+    }
+
+    @Transactional
     public void deleteAccount(UUID userId, String ip, String userAgent) {
         UserEntity user = userRepository.findById(userId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));

@@ -118,6 +118,13 @@ public class AuthController {
         return ApiResponse.ok("OTP verify result", otpService.verifyOtp(userId, request, clientIp(httpRequest), userAgent(httpRequest)));
     }
 
+    @PostMapping("/reset-password")
+    public ApiResponse<Map<String, Object>> resetPassword(@Valid @RequestBody AuthDtos.ResetPasswordRequest request, HttpServletRequest httpRequest) {
+        UUID userId = resolveUserIdFromIdentifier(request.identifier());
+        authService.resetPassword(userId, request, clientIp(httpRequest), userAgent(httpRequest));
+        return ApiResponse.ok("Password reset successful", Map.of("ok", true));
+    }
+
     @GetMapping("/profile")
     public ApiResponse<AuthDtos.UserProfileResponse> profile(@RequestHeader("Authorization") String authorization) {
         Claims claims = parseBearer(authorization);
