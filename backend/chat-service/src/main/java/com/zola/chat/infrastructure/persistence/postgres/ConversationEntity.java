@@ -15,6 +15,9 @@ public class ConversationEntity {
     @Id
     private UUID id;
 
+    @Column(name = "type", nullable = false, length = 16)
+    private String type;
+
     @Column(name = "user1_id", nullable = false, length = 64)
     private String user1Id;
 
@@ -54,6 +57,14 @@ public class ConversationEntity {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
     public String getUser1Id() {

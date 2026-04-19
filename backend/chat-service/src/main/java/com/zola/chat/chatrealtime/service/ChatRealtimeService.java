@@ -12,9 +12,11 @@ import com.zola.chat.chatrealtime.dto.ChatTypingRequest;
 import com.zola.chat.chatrealtime.dto.ConversationListItemResponse;
 import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
+import com.zola.chat.chatrealtime.dto.MessageReactionPayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
+import com.zola.chat.document.ConversationDocument;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -24,6 +26,7 @@ import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
 import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
+import com.zola.chat.repository.ConversationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +39,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -43,7 +47,11 @@ import java.util.stream.Collectors;
 @Service
 public class ChatRealtimeService {
 
+    private static final String CONVERSATION_TYPE_PRIVATE = "private";
+    private static final String CONVERSATION_TYPE_GROUP = "group";
+
     private final PostgresConversationRepository conversationRepository;
+    private final ConversationRepository groupConversationRepository;
     private final RealtimeMessageRepository messageRepository;
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
@@ -53,6 +61,7 @@ public class ChatRealtimeService {
 
     public ChatRealtimeService(
         PostgresConversationRepository conversationRepository,
+        ConversationRepository groupConversationRepository,
         RealtimeMessageRepository messageRepository,
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
@@ -61,6 +70,7 @@ public class ChatRealtimeService {
         @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
     ) {
         this.conversationRepository = conversationRepository;
+        this.groupConversationRepository = groupConversationRepository;
         this.messageRepository = messageRepository;
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
@@ -77,6 +87,193 @@ public class ChatRealtimeService {
         return toConversationResponse(conversation, requesterId);
     }
 
+    @Transactional
+    public ConversationResponse createGroupConversation(String requesterId, String name, List<String> memberIds, String avatar) {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isBlank()) {
+            throw new IllegalArgumentException("Group name must not be blank");
+        }
+
+        LinkedHashSet<String> members = new LinkedHashSet<>();
+        members.add(requesterId);
+        if (memberIds != null) {
+            memberIds.stream()
+                .filter(memberId -> memberId != null && !memberId.isBlank())
+                .map(String::trim)
+                .forEach(members::add);
+        }
+
+        if (members.size() < 2) {
+            throw new IllegalArgumentException("Group must contain at least 2 members");
+        }
+
+        Instant now = Instant.now();
+        ConversationDocument conversation = new ConversationDocument();
+        conversation.setId(UUID.randomUUID().toString());
+        conversation.setType(CONVERSATION_TYPE_GROUP);
+        conversation.setName(normalizedName);
+        conversation.setAvatar(avatar);
+        conversation.setOwnerId(requesterId);
+        conversation.setAdmins(new ArrayList<>(List.of(requesterId)));
+        conversation.setMembers(new ArrayList<>(members));
+        conversation.setParticipants(new ArrayList<>(members));
+        conversation.setLastMessage("");
+        conversation.setLastMessageAt(now.toString());
+        conversation.setCreatedAt(now);
+        conversation.setUpdatedAt(now);
+        groupConversationRepository.save(conversation);
+
+        return toGroupConversationResponse(conversation, requesterId);
+    }
+
+    @Transactional
+    public ConversationListItemResponse addGroupMember(String actorId, UUID conversationId, String userId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureGroupAdmin(conversation, actorId);
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        if (!members.contains(userId)) {
+            members.add(userId);
+            conversation.setMembers(members);
+            conversation.setParticipants(members);
+            conversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(conversation);
+        }
+
+        return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
+    public ConversationListItemResponse removeGroupMember(String actorId, UUID conversationId, String userId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureGroupAdmin(conversation, actorId);
+
+        if (userId.equals(conversation.getOwnerId())) {
+            throw new ForbiddenOperationException("Owner cannot be removed from group");
+        }
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        if (!members.remove(userId)) {
+            return toGroupConversationListItem(conversation, actorId);
+        }
+
+        List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
+        admins.remove(userId);
+
+        conversation.setMembers(members);
+        conversation.setParticipants(members);
+        conversation.setAdmins(admins);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
+    public ConversationListItemResponse leaveGroupConversation(String actorId, UUID conversationId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        members.remove(actorId);
+
+        if (members.isEmpty()) {
+            ConversationListItemResponse removed = new ConversationListItemResponse(
+                conversation.getId(),
+                CONVERSATION_TYPE_GROUP,
+                Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"),
+                conversation.getAvatar(),
+                Optional.ofNullable(conversation.getLastMessage()).orElse(""),
+                parseInstant(conversation.getLastMessageAt()).orElse(conversation.getUpdatedAt()),
+                0,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                null,
+                null,
+                false
+            );
+            deleteConversationAndMessages(conversation.getId());
+            return removed;
+        }
+
+        List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
+        admins.remove(actorId);
+        String ownerId = conversation.getOwnerId();
+        if (actorId.equals(ownerId)) {
+            String nextOwner = admins.isEmpty() ? members.get(0) : admins.get(0);
+            conversation.setOwnerId(nextOwner);
+            if (!admins.contains(nextOwner)) {
+                admins.add(nextOwner);
+            }
+        }
+
+        conversation.setMembers(members);
+        conversation.setParticipants(members);
+        conversation.setAdmins(admins);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
+    public ConversationListItemResponse setGroupAdmin(String actorId, UUID conversationId, String userId, boolean admin) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        if (!actorId.equals(conversation.getOwnerId())) {
+            throw new ForbiddenOperationException("Only owner can change admin roles");
+        }
+
+        if (!normalizeMembers(conversation).contains(userId)) {
+            throw new ForbiddenOperationException("Target user is not member of group");
+        }
+
+        List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
+        if (admin) {
+            if (!admins.contains(userId)) {
+                admins.add(userId);
+            }
+        } else {
+            admins.remove(userId);
+            if (userId.equals(conversation.getOwnerId())) {
+                throw new ForbiddenOperationException("Owner must remain admin");
+            }
+        }
+
+        if (!admins.contains(conversation.getOwnerId())) {
+            admins.add(conversation.getOwnerId());
+        }
+
+        conversation.setAdmins(admins);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
+    public void deleteGroupConversation(String actorId, UUID conversationId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        if (!actorId.equals(conversation.getOwnerId())) {
+            throw new ForbiddenOperationException("Only owner can delete this group");
+        }
+        deleteConversationAndMessages(conversation.getId());
+    }
+
+    public List<String> listConversationMembers(UUID conversationId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            ConversationEntity conversation = privateConversation.get();
+            return List.of(conversation.getUser1Id(), conversation.getUser2Id());
+        }
+        return normalizeMembers(findGroupConversation(conversationId.toString()));
+    }
+
     /**
      * Send a new message - atomic PostgreSQL transaction.
      * Note: MongoDB save is not transactional with PostgreSQL.
@@ -84,58 +281,17 @@ public class ChatRealtimeService {
      */
     @Transactional
     public ChatEventResponse sendMessage(String senderId, ChatSendRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, senderId);
-        String receiverId = resolvePeerUserId(conversation, senderId);
-        Instant now = Instant.now();
-
-        MessageDocument item = new MessageDocument();
-        item.setConversationId(request.conversationId().toString());
-        item.setId(generateMessageId());
-        item.setSenderId(senderId);
-        item.setReceiverId(receiverId);
-        item.setType(request.type().trim().toUpperCase());
-        item.setContent(request.content().trim());
-        item.setFileUrl(request.fileUrl());
-        item.setFileName(request.fileName());
-        item.setReactions(Collections.emptyList());
-        item.setCreatedAt(now.toString());
-        item.setUpdatedAt(now.toString());
-        item.setRecalled(false);
-        item.setEdited(false);
-        item.setSeenBy(new HashSet<>(Set.of(senderId)));
-        Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
-        if (onlineUserChecker.isOnline(receiverId)) {
-            deliveredTo.add(receiverId);
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(request.conversationId());
+        if (privateConversation.isPresent()) {
+            return sendPrivateMessage(senderId, request, privateConversation.get());
         }
-        item.setDeliveredTo(deliveredTo);
-        messageRepository.save(item);
 
-        conversation.setLastMessage(item.getContent());
-        conversation.setLastMessageAt(now);
-        conversation.setUpdatedAt(now);
-        conversation.incrementUnread(receiverId);
-        conversation.markRead(senderId, now, item.getId());
-        conversationRepository.save(conversation);
-
-        return new ChatEventResponse(
-            "MESSAGE_SENT",
-            senderId,
-            request.conversationId().toString(),
-            false,
-            false,
-            null,
-            toMessagePayload(item),
-            null,
-            null,
-            null,
-            null
-        );
+        ConversationDocument groupConversation = findGroupConversation(request.conversationId().toString());
+        return sendGroupMessage(senderId, request, groupConversation);
     }
 
     public ChatEventResponse recallMessage(String senderId, ChatRecallRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, senderId);
+        ensureConversationMember(request.conversationId(), senderId);
 
         MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -173,8 +329,12 @@ public class ChatRealtimeService {
 
     @Transactional
     public ChatEventResponse editMessage(String senderId, ChatEditRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, senderId);
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(request.conversationId());
+        if (privateConversation.isPresent()) {
+            ensureMember(privateConversation.get(), senderId);
+        } else {
+            ensureGroupMember(findGroupConversation(request.conversationId().toString()), senderId);
+        }
 
         MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -202,10 +362,20 @@ public class ChatRealtimeService {
         item.setUpdatedAt(Instant.now().toString());
         messageRepository.save(item);
 
-        conversation.setLastMessage(nextContent);
-        conversation.setLastMessageAt(Instant.now());
-        conversation.setUpdatedAt(Instant.now());
-        conversationRepository.save(conversation);
+        privateConversation.ifPresent(conversation -> {
+            conversation.setLastMessage(nextContent);
+            conversation.setLastMessageAt(Instant.now());
+            conversation.setUpdatedAt(Instant.now());
+            conversationRepository.save(conversation);
+        });
+
+        if (privateConversation.isEmpty()) {
+            ConversationDocument groupConversation = findGroupConversation(request.conversationId().toString());
+            groupConversation.setLastMessage(nextContent);
+            groupConversation.setLastMessageAt(Instant.now().toString());
+            groupConversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(groupConversation);
+        }
 
         return new ChatEventResponse(
             "MESSAGE_UPDATED",
@@ -223,8 +393,7 @@ public class ChatRealtimeService {
     }
 
     public ChatEventResponse typing(String senderId, ChatTypingRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, senderId);
+        ensureConversationMember(request.conversationId(), senderId);
 
         return new ChatEventResponse(
             "TYPING",
@@ -242,8 +411,7 @@ public class ChatRealtimeService {
     }
 
     public ChatEventResponse deleteForMe(String userId, ChatDeleteForMeRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, userId);
+        ensureConversationMember(request.conversationId(), userId);
 
         MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -272,10 +440,12 @@ public class ChatRealtimeService {
 
     @Transactional
     public ChatEventResponse forwardMessage(String senderId, ChatForwardRequest request) {
-        ConversationEntity source = conversationRepository.findById(request.sourceConversationId());
-        ConversationEntity target = conversationRepository.findById(request.targetConversationId());
-        ensureMember(source, senderId);
-        ensureMember(target, senderId);
+        ensureConversationMember(request.sourceConversationId(), senderId);
+        ensureConversationMember(request.targetConversationId(), senderId);
+
+        Optional<ConversationEntity> targetPrivateConversation = conversationRepository.findOptionalById(request.targetConversationId());
+        ConversationDocument targetGroupConversation = targetPrivateConversation
+            .isEmpty() ? findGroupConversation(request.targetConversationId().toString()) : null;
 
         MessageDocument original = messageRepository.findByConversationIdAndId(request.sourceConversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -284,30 +454,51 @@ public class ChatRealtimeService {
         forwarded.setConversationId(request.targetConversationId().toString());
         forwarded.setId(generateMessageId());
         forwarded.setSenderId(senderId);
-        forwarded.setReceiverId(resolvePeerUserId(target, senderId));
+        forwarded.setReceiverId(targetPrivateConversation
+            .map(target -> resolvePeerUserId(target, senderId))
+            .orElse(null));
         forwarded.setType("FORWARD");
         forwarded.setContent(original.getContent());
+        forwarded.setParentMessageId(original.getId());
         forwarded.setFileUrl(original.getFileUrl());
         forwarded.setFileName(original.getFileName());
         forwarded.setReactions(Collections.emptyList());
+        forwarded.setReactionEntries(Collections.emptyList());
         forwarded.setCreatedAt(Instant.now().toString());
         forwarded.setUpdatedAt(Instant.now().toString());
         forwarded.setRecalled(false);
         forwarded.setEdited(false);
         forwarded.setSeenBy(new HashSet<>(Set.of(senderId)));
         Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
-        if (onlineUserChecker.isOnline(forwarded.getReceiverId())) {
-            deliveredTo.add(forwarded.getReceiverId());
+        if (forwarded.getReceiverId() != null) {
+            if (onlineUserChecker.isOnline(forwarded.getReceiverId())) {
+                deliveredTo.add(forwarded.getReceiverId());
+            }
+        } else {
+            for (String memberId : normalizeMembers(targetGroupConversation)) {
+                if (!memberId.equals(senderId) && onlineUserChecker.isOnline(memberId)) {
+                    deliveredTo.add(memberId);
+                }
+            }
         }
         forwarded.setDeliveredTo(deliveredTo);
         messageRepository.save(forwarded);
 
-        target.setLastMessage(forwarded.getContent());
-        target.setLastMessageAt(Instant.now());
-        target.setUpdatedAt(Instant.now());
-        target.incrementUnread(forwarded.getReceiverId());
-        target.markRead(senderId, Instant.now(), forwarded.getId());
-        conversationRepository.save(target);
+        targetPrivateConversation.ifPresent(target -> {
+            target.setLastMessage(forwarded.getContent());
+            target.setLastMessageAt(Instant.now());
+            target.setUpdatedAt(Instant.now());
+            target.incrementUnread(forwarded.getReceiverId());
+            target.markRead(senderId, Instant.now(), forwarded.getId());
+            conversationRepository.save(target);
+        });
+
+        if (targetGroupConversation != null) {
+            targetGroupConversation.setLastMessage(forwarded.getContent());
+            targetGroupConversation.setLastMessageAt(Instant.now().toString());
+            targetGroupConversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(targetGroupConversation);
+        }
 
         return new ChatEventResponse(
             "MESSAGE_FORWARDED",
@@ -326,12 +517,17 @@ public class ChatRealtimeService {
 
     @Transactional
     public ChatEventResponse readReceipt(String userId, ChatReadReceiptRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, userId);
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(request.conversationId());
+        if (privateConversation.isPresent()) {
+            ensureMember(privateConversation.get(), userId);
+        } else {
+            ensureGroupMember(findGroupConversation(request.conversationId().toString()), userId);
+        }
 
         Optional<MessageDocument> item = markMessagesAsSeenUpTo(userId, request.conversationId(), request.messageId());
 
-        if (item.isPresent()) {
+        if (item.isPresent() && privateConversation.isPresent()) {
+            ConversationEntity conversation = privateConversation.get();
             conversation.markRead(userId, Instant.now(), request.messageId());
             conversationRepository.save(conversation);
         }
@@ -352,8 +548,7 @@ public class ChatRealtimeService {
     }
 
     public ChatEventResponse reactMessage(String userId, ChatReactionRequest request) {
-        ConversationEntity conversation = conversationRepository.findById(request.conversationId());
-        ensureMember(conversation, userId);
+        ensureConversationMember(request.conversationId(), userId);
 
         MessageDocument item = messageRepository.findByConversationIdAndId(request.conversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -368,7 +563,17 @@ public class ChatRealtimeService {
             reactions.add(userId + "|" + normalizedEmoji);
         }
 
+        List<MessageDocument.ReactionEntry> reactionEntries = reactions.stream()
+            .map(value -> {
+                String[] parts = value.split("\\|", 2);
+                String reactionUserId = parts[0];
+                String reactionEmoji = parts.length > 1 ? parts[1] : "";
+                return new MessageDocument.ReactionEntry(reactionUserId, reactionEmoji);
+            })
+            .toList();
+
         item.setReactions(reactions);
+        item.setReactionEntries(reactionEntries);
         item.setUpdatedAt(Instant.now().toString());
         messageRepository.save(item);
 
@@ -388,8 +593,7 @@ public class ChatRealtimeService {
     }
 
     public List<MessagePayload> getMessages(String userId, UUID conversationId) {
-        ConversationEntity conversation = conversationRepository.findById(conversationId);
-        ensureMember(conversation, userId);
+        ensureConversationMember(conversationId, userId);
 
         List<MessagePayload> result = new ArrayList<>();
         for (MessageDocument item : messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId.toString())) {
@@ -402,43 +606,103 @@ public class ChatRealtimeService {
     }
 
     public List<ConversationListItemResponse> listConversations(String userId) {
-        List<ConversationEntity> entities = conversationRepository.findByParticipant(userId);
+        List<ConversationEntity> privateEntities = conversationRepository.findByParticipant(userId);
+        List<ConversationDocument> groupConversations = groupConversationRepository.findByMemberOrParticipant(userId).stream()
+            .filter(conversation -> CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType())))
+            .toList();
 
         // Batch-fetch peer presence to avoid N+1 Redis calls
-        List<String> peerIds = entities.stream()
+        Set<String> peerIds = new LinkedHashSet<>();
+
+        privateEntities.stream()
             .map(e -> e.getUser1Id().equals(userId) ? e.getUser2Id() : e.getUser1Id())
             .distinct()
-            .collect(Collectors.toList());
+            .forEach(peerIds::add);
+
+        groupConversations.stream()
+            .flatMap(conversation -> normalizeMembers(conversation).stream())
+            .filter(memberId -> !memberId.equals(userId))
+            .forEach(peerIds::add);
 
         Map<String, RedisOnlineUserChecker.PresenceStatus> presenceMap =
-            peerIds.isEmpty() ? Map.of() : onlineUserChecker.getPresence(peerIds);
+            peerIds.isEmpty() ? Map.of() : onlineUserChecker.getPresence(new ArrayList<>(peerIds));
 
         List<ConversationListItemResponse> items = new ArrayList<>();
-        for (ConversationEntity entity : entities) {
+        for (ConversationEntity entity : privateEntities) {
             String peerUserId = entity.getUser1Id().equals(userId) ? entity.getUser2Id() : entity.getUser1Id();
             boolean online = Optional.ofNullable(presenceMap.get(peerUserId))
                 .map(RedisOnlineUserChecker.PresenceStatus::online)
                 .orElse(false);
             items.add(new ConversationListItemResponse(
                 entity.getId().toString(),
+                CONVERSATION_TYPE_PRIVATE,
                 peerUserId,
+                null,
                 entity.getLastMessage() == null ? "" : entity.getLastMessage(),
                 entity.getLastMessageAt(),
                 entity.unreadCountOf(userId),
                 entity.getUser1Id().equals(userId) ? entity.getUser1LastReadAt() : entity.getUser2LastReadAt(),
                 entity.lastReadMessageIdOf(userId),
                 List.of(entity.getUser1Id(), entity.getUser2Id()),
+                List.of(),
+                null,
                 peerUserId,
                 online
             ));
         }
+
+        for (ConversationDocument conversation : groupConversations) {
+            List<String> members = normalizeMembers(conversation);
+            List<String> admins = normalizeAdmins(conversation);
+            String ownerId = conversation.getOwnerId();
+            Instant lastMessageAt = parseInstant(conversation.getLastMessageAt())
+                .orElse(conversation.getUpdatedAt());
+            String lastMessage = Optional.ofNullable(conversation.getLastMessage())
+                .filter(value -> !value.isBlank())
+                .orElse("");
+
+            boolean anyMemberOnline = members.stream()
+                .filter(memberId -> !memberId.equals(userId))
+                .anyMatch(memberId -> Optional.ofNullable(presenceMap.get(memberId))
+                    .map(RedisOnlineUserChecker.PresenceStatus::online)
+                    .orElse(false));
+
+            items.add(new ConversationListItemResponse(
+                conversation.getId(),
+                CONVERSATION_TYPE_GROUP,
+                Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"),
+                conversation.getAvatar(),
+                lastMessage,
+                lastMessageAt,
+                countGroupUnread(userId, conversation.getId()),
+                null,
+                null,
+                members,
+                admins,
+                ownerId,
+                ownerId,
+                anyMemberOnline
+            ));
+        }
+
+        items.sort(Comparator
+            .comparing(ConversationListItemResponse::lastMessageAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(ConversationListItemResponse::id, Comparator.nullsLast(String::compareTo)));
+
         return items;
     }
 
     @Transactional
     public ChatEventResponse markConversationAsRead(String userId, UUID conversationId, String explicitMessageId) {
-        ConversationEntity conversation = conversationRepository.findById(conversationId);
-        ensureMember(conversation, userId);
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        ConversationDocument groupConversation = null;
+
+        if (privateConversation.isPresent()) {
+            ensureMember(privateConversation.get(), userId);
+        } else {
+            groupConversation = findGroupConversation(conversationId.toString());
+            ensureGroupMember(groupConversation, userId);
+        }
 
         String messageId = explicitMessageId;
         MessagePayload readMessagePayload = null;
@@ -454,10 +718,24 @@ public class ChatRealtimeService {
             }
         }
 
-        if (messageId != null && !messageId.isBlank()) {
+        if (messageId != null && !messageId.isBlank() && privateConversation.isPresent()) {
+            ConversationEntity conversation = privateConversation.get();
             conversation.markRead(userId, Instant.now(), messageId);
             conversationRepository.save(conversation);
         }
+
+        String lastMessage = privateConversation
+            .map(ConversationEntity::getLastMessage)
+            .orElse(groupConversation == null ? null : groupConversation.getLastMessage());
+
+        String lastMessageAt = privateConversation
+            .map(ConversationEntity::getLastMessageAt)
+            .map(Instant::toString)
+            .orElse(groupConversation == null ? null : groupConversation.getLastMessageAt());
+
+        int unreadCount = privateConversation
+            .map(conversation -> conversation.unreadCountOf(userId))
+            .orElseGet(() -> countGroupUnread(userId, conversationId.toString()));
 
         return new ChatEventResponse(
             "READ_RECEIPT",
@@ -467,20 +745,43 @@ public class ChatRealtimeService {
             false,
             null,
             readMessagePayload,
-            0,
-            conversationRepository.sumUnreadByParticipant(userId),
-            conversation.getLastMessage(),
-            conversation.getLastMessageAt() == null ? null : conversation.getLastMessageAt().toString()
+            unreadCount,
+            totalUnreadCount(userId),
+            lastMessage,
+            lastMessageAt
         );
     }
 
     public int totalUnreadCount(String userId) {
-        return conversationRepository.sumUnreadByParticipant(userId);
+        int privateUnread = conversationRepository.sumUnreadByParticipant(userId);
+        int groupUnread = groupConversationRepository.findByMemberOrParticipant(userId).stream()
+            .filter(conversation -> CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType())))
+            .mapToInt(conversation -> countGroupUnread(userId, conversation.getId()))
+            .sum();
+        return privateUnread + groupUnread;
     }
 
     public ChatEventResponse buildConversationUpdatedEvent(String userId, UUID conversationId, String eventType, MessagePayload message) {
-        ConversationEntity conversation = conversationRepository.findById(conversationId);
-        ensureMember(conversation, userId);
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        ConversationDocument groupConversation = null;
+        if (privateConversation.isPresent()) {
+            ensureMember(privateConversation.get(), userId);
+        } else {
+            groupConversation = findGroupConversation(conversationId.toString());
+            ensureGroupMember(groupConversation, userId);
+        }
+
+        String lastMessage = privateConversation
+            .map(ConversationEntity::getLastMessage)
+            .orElse(groupConversation == null ? null : groupConversation.getLastMessage());
+        String lastMessageAt = privateConversation
+            .map(ConversationEntity::getLastMessageAt)
+            .map(Instant::toString)
+            .orElse(groupConversation == null ? null : groupConversation.getLastMessageAt());
+        int unreadCount = privateConversation
+            .map(conversation -> conversation.unreadCountOf(userId))
+            .orElseGet(() -> countGroupUnread(userId, conversationId.toString()));
+
         return new ChatEventResponse(
             eventType,
             userId,
@@ -489,10 +790,10 @@ public class ChatRealtimeService {
             false,
             null,
             message,
-            conversation.unreadCountOf(userId),
-            conversationRepository.sumUnreadByParticipant(userId),
-            conversation.getLastMessage(),
-            conversation.getLastMessageAt() == null ? null : conversation.getLastMessageAt().toString()
+            unreadCount,
+            totalUnreadCount(userId),
+            lastMessage,
+            lastMessageAt
         );
     }
 
@@ -502,10 +803,11 @@ public class ChatRealtimeService {
         String type,
         String content,
         String fileUrl,
-        String fileName
+        String fileName,
+        String parentMessageId
     ) {
         String normalizedType = (type == null || type.isBlank()) ? "TEXT" : type.trim().toUpperCase();
-        ChatEventResponse event = sendMessage(senderId, new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName));
+        ChatEventResponse event = sendMessage(senderId, new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName, parentMessageId));
         MessagePayload message = event.message();
         return new MessageItemResponse(
             message.messageId(),
@@ -514,9 +816,11 @@ public class ChatRealtimeService {
             message.receiverId(),
             message.type(),
             message.content(),
+            message.parentMessageId(),
             message.fileUrl(),
             message.fileName(),
             message.reactions(),
+            message.reactionEntries(),
             message.recalled(),
             message.deletedForUsers(),
             message.deliveredTo(),
@@ -558,9 +862,11 @@ public class ChatRealtimeService {
                 message.receiverId(),
                 message.type(),
                 message.content(),
+                message.parentMessageId(),
                 message.fileUrl(),
                 message.fileName(),
                 message.reactions(),
+                message.reactionEntries(),
                 message.recalled(),
                 message.deletedForUsers(),
                 message.deliveredTo(),
@@ -618,9 +924,104 @@ public class ChatRealtimeService {
             .toList();
     }
 
+    private void ensureConversationMember(UUID conversationId, String userId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            ensureMember(privateConversation.get(), userId);
+            return;
+        }
+        ensureGroupMember(findGroupConversation(conversationId.toString()), userId);
+    }
+
     private void ensureMember(ConversationEntity conversation, String userId) {
         if (!conversationRepository.isMember(conversation, userId)) {
             throw new ForbiddenOperationException("User is not member of conversation");
+        }
+    }
+
+    private void ensureGroupMember(ConversationDocument conversation, String userId) {
+        if (!normalizeMembers(conversation).contains(userId)) {
+            throw new ForbiddenOperationException("User is not member of conversation");
+        }
+    }
+
+    private void ensureGroupAdmin(ConversationDocument conversation, String userId) {
+        boolean isOwner = userId.equals(conversation.getOwnerId());
+        boolean isAdmin = normalizeAdmins(conversation).contains(userId);
+        if (!isOwner && !isAdmin) {
+            throw new ForbiddenOperationException("Only group admin can perform this action");
+        }
+    }
+
+    private ConversationDocument findGroupConversation(String conversationId) {
+        return groupConversationRepository.findById(conversationId)
+            .filter(conversation -> CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType())))
+            .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+    }
+
+    private List<String> normalizeMembers(ConversationDocument conversation) {
+        LinkedHashSet<String> members = new LinkedHashSet<>();
+        if (conversation.getMembers() != null) {
+            members.addAll(conversation.getMembers());
+        }
+        if (conversation.getParticipants() != null) {
+            members.addAll(conversation.getParticipants());
+        }
+        if (conversation.getOwnerId() != null && !conversation.getOwnerId().isBlank()) {
+            members.add(conversation.getOwnerId());
+        }
+        return members.stream()
+            .filter(memberId -> memberId != null && !memberId.isBlank())
+            .map(String::trim)
+            .toList();
+    }
+
+    private List<String> normalizeAdmins(ConversationDocument conversation) {
+        LinkedHashSet<String> admins = new LinkedHashSet<>();
+        if (conversation.getAdmins() != null) {
+            admins.addAll(conversation.getAdmins());
+        }
+        if (conversation.getOwnerId() != null && !conversation.getOwnerId().isBlank()) {
+            admins.add(conversation.getOwnerId());
+        }
+        return admins.stream()
+            .filter(adminId -> adminId != null && !adminId.isBlank())
+            .map(String::trim)
+            .toList();
+    }
+
+    private String normalizeConversationType(String type) {
+        if (type == null || type.isBlank()) {
+            return CONVERSATION_TYPE_PRIVATE;
+        }
+        return type.trim().toLowerCase();
+    }
+
+    private int countGroupUnread(String userId, String conversationId) {
+        int unread = 0;
+        for (MessageDocument message : messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)) {
+            if (userId.equals(message.getSenderId())) {
+                continue;
+            }
+            if (message.getDeletedForUsers() != null && message.getDeletedForUsers().contains(userId)) {
+                continue;
+            }
+            if (message.getSeenBy() != null && message.getSeenBy().contains(userId)) {
+                continue;
+            }
+            unread += 1;
+        }
+        return unread;
+    }
+
+    private Optional<Instant> parseInstant(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Instant.parse(raw));
+        } catch (Exception ex) {
+            return Optional.empty();
         }
     }
 
@@ -632,9 +1033,11 @@ public class ChatRealtimeService {
             item.getReceiverId(),
             item.getType(),
             item.getContent(),
+            item.getParentMessageId(),
             item.getFileUrl(),
             item.getFileName(),
             item.getReactions(),
+            toReactionPayloads(item.getReactionEntries(), item.getReactions()),
             item.getDeletedForUsers(),
             item.getDeliveredTo(),
             item.getSeenBy(),
@@ -642,6 +1045,139 @@ public class ChatRealtimeService {
             item.getUpdatedAt(),
             item.isRecalled(),
             item.isEdited()
+        );
+    }
+
+    private List<MessageReactionPayload> toReactionPayloads(List<MessageDocument.ReactionEntry> reactionEntries, List<String> reactions) {
+        if (reactionEntries != null && !reactionEntries.isEmpty()) {
+            return reactionEntries.stream()
+                .map(reaction -> new MessageReactionPayload(reaction.getUserId(), reaction.getEmoji()))
+                .toList();
+        }
+
+        if (reactions == null || reactions.isEmpty()) {
+            return List.of();
+        }
+
+        return reactions.stream()
+            .map(value -> {
+                String[] parts = value.split("\\|", 2);
+                String reactionUserId = parts[0];
+                String reactionEmoji = parts.length > 1 ? parts[1] : "";
+                return new MessageReactionPayload(reactionUserId, reactionEmoji);
+            })
+            .toList();
+    }
+
+    private ChatEventResponse sendPrivateMessage(String senderId, ChatSendRequest request, ConversationEntity conversation) {
+        ensureMember(conversation, senderId);
+        String normalizedType = (request.type() == null || request.type().isBlank()) ? "TEXT" : request.type().trim().toUpperCase();
+        String normalizedContent = request.content() == null ? "" : request.content().trim();
+        if (normalizedContent.isBlank()) {
+            throw new ForbiddenOperationException("Message content must not be blank");
+        }
+        String receiverId = resolvePeerUserId(conversation, senderId);
+        Instant now = Instant.now();
+
+        MessageDocument item = new MessageDocument();
+        item.setConversationId(request.conversationId().toString());
+        item.setId(generateMessageId());
+        item.setSenderId(senderId);
+        item.setReceiverId(receiverId);
+        item.setType(normalizedType);
+        item.setContent(normalizedContent);
+        item.setParentMessageId(request.parentMessageId());
+        item.setFileUrl(request.fileUrl());
+        item.setFileName(request.fileName());
+        item.setReactions(Collections.emptyList());
+        item.setReactionEntries(Collections.emptyList());
+        item.setCreatedAt(now.toString());
+        item.setUpdatedAt(now.toString());
+        item.setRecalled(false);
+        item.setEdited(false);
+        item.setSeenBy(new HashSet<>(Set.of(senderId)));
+        Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
+        if (onlineUserChecker.isOnline(receiverId)) {
+            deliveredTo.add(receiverId);
+        }
+        item.setDeliveredTo(deliveredTo);
+        messageRepository.save(item);
+
+        conversation.setLastMessage(item.getContent());
+        conversation.setLastMessageAt(now);
+        conversation.setUpdatedAt(now);
+        conversation.incrementUnread(receiverId);
+        conversation.markRead(senderId, now, item.getId());
+        conversationRepository.save(conversation);
+
+        return new ChatEventResponse(
+            "MESSAGE_SENT",
+            senderId,
+            request.conversationId().toString(),
+            false,
+            false,
+            null,
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    private ChatEventResponse sendGroupMessage(String senderId, ChatSendRequest request, ConversationDocument conversation) {
+        ensureGroupMember(conversation, senderId);
+        String normalizedType = (request.type() == null || request.type().isBlank()) ? "TEXT" : request.type().trim().toUpperCase();
+        String normalizedContent = request.content() == null ? "" : request.content().trim();
+        if (normalizedContent.isBlank()) {
+            throw new ForbiddenOperationException("Message content must not be blank");
+        }
+        Instant now = Instant.now();
+
+        MessageDocument item = new MessageDocument();
+        item.setConversationId(request.conversationId().toString());
+        item.setId(generateMessageId());
+        item.setSenderId(senderId);
+        item.setReceiverId(null);
+        item.setType(normalizedType);
+        item.setContent(normalizedContent);
+        item.setParentMessageId(request.parentMessageId());
+        item.setFileUrl(request.fileUrl());
+        item.setFileName(request.fileName());
+        item.setReactions(Collections.emptyList());
+        item.setReactionEntries(Collections.emptyList());
+        item.setCreatedAt(now.toString());
+        item.setUpdatedAt(now.toString());
+        item.setRecalled(false);
+        item.setEdited(false);
+        item.setSeenBy(new HashSet<>(Set.of(senderId)));
+
+        Set<String> deliveredTo = new HashSet<>(Set.of(senderId));
+        for (String memberId : normalizeMembers(conversation)) {
+            if (!memberId.equals(senderId) && onlineUserChecker.isOnline(memberId)) {
+                deliveredTo.add(memberId);
+            }
+        }
+        item.setDeliveredTo(deliveredTo);
+        messageRepository.save(item);
+
+        conversation.setLastMessage(item.getContent());
+        conversation.setLastMessageAt(now.toString());
+        conversation.setUpdatedAt(now);
+        groupConversationRepository.save(conversation);
+
+        return new ChatEventResponse(
+            "MESSAGE_SENT",
+            senderId,
+            request.conversationId().toString(),
+            false,
+            false,
+            null,
+            toMessagePayload(item),
+            null,
+            null,
+            null,
+            null
         );
     }
 
@@ -653,10 +1189,17 @@ public class ChatRealtimeService {
     }
 
     private ConversationResponse toConversationResponse(ConversationEntity entity, String requesterId) {
+        String peerUserId = entity.getUser1Id().equals(requesterId) ? entity.getUser2Id() : entity.getUser1Id();
         return new ConversationResponse(
             entity.getId(),
+            CONVERSATION_TYPE_PRIVATE,
+            peerUserId,
+            null,
             entity.getUser1Id(),
             entity.getUser2Id(),
+            List.of(entity.getUser1Id(), entity.getUser2Id()),
+            List.of(),
+            null,
             entity.getLastMessage(),
             entity.getLastMessageAt(),
             entity.unreadCountOf(requesterId),
@@ -664,6 +1207,53 @@ public class ChatRealtimeService {
             entity.lastReadMessageIdOf(requesterId),
             entity.getUpdatedAt()
         );
+    }
+
+    private ConversationResponse toGroupConversationResponse(ConversationDocument conversation, String requesterId) {
+        String conversationId = conversation.getId();
+        return new ConversationResponse(
+            UUID.fromString(conversationId),
+            CONVERSATION_TYPE_GROUP,
+            Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"),
+            conversation.getAvatar(),
+            null,
+            null,
+            normalizeMembers(conversation),
+            normalizeAdmins(conversation),
+            conversation.getOwnerId(),
+            conversation.getLastMessage(),
+            parseInstant(conversation.getLastMessageAt()).orElse(conversation.getUpdatedAt()),
+            countGroupUnread(requesterId, conversationId),
+            null,
+            null,
+            conversation.getUpdatedAt()
+        );
+    }
+
+    private ConversationListItemResponse toGroupConversationListItem(ConversationDocument conversation, String requesterId) {
+        return new ConversationListItemResponse(
+            conversation.getId(),
+            CONVERSATION_TYPE_GROUP,
+            Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"),
+            conversation.getAvatar(),
+            Optional.ofNullable(conversation.getLastMessage()).orElse(""),
+            parseInstant(conversation.getLastMessageAt()).orElse(conversation.getUpdatedAt()),
+            countGroupUnread(requesterId, conversation.getId()),
+            null,
+            null,
+            normalizeMembers(conversation),
+            normalizeAdmins(conversation),
+            conversation.getOwnerId(),
+            conversation.getOwnerId(),
+            false
+        );
+    }
+
+    private void deleteConversationAndMessages(String conversationId) {
+        groupConversationRepository.deleteById(conversationId);
+        for (MessageDocument message : messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)) {
+            messageRepository.delete(message);
+        }
     }
 
     private Optional<String> newestMessageId(UUID conversationId) {

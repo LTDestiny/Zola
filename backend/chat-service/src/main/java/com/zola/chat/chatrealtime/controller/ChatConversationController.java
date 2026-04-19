@@ -2,9 +2,12 @@ package com.zola.chat.chatrealtime.controller;
 
 import com.zola.chat.chatrealtime.dto.ConversationResponse;
 import com.zola.chat.chatrealtime.dto.CreateDirectConversationRequest;
+import com.zola.chat.chatrealtime.dto.CreateGroupConversationRequest;
 import com.zola.chat.chatrealtime.dto.ConversationListItemResponse;
 import com.zola.chat.chatrealtime.dto.ChatEventResponse;
 import com.zola.chat.chatrealtime.dto.ChatEditRequest;
+import com.zola.chat.chatrealtime.dto.GroupAdminRequest;
+import com.zola.chat.chatrealtime.dto.GroupMemberRequest;
 import com.zola.chat.chatrealtime.dto.MessagePayload;
 import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
@@ -58,6 +61,86 @@ public class ChatConversationController {
         return ApiResponse.ok("Conversation created", response);
     }
 
+    @PostMapping("/conversations/group")
+    public ApiResponse<ConversationResponse> createGroupConversation(
+        @RequestHeader("X-User-Id") String requesterId,
+        @Valid @RequestBody CreateGroupConversationRequest request
+    ) {
+        ConversationResponse response = chatRealtimeService.createGroupConversation(
+            requesterId,
+            request.name(),
+            request.memberIds(),
+            request.avatar()
+        );
+
+        ChatEventResponse event = new ChatEventResponse(
+            "group_created",
+            requesterId,
+            response.id().toString(),
+            false,
+            false,
+            null,
+            null,
+            0,
+            chatRealtimeService.totalUnreadCount(requesterId),
+            response.lastMessage(),
+            response.lastMessageAt() == null ? null : response.lastMessageAt().toString()
+        );
+        messagingTemplate.convertAndSend("/topic/chat/" + response.id(), event);
+        for (String memberId : response.participants()) {
+            messagingTemplate.convertAndSendToUser(memberId, "/queue/chat", event);
+        }
+        return ApiResponse.ok("Group created", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/add-member")
+    public ApiResponse<ConversationListItemResponse> addMember(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody GroupMemberRequest request
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.addGroupMember(userId, conversationId, request.userId());
+        return ApiResponse.ok("Member added", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/remove-member")
+    public ApiResponse<ConversationListItemResponse> removeMember(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody GroupMemberRequest request
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.removeGroupMember(userId, conversationId, request.userId());
+        return ApiResponse.ok("Member removed", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/leave")
+    public ApiResponse<ConversationListItemResponse> leaveGroup(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.leaveGroupConversation(userId, conversationId);
+        return ApiResponse.ok("Left group", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/set-admin")
+    public ApiResponse<ConversationListItemResponse> setAdmin(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody GroupAdminRequest request
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.setGroupAdmin(userId, conversationId, request.userId(), request.admin());
+        return ApiResponse.ok("Group admin updated", response);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}")
+    public ApiResponse<Map<String, Object>> deleteGroup(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        chatRealtimeService.deleteGroupConversation(userId, conversationId);
+        return ApiResponse.ok("Group deleted", Map.of("conversationId", conversationId.toString()));
+    }
+
     @GetMapping("/conversations")
     public ApiResponse<List<ConversationListItemResponse>> listConversations(
         @RequestHeader("X-User-Id") String userId
@@ -87,7 +170,8 @@ public class ChatConversationController {
             request.type(),
             request.content(),
             request.fileUrl(),
-            request.fileName()
+            request.fileName(),
+            request.parentMessageId()
         );
 
         // Keep realtime behavior even for HTTP fallback path.
@@ -105,9 +189,11 @@ public class ChatConversationController {
                 response.receiverId(),
                 response.type(),
                 response.content(),
+                response.parentMessageId(),
                 response.fileUrl(),
                 response.fileName(),
                 response.reactions(),
+                response.reactionEntries(),
                 response.deletedForUsers(),
                 response.deliveredTo(),
                 response.seenBy(),
@@ -122,7 +208,7 @@ public class ChatConversationController {
             null
         );
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
-        emitUnreadSyncEvents(conversationId, event.message(), userId, response.receiverId());
+        emitUnreadSyncEvents(conversationId, event.message());
 
         return ApiResponse.ok("Message sent", response);
     }
@@ -160,7 +246,8 @@ public class ChatConversationController {
         String type,
         @NotBlank String content,
         String fileUrl,
-        String fileName
+        String fileName,
+        String parentMessageId
     ) {
     }
 
@@ -213,8 +300,7 @@ public class ChatConversationController {
     ) {
         ChatEventResponse event = chatRealtimeService.readReceipt(userId, new ChatReadReceiptRequest(conversationId, messageId));
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
-        String peerId = event.message() == null ? null : event.message().senderId();
-        emitUnreadSyncEvents(conversationId, event.message(), userId, peerId);
+        emitUnreadSyncEvents(conversationId, event.message());
         return ApiResponse.ok("Read receipt updated", Map.of("messageId", messageId));
     }
 
@@ -228,8 +314,7 @@ public class ChatConversationController {
         String readMessageId = messageId == null ? "" : messageId;
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
         messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
-        String peerId = event.message() == null ? null : event.message().senderId();
-        emitUnreadSyncEvents(conversationId, null, userId, peerId);
+        emitUnreadSyncEvents(conversationId, null);
         return ApiResponse.ok("Conversation marked as read", Map.of("conversationId", conversationId, "messageId", readMessageId));
     }
 
@@ -276,6 +361,10 @@ public class ChatConversationController {
                 continue;
             }
             uniqueUserIds.add(userId);
+        }
+
+        if (uniqueUserIds.isEmpty()) {
+            uniqueUserIds.addAll(chatRealtimeService.listConversationMembers(conversationId));
         }
 
         for (String userId : uniqueUserIds) {

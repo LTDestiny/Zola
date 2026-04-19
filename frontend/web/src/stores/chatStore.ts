@@ -108,13 +108,17 @@ export const useChatStore = create<ChatState>((set) => ({
             if (index === -1) {
                 const created: ConversationItem = {
                     id: patch.id,
+                    type: patch.type ?? "private",
                     name: patch.name ?? "Unknown",
+                    avatar: patch.avatar ?? null,
                     lastMessage: patch.lastMessage ?? "",
                     lastMessageAt: patch.lastMessageAt ?? new Date().toISOString(),
                     unreadCount: patch.unreadCount ?? 0,
                     lastReadAt: patch.lastReadAt ?? null,
                     lastReadMessageId: patch.lastReadMessageId ?? null,
                     participants: patch.participants ?? [],
+                    admins: patch.admins ?? [],
+                    ownerId: patch.ownerId ?? null,
                 };
                 const next = sortByLatest([...current, created]);
                 return {

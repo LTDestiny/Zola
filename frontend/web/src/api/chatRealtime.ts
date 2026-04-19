@@ -35,9 +35,14 @@ export type ChatRealtimeEvent = {
     receiverId: string | null;
     type: string;
     content: string;
+    parentMessageId?: string | null;
     fileUrl: string | null;
     fileName: string | null;
     reactions: string[];
+    reactionEntries?: Array<{
+      userId: string;
+      emoji: string;
+    }>;
     deletedForUsers: string[];
     deliveredTo: string[];
     seenBy: string[];
@@ -352,6 +357,77 @@ export class ChatRealtimeClient {
       content,
       fileUrl,
       fileName,
+    });
+  }
+
+  publishCreateGroup(name: string, memberIds: string[], avatar: string | null = null): boolean {
+    return this.safePublish("/app/create_group", {
+      name,
+      memberIds,
+      avatar,
+    });
+  }
+
+  publishJoinGroup(conversationId: string): boolean {
+    return this.safePublish("/app/join_group", {
+      conversationId,
+    });
+  }
+
+  publishSendGroupMessage(
+    conversationId: string,
+    content: string,
+    type: "TEXT" | "EMOJI" | "FILE" | "FORWARD" | "IMAGE" | "VIDEO" | "AUDIO" = "TEXT",
+    fileUrl: string | null = null,
+    fileName: string | null = null,
+    parentMessageId: string | null = null,
+  ): boolean {
+    return this.safePublish("/app/send_group_message", {
+      conversationId,
+      type,
+      content,
+      fileUrl,
+      fileName,
+      parentMessageId,
+    });
+  }
+
+  publishTypingGroup(conversationId: string, typing: boolean): boolean {
+    return this.safePublish("/app/typing_group", {
+      conversationId,
+      typing,
+    });
+  }
+
+  publishReactMessage(
+    conversationId: string,
+    messageId: string,
+    emoji: string,
+    remove = false,
+  ): boolean {
+    return this.safePublish("/app/react_message", {
+      conversationId,
+      messageId,
+      emoji,
+      remove,
+    });
+  }
+
+  publishReplyMessage(
+    conversationId: string,
+    content: string,
+    parentMessageId: string,
+    type: "TEXT" | "EMOJI" | "FILE" | "FORWARD" | "IMAGE" | "VIDEO" | "AUDIO" = "TEXT",
+    fileUrl: string | null = null,
+    fileName: string | null = null,
+  ): boolean {
+    return this.safePublish("/app/reply_message", {
+      conversationId,
+      type,
+      content,
+      fileUrl,
+      fileName,
+      parentMessageId,
     });
   }
 

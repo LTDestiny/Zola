@@ -6,6 +6,7 @@ import {
   addReaction,
   addFriend,
   createDirectConversation,
+  createGroupConversation,
   deleteMyProfile,
   deleteForMe,
   declineFriendRequest,
@@ -48,6 +49,10 @@ import { Chat } from "./chat";
 import { AddFriendModal } from "./components/AddFriendModal";
 import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
+// @ts-expect-error JSX module without TS declarations
+import { CreateGroupModal } from "./components/CreateGroupModal.jsx";
+// @ts-expect-error JSX module without TS declarations
+import { GroupChat } from "./components/GroupChat.jsx";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
@@ -206,6 +211,8 @@ export function ChatPage() {
   const [isSending, setIsSending] = useState(false);
 
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [friendEmail, setFriendEmail] = useState("");
   const [friendProfile, setFriendProfile] = useState<UserProfile | null>(null);
   const [friendshipStatus, setFriendshipStatus] = useState("NONE");
@@ -268,6 +275,12 @@ export function ChatPage() {
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
     const client = realtimeClientRef.current;
     if (!client || !client.isConnected()) return false;
+    const conversation = useChatStore
+      .getState()
+      .conversations.find((item) => item.id === conversationId);
+    if (conversation?.type === "group") {
+      return client.publishTypingGroup(conversationId, typing);
+    }
     return client.publishTyping(conversationId, typing);
   }, []);
 
@@ -421,6 +434,9 @@ export function ChatPage() {
   };
 
   const resolvePeerUserId = (conversation: ConversationItem) => {
+    if (conversation.type === "group") {
+      return conversation.ownerId ?? conversation.participants?.[0] ?? conversation.name;
+    }
     const myId = myProfile?.id ?? null;
     const peer = conversation.participants?.find((id) => id && id !== myId);
     if (peer) {
@@ -430,6 +446,10 @@ export function ChatPage() {
   };
 
   const getConversationDisplayName = (conversation: ConversationItem) => {
+    if (conversation.type === "group") {
+      return conversation.name || (language === "vi" ? "Nhom" : "Group");
+    }
+
     const peerUserId = resolvePeerUserId(conversation);
     const profile = userProfileMap[peerUserId];
     if (profile?.fullName) {
@@ -485,11 +505,16 @@ export function ChatPage() {
   const sidebarChats = useMemo<ChatListItem[]>(() => {
     return filteredConversations.map((conversation) => {
       const displayName = getConversationDisplayName(conversation);
-      const presence = getPresenceForUser(resolvePeerUserId(conversation));
+      const isGroupConversation = conversation.type === "group";
+      const presence = isGroupConversation
+        ? undefined
+        : getPresenceForUser(resolvePeerUserId(conversation));
+      const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thanh vien" : "members"}`;
       return {
         id: conversation.id,
         name: displayName,
         avatar: initials(displayName),
+        avatarUrl: conversation.avatar ?? undefined,
         timestamp: conversation.lastMessageAt
           ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
             hour: "2-digit",
@@ -498,8 +523,8 @@ export function ChatPage() {
           : "--:--",
         lastMessage: conversation.lastMessage || "...",
         unreadCount: conversation.unreadCount ?? 0,
-        isOnline: presence?.online ?? false,
-        presenceLabel: toPresenceLabel(presence),
+        isOnline: isGroupConversation ? false : presence?.online ?? false,
+        presenceLabel: isGroupConversation ? groupPresenceLabel : toPresenceLabel(presence),
       };
     });
   }, [
@@ -537,9 +562,13 @@ export function ChatPage() {
             ...incomingItems,
             {
               ...existingActive,
+              type: existingActive.type ?? "private",
+              avatar: existingActive.avatar ?? null,
               unreadCount: existingActive.unreadCount ?? 0,
               lastReadAt: existingActive.lastReadAt ?? null,
               lastReadMessageId: existingActive.lastReadMessageId ?? null,
+              admins: existingActive.admins ?? [],
+              ownerId: existingActive.ownerId ?? null,
             },
           ];
         }
@@ -775,7 +804,21 @@ export function ChatPage() {
           useChatStore.getState().selectedConversationId ??
           activeConversationIdRef.current;
 
-        if (event.eventType === "TYPING") {
+        const isTypingEvent =
+          event.eventType === "TYPING" ||
+          event.eventType === "user_typing_group";
+        const isConversationSyncEvent =
+          event.eventType === "CONVERSATION_UPDATED" ||
+          event.eventType === "UNREAD_COUNT_UPDATED" ||
+          event.eventType === "TOTAL_UNREAD_UPDATED" ||
+          event.eventType === "group_created";
+        const isMessageEvent =
+          event.eventType === "NEW_MESSAGE" ||
+          event.eventType === "MESSAGE_SENT" ||
+          event.eventType === "new_group_message" ||
+          event.eventType === "message_replied";
+
+        if (isTypingEvent) {
           if (event.actorId !== myUserIdRef.current) {
             setTypingUserId(event.typing ? event.actorId : null);
 
@@ -791,11 +834,7 @@ export function ChatPage() {
           return;
         }
 
-        if (
-          event.eventType === "CONVERSATION_UPDATED" ||
-          event.eventType === "UNREAD_COUNT_UPDATED" ||
-          event.eventType === "TOTAL_UNREAD_UPDATED"
-        ) {
+        if (isConversationSyncEvent) {
           if (event.conversationId) {
             upsertConversation({
               id: event.conversationId,
@@ -819,7 +858,7 @@ export function ChatPage() {
 
         // Clear typing indicator when message arrives from this conversation
         if (
-          (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") &&
+          isMessageEvent &&
           event.conversationId === activeConversationIdRef.current
         ) {
           setTypingUserId(null);
@@ -830,7 +869,7 @@ export function ChatPage() {
         // Backend sends same message to BOTH topic and user queue
         // MESSAGE_SENT and NEW_MESSAGE for same messageId = duplicate!
         // ═══════════════════════════════════════════════════════════════════════
-        if (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") {
+        if (isMessageEvent) {
           // Use just messageId - NOT including eventType
           // This catches duplicates across MESSAGE_SENT and NEW_MESSAGE
           const dedupKey = `msg:${payload.messageId}`;
@@ -849,7 +888,7 @@ export function ChatPage() {
 
         // Secondary dedup check (legacy, now unified above)
         const messageKey = `msg:${payload.messageId}`;
-        if (event.eventType === "NEW_MESSAGE") {
+        if (event.eventType === "NEW_MESSAGE" || event.eventType === "new_group_message") {
           if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
             return;
           }
@@ -873,7 +912,9 @@ export function ChatPage() {
             : payload.content,
           fileUrl: payload.fileUrl,
           fileName: payload.fileName,
+          parentMessageId: payload.parentMessageId ?? null,
           reactions: payload.reactions,
+          reactionEntries: payload.reactionEntries,
           recalled: payload.recalled,
           edited: payload.edited,
           deletedForUsers: payload.deletedForUsers,
@@ -938,7 +979,7 @@ export function ChatPage() {
           });
 
           if (
-            (event.eventType === "MESSAGE_SENT" || event.eventType === "NEW_MESSAGE") &&
+            isMessageEvent &&
             normalizedMessage.senderId !== myUserIdRef.current
           ) {
             const isManualOpenForCurrentConversation =
@@ -973,7 +1014,7 @@ export function ChatPage() {
           document.visibilityState === "visible" &&
           document.hasFocus();
         const isIncomingMessageEvent =
-          event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT";
+          isMessageEvent;
 
         if (isIncomingFromOtherUser && !isViewingActiveConversation && isIncomingMessageEvent) {
           const currentConversation = useChatStore
@@ -1276,7 +1317,7 @@ export function ChatPage() {
     void markRead();
   }, [activeTab, pendingFriendRequestsUnreadCount]);
 
-  const onSendMessage = async () => {
+  const onSendMessage = async (options?: { parentMessageId?: string | null }) => {
     const content = draftMessage.trim();
     if (!content || !activeConversationId || isSending) return;
 
@@ -1285,8 +1326,34 @@ export function ChatPage() {
 
     try {
       setIsSending(true);
+
+      const activeConversation = useChatStore
+        .getState()
+        .conversations.find((item) => item.id === activeConversationId);
+
+      const realtimeClient = realtimeClientRef.current;
+      const canSendRealtime = Boolean(realtimeClient?.isConnected());
+
+      if (activeConversation?.type === "group" && canSendRealtime) {
+        const sent = realtimeClient?.publishSendGroupMessage(
+          activeConversationId,
+          content,
+          "TEXT",
+          null,
+          null,
+          options?.parentMessageId ?? null,
+        );
+
+        if (sent) {
+          setDraftMessage("");
+          await fetchConversations({ silent: true });
+          return;
+        }
+      }
+
       const result = await sendMessage(activeConversationId, content, {
         type: "TEXT",
+        parentMessageId: options?.parentMessageId ?? null,
       });
       setMessages((prev) => {
         const exists = prev.some((item) => item.id === result.data.id);
@@ -1812,6 +1879,33 @@ export function ChatPage() {
     }
   };
 
+  const onCreateGroup = async ({
+    name,
+    memberIds,
+  }: {
+    name: string;
+    memberIds: string[];
+  }) => {
+    try {
+      setIsCreatingGroup(true);
+      const response = await createGroupConversation(name, memberIds);
+      const createdConversationId = response.data.id;
+      await fetchConversations();
+      hasUserOpenedConversationRef.current = true;
+      manuallyOpenedConversationIdRef.current = createdConversationId;
+      pendingReadSyncOnOpenRef.current = true;
+      setActiveConversationId(createdConversationId);
+      setActiveTab("messages");
+      setBannerMessage(
+        language === "vi" ? "Da tao nhom thanh cong" : "Group created successfully",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  };
+
   const canAddFriend =
     Boolean(friendProfile) &&
     friendshipStatus !== "PENDING" &&
@@ -2096,7 +2190,7 @@ export function ChatPage() {
     setActiveTab(tab);
   };
 
-  const activeConversationPresence = activeConversation
+  const activeConversationPresence = activeConversation && activeConversation.type !== "group"
     ? getPresenceForUser(resolvePeerUserId(activeConversation))
     : undefined;
 
@@ -2105,6 +2199,14 @@ export function ChatPage() {
       ...activeConversation,
       name: getConversationDisplayName(activeConversation),
     }
+    : null;
+
+  const activeGroupMembers = activeConversationForView?.type === "group"
+    ? activeConversationForView.participants ?? []
+    : [];
+
+  const typingDisplayName = typingUserId
+    ? userProfileMap[typingUserId]?.fullName ?? typingUserId
     : null;
 
   return (
@@ -2141,7 +2243,7 @@ export function ChatPage() {
             });
           }
         }}
-        onCreateChat={() => setIsAddFriendOpen(true)}
+        onCreateChat={() => setIsCreateGroupOpen(true)}
       />
 
       {activeTab !== "messages" && (
@@ -2470,41 +2572,81 @@ export function ChatPage() {
       <main className="min-w-0 flex-1 bg-slate-50">
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
-            <Chat
-              language={language}
-              activeConversation={activeConversationForView}
-              activeConversationOnline={
-                activeConversationPresence?.online ?? false
-              }
-              activeConversationPresenceLabel={toPresenceLabel(
-                activeConversationPresence,
-              )}
-              messages={messages}
-              myProfile={myProfile}
-              isLoadingMessages={isLoadingMessages}
-              draftMessage={draftMessage}
-              onDraftChange={(value) => {
-                setDraftMessage(value);
-                // Use debounced typing indicator
-                onTypingTextChange(value);
-              }}
-              onSendMessage={onSendMessage}
-              onSendFiles={onSendFiles}
-              onEditMessage={onEditMessage}
-              onRecallMessage={onRecallMessage}
-              onDeleteForMe={onDeleteForMe}
-              onForwardMessage={onForwardMessage}
-              onReactMessage={onReactMessage}
-              pendingUploads={pendingUploads}
-              onRetryUpload={onRetryUpload}
-              onCancelUpload={onCancelUpload}
-              isSending={isSending}
-              typingText={typingUserId ? `${typingUserId} is typing...` : null}
-              hasMoreMessages={Boolean(nextCursor)}
-              isLoadingMoreMessages={isLoadingMoreMessages}
-              onLoadOlderMessages={onLoadOlderMessages}
-              onViewportBottomChange={setIsChatViewportAtBottom}
-            />
+            {activeConversationForView?.type === "group" ? (
+              <GroupChat
+                language={language}
+                conversation={activeConversationForView}
+                members={activeGroupMembers}
+                userProfileMap={userProfileMap}
+              >
+                <Chat
+                  language={language}
+                  activeConversation={activeConversationForView}
+                  activeConversationOnline={false}
+                  activeConversationPresenceLabel={`${activeGroupMembers.length} ${language === "vi" ? "thanh vien" : "members"}`}
+                  messages={messages}
+                  myProfile={myProfile}
+                  isLoadingMessages={isLoadingMessages}
+                  draftMessage={draftMessage}
+                  onDraftChange={(value) => {
+                    setDraftMessage(value);
+                    onTypingTextChange(value);
+                  }}
+                  onSendMessage={onSendMessage}
+                  onSendFiles={onSendFiles}
+                  onEditMessage={onEditMessage}
+                  onRecallMessage={onRecallMessage}
+                  onDeleteForMe={onDeleteForMe}
+                  onForwardMessage={onForwardMessage}
+                  onReactMessage={onReactMessage}
+                  pendingUploads={pendingUploads}
+                  onRetryUpload={onRetryUpload}
+                  onCancelUpload={onCancelUpload}
+                  isSending={isSending}
+                  typingText={typingDisplayName ? `${typingDisplayName} ${language === "vi" ? "dang go..." : "is typing..."}` : null}
+                  hasMoreMessages={Boolean(nextCursor)}
+                  isLoadingMoreMessages={isLoadingMoreMessages}
+                  onLoadOlderMessages={onLoadOlderMessages}
+                  onViewportBottomChange={setIsChatViewportAtBottom}
+                />
+              </GroupChat>
+            ) : (
+              <Chat
+                language={language}
+                activeConversation={activeConversationForView}
+                activeConversationOnline={
+                  activeConversationPresence?.online ?? false
+                }
+                activeConversationPresenceLabel={toPresenceLabel(
+                  activeConversationPresence,
+                )}
+                messages={messages}
+                myProfile={myProfile}
+                isLoadingMessages={isLoadingMessages}
+                draftMessage={draftMessage}
+                onDraftChange={(value) => {
+                  setDraftMessage(value);
+                  // Use debounced typing indicator
+                  onTypingTextChange(value);
+                }}
+                onSendMessage={onSendMessage}
+                onSendFiles={onSendFiles}
+                onEditMessage={onEditMessage}
+                onRecallMessage={onRecallMessage}
+                onDeleteForMe={onDeleteForMe}
+                onForwardMessage={onForwardMessage}
+                onReactMessage={onReactMessage}
+                pendingUploads={pendingUploads}
+                onRetryUpload={onRetryUpload}
+                onCancelUpload={onCancelUpload}
+                isSending={isSending}
+                typingText={typingDisplayName ? `${typingDisplayName} ${language === "vi" ? "dang go..." : "is typing..."}` : null}
+                hasMoreMessages={Boolean(nextCursor)}
+                isLoadingMoreMessages={isLoadingMoreMessages}
+                onLoadOlderMessages={onLoadOlderMessages}
+                onViewportBottomChange={setIsChatViewportAtBottom}
+              />
+            )}
           </section>
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center">
@@ -2542,6 +2684,18 @@ export function ChatPage() {
         friendProfile={friendProfile}
         friendshipStatus={friendshipStatus}
         canAddFriend={canAddFriend}
+      />
+
+      <CreateGroupModal
+        language={language}
+        open={isCreateGroupOpen}
+        contacts={friendContacts}
+        userProfileMap={userProfileMap}
+        isSubmitting={isCreatingGroup}
+        onClose={() => setIsCreateGroupOpen(false)}
+        onCreate={({ name, memberIds }: { name: string; memberIds: string[] }) =>
+          onCreateGroup({ name, memberIds })
+        }
       />
 
       <ForwardMessageModal

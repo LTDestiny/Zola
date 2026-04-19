@@ -9,6 +9,8 @@ export interface ChatMessage {
   rawType?: string;
   isForwarded?: boolean;
   isEdited?: boolean;
+  parentMessageId?: string;
+  replyPreviewText?: string;
   mediaUrl?: string;
   fileName?: string;
   fileSize?: string;

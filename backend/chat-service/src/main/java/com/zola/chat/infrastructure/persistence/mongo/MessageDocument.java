@@ -3,6 +3,7 @@ package com.zola.chat.infrastructure.persistence.mongo;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,9 +18,11 @@ public class MessageDocument {
     private String receiverId;
     private String type;
     private String content;
+    private String parentMessageId;
     private String fileUrl;
     private String fileName;
     private List<String> reactions;
+    private List<ReactionEntry> reactionEntries = new ArrayList<>();
     private boolean recalled;
     private boolean edited;
     private String recalledBy;
@@ -81,6 +84,14 @@ public class MessageDocument {
         this.content = content;
     }
 
+    public String getParentMessageId() {
+        return parentMessageId;
+    }
+
+    public void setParentMessageId(String parentMessageId) {
+        this.parentMessageId = parentMessageId;
+    }
+
     public String getFileUrl() {
         return fileUrl;
     }
@@ -103,6 +114,14 @@ public class MessageDocument {
 
     public void setReactions(List<String> reactions) {
         this.reactions = reactions;
+    }
+
+    public List<ReactionEntry> getReactionEntries() {
+        return reactionEntries;
+    }
+
+    public void setReactionEntries(List<ReactionEntry> reactionEntries) {
+        this.reactionEntries = reactionEntries;
     }
 
     public boolean isRecalled() {
@@ -199,5 +218,34 @@ public class MessageDocument {
 
     public void setUpdatedAt(String updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public static class ReactionEntry {
+        private String userId;
+        private String emoji;
+
+        public ReactionEntry() {
+        }
+
+        public ReactionEntry(String userId, String emoji) {
+            this.userId = userId;
+            this.emoji = emoji;
+        }
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getEmoji() {
+            return emoji;
+        }
+
+        public void setEmoji(String emoji) {
+            this.emoji = emoji;
+        }
     }
 }

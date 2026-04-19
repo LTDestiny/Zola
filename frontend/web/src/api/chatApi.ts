@@ -32,13 +32,22 @@ export type UpdateUserProfileInput = {
 
 export type ConversationItem = {
   id: string;
+  type?: "private" | "group";
   name: string;
+  avatar?: string | null;
   lastMessage: string;
   lastMessageAt: string | null;
   unreadCount: number;
   lastReadAt?: string | null;
   lastReadMessageId?: string | null;
   participants: string[];
+  admins?: string[];
+  ownerId?: string | null;
+};
+
+export type MessageReactionEntry = {
+  userId: string;
+  emoji: string;
 };
 
 export type PendingFriendRequestItem = {
@@ -66,9 +75,11 @@ export type MessageItem = {
   receiverId?: string | null;
   type?: string;
   content: string;
+  parentMessageId?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   reactions?: string[];
+  reactionEntries?: MessageReactionEntry[];
   recalled?: boolean;
   deletedForUsers?: string[];
   deliveredTo?: string[];
@@ -232,9 +243,13 @@ export async function getConversations() {
   );
   const normalized = (response.data.data ?? []).map((item) => ({
     ...item,
+    type: item.type ?? "private",
+    avatar: item.avatar ?? null,
     unreadCount: Number.isFinite(item.unreadCount) ? item.unreadCount : 0,
     lastReadAt: item.lastReadAt ?? null,
     lastReadMessageId: item.lastReadMessageId ?? null,
+    admins: item.admins ?? [],
+    ownerId: item.ownerId ?? null,
   }));
   return {
     ...response.data,
@@ -246,6 +261,64 @@ export async function createDirectConversation(targetUserId: string) {
   const response = await httpClient.post<ApiResponse<ConversationItem>>(
     "/api/v1/chat/conversations/direct",
     { targetUserId },
+  );
+  return response.data;
+}
+
+export async function createGroupConversation(
+  name: string,
+  memberIds: string[],
+  avatar?: string | null,
+) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    "/api/v1/chat/conversations/group",
+    {
+      name,
+      memberIds,
+      avatar: avatar ?? null,
+    },
+  );
+  return response.data;
+}
+
+export async function addGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/add-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function removeGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/remove-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function leaveGroupConversation(conversationId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/leave`,
+  );
+  return response.data;
+}
+
+export async function setGroupAdmin(
+  conversationId: string,
+  userId: string,
+  admin = true,
+) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/set-admin`,
+    { userId, admin },
+  );
+  return response.data;
+}
+
+export async function deleteGroupConversation(conversationId: string) {
+  const response = await httpClient.delete<ApiResponse<{ conversationId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}`,
   );
   return response.data;
 }
@@ -306,6 +379,7 @@ export async function sendMessage(
     type?: "TEXT" | "EMOJI" | "FILE" | "FORWARD" | "IMAGE" | "VIDEO" | "AUDIO";
     fileUrl?: string | null;
     fileName?: string | null;
+    parentMessageId?: string | null;
   },
 ) {
   const response = await httpClient.post<ApiResponse<MessageItem>>(
@@ -315,6 +389,7 @@ export async function sendMessage(
       content,
       fileUrl: options?.fileUrl ?? null,
       fileName: options?.fileName ?? null,
+      parentMessageId: options?.parentMessageId ?? null,
     },
   );
   return response.data;

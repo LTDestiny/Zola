@@ -16,6 +16,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -38,8 +39,187 @@ public class ChatStompController {
         }
         ChatEventResponse event = chatRealtimeService.sendMessage(principal.getName(), request);
         broadcast(event.conversationId(), event);
-        String receiverId = event.message() == null ? null : event.message().receiverId();
-        emitUnreadSyncEvents(UUID.fromString(event.conversationId()), event.message(), principal.getName(), receiverId);
+        emitUnreadSyncEvents(UUID.fromString(event.conversationId()), event.message());
+    }
+
+    @MessageMapping("/create_group")
+    public void createGroup(@Payload GroupCreatePayload payload, Principal principal) {
+        if (principal == null || principal.getName() == null || payload == null) {
+            return;
+        }
+
+        var conversation = chatRealtimeService.createGroupConversation(
+            principal.getName(),
+            payload.name(),
+            payload.memberIds(),
+            payload.avatar()
+        );
+
+        ChatEventResponse event = new ChatEventResponse(
+            "group_created",
+            principal.getName(),
+            conversation.id().toString(),
+            false,
+            false,
+            null,
+            null,
+            0,
+            chatRealtimeService.totalUnreadCount(principal.getName()),
+            conversation.lastMessage(),
+            conversation.lastMessageAt() == null ? null : conversation.lastMessageAt().toString()
+        );
+
+        broadcast(conversation.id().toString(), event);
+        for (String memberId : conversation.participants()) {
+            messagingTemplate.convertAndSendToUser(memberId, "/queue/chat", event);
+        }
+    }
+
+    @MessageMapping("/join_group")
+    public void joinGroup(@Payload GroupJoinPayload payload, Principal principal) {
+        if (principal == null || principal.getName() == null || payload == null || payload.conversationId() == null) {
+            return;
+        }
+
+        if (!chatRealtimeService.listConversationMembers(payload.conversationId()).contains(principal.getName())) {
+            return;
+        }
+
+        ChatEventResponse event = new ChatEventResponse(
+            "group_created",
+            principal.getName(),
+            payload.conversationId().toString(),
+            false,
+            false,
+            null,
+            null,
+            0,
+            chatRealtimeService.totalUnreadCount(principal.getName()),
+            null,
+            null
+        );
+        messagingTemplate.convertAndSendToUser(principal.getName(), "/queue/chat", event);
+    }
+
+    @MessageMapping("/send_group_message")
+    public void sendGroupMessage(@Payload GroupMessagePayload payload, Principal principal) {
+        if (principal == null || principal.getName() == null || payload == null) {
+            return;
+        }
+        if (payload.content() == null || payload.content().isBlank() || payload.conversationId() == null) {
+            return;
+        }
+
+        ChatEventResponse base = chatRealtimeService.sendMessage(
+            principal.getName(),
+            new ChatSendRequest(
+                payload.conversationId(),
+                payload.type() == null ? "TEXT" : payload.type(),
+                payload.content(),
+                payload.fileUrl(),
+                payload.fileName(),
+                payload.parentMessageId()
+            )
+        );
+
+        ChatEventResponse event = new ChatEventResponse(
+            "new_group_message",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), event);
+        emitUnreadSyncEvents(payload.conversationId(), base.message());
+    }
+
+    @MessageMapping("/typing_group")
+    public void typingGroup(@Payload ChatTypingRequest request, Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            return;
+        }
+
+        ChatEventResponse base = chatRealtimeService.typing(principal.getName(), request);
+        ChatEventResponse event = new ChatEventResponse(
+            "user_typing_group",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), event);
+    }
+
+    @MessageMapping("/react_message")
+    public void reactMessage(@Payload ChatReactionRequest request, Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            return;
+        }
+        ChatEventResponse base = chatRealtimeService.reactMessage(principal.getName(), request);
+        ChatEventResponse event = new ChatEventResponse(
+            "message_reacted",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), event);
+    }
+
+    @MessageMapping("/reply_message")
+    public void replyMessage(@Payload GroupMessagePayload payload, Principal principal) {
+        if (principal == null || principal.getName() == null || payload == null || payload.parentMessageId() == null) {
+            return;
+        }
+        if (payload.content() == null || payload.content().isBlank() || payload.conversationId() == null) {
+            return;
+        }
+
+        ChatEventResponse base = chatRealtimeService.sendMessage(
+            principal.getName(),
+            new ChatSendRequest(
+                payload.conversationId(),
+                payload.type() == null ? "TEXT" : payload.type(),
+                payload.content(),
+                payload.fileUrl(),
+                payload.fileName(),
+                payload.parentMessageId()
+            )
+        );
+
+        ChatEventResponse event = new ChatEventResponse(
+            "message_replied",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), event);
+        emitUnreadSyncEvents(payload.conversationId(), base.message());
     }
 
     @MessageMapping("/chat.recall")
@@ -95,8 +275,7 @@ public class ChatStompController {
         }
         ChatEventResponse event = chatRealtimeService.readReceipt(principal.getName(), request);
         broadcast(event.conversationId(), event);
-        String peerId = event.message() == null ? null : event.message().senderId();
-        emitUnreadSyncEvents(request.conversationId(), event.message(), principal.getName(), peerId);
+        emitUnreadSyncEvents(request.conversationId(), event.message());
     }
 
     @MessageMapping("/chat.react")
@@ -122,6 +301,10 @@ public class ChatStompController {
                 continue;
             }
             uniqueUserIds.add(userId);
+        }
+
+        if (uniqueUserIds.isEmpty()) {
+            uniqueUserIds.addAll(chatRealtimeService.listConversationMembers(conversationId));
         }
 
         for (String userId : uniqueUserIds) {
@@ -190,5 +373,27 @@ public class ChatStompController {
                 );
             }
         }
+    }
+
+    public record GroupCreatePayload(
+        String name,
+        List<String> memberIds,
+        String avatar
+    ) {
+    }
+
+    public record GroupJoinPayload(
+        UUID conversationId
+    ) {
+    }
+
+    public record GroupMessagePayload(
+        UUID conversationId,
+        String type,
+        String content,
+        String fileUrl,
+        String fileName,
+        String parentMessageId
+    ) {
     }
 }

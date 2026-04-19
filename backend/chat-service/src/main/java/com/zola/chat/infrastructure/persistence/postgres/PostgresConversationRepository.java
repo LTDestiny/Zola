@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -21,6 +22,7 @@ public class PostgresConversationRepository {
             .orElseGet(() -> {
                 ConversationEntity entity = new ConversationEntity();
                 entity.setId(UUID.randomUUID());
+                entity.setType("private");
                 if (userA.compareTo(userB) <= 0) {
                     entity.setUser1Id(userA);
                     entity.setUser2Id(userB);
@@ -40,6 +42,10 @@ public class PostgresConversationRepository {
     public ConversationEntity findById(UUID id) {
         return conversationJpaRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+    }
+
+    public Optional<ConversationEntity> findOptionalById(UUID id) {
+        return conversationJpaRepository.findById(id);
     }
 
     public boolean isMember(ConversationEntity entity, String userId) {

@@ -7,6 +7,23 @@ type MessageBubbleProps = {
     isMine: boolean;
 };
 
+function renderTextWithMentions(text: string) {
+    const tokens = text.split(/(@[a-zA-Z0-9_.-]+)/g);
+    return tokens.map((token, index) => {
+        if (!token) {
+            return null;
+        }
+        if (token.startsWith("@")) {
+            return (
+                <span key={`mention-${index}`} className="rounded bg-amber-100 px-1 text-amber-900">
+                    {token}
+                </span>
+            );
+        }
+        return <span key={`text-${index}`}>{token}</span>;
+    });
+}
+
 function formatDuration(value?: string) {
     return value || "00:30";
 }
@@ -211,7 +228,7 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
         default:
             content = (
                 <p className="max-w-full whitespace-pre-wrap wrap-break-word [word-break:break-word] text-sm leading-relaxed">
-                    {message.text}
+                    {renderTextWithMentions(message.text)}
                 </p>
             );
             break;
@@ -225,6 +242,11 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 <p className={`mb-1 text-[10px] font-semibold uppercase tracking-wide ${isMine ? "text-indigo-100" : "text-indigo-600"}`}>
                     Forwarded
                 </p>
+                )}
+                {message.replyPreviewText && !message.isRecalled && (
+                    <div className={`mb-2 rounded-lg border px-2 py-1 text-[11px] ${isMine ? "border-indigo-200/60 bg-indigo-500/40 text-indigo-50" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                        <p className="truncate">{message.replyPreviewText}</p>
+                    </div>
                 )}
                 {content}
                 {message.isEdited && message.type === "text" && !message.isRecalled && (

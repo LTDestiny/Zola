@@ -17,7 +17,7 @@ type ChatProps = {
   isLoadingMessages: boolean;
   draftMessage: string;
   onDraftChange: (value: string) => void;
-  onSendMessage: () => Promise<void>;
+  onSendMessage: (options?: { parentMessageId?: string | null }) => Promise<void>;
   onSendFiles: (files: File[], caption: string) => Promise<void>;
   onEditMessage: (messageId: string, nextContent: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
@@ -127,6 +127,7 @@ function mapToUiMessage(
     rawType,
     isForwarded: rawType === "FORWARD",
     isEdited: Boolean(item.edited),
+    parentMessageId: item.parentMessageId ?? undefined,
     mediaUrl: item.fileUrl ?? undefined,
     fileName: item.fileName ?? undefined,
     fileSize: undefined,
@@ -171,6 +172,10 @@ export function Chat({
   const [editingMessage, setEditingMessage] = useState<{
     id: string;
     originalText: string;
+  } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{
+    id: string;
+    text: string;
   } | null>(null);
   const [policyModalMessage, setPolicyModalMessage] = useState<string | null>(
     null,
@@ -265,6 +270,7 @@ export function Chat({
     previousFirstMessageIdRef.current = null;
     previousLastMessageIdRef.current = null;
     pendingScrollToBottomOnLoadRef.current = true;
+    setReplyingTo(null);
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -442,7 +448,8 @@ export function Chat({
 
     setLocalMessages((prev) => [...prev, pendingMessage]);
 
-    await onSendMessage();
+    await onSendMessage({ parentMessageId: replyingTo?.id ?? null });
+    setReplyingTo(null);
 
     setLocalMessages((prev) =>
       prev.map((item) =>
@@ -621,6 +628,10 @@ export function Chat({
                 const sameAsNext = next?.senderId === message.senderId;
                 const showAvatar = !isMine && !sameAsNext;
                 const showMeta = !sameAsNext;
+                const serverMessage = messages.find((item) => item.id === message.id);
+                const replySource = message.parentMessageId
+                  ? messages.find((item) => item.id === message.parentMessageId)
+                  : undefined;
                 return (
                   <div
                     key={message.id}
@@ -629,9 +640,8 @@ export function Chat({
                     <MessageRenderer
                       message={{
                         ...message,
-                        reactions: messages.find(
-                          (item) => item.id === message.id,
-                        )?.reactions,
+                        reactions: serverMessage?.reactions,
+                        replyPreviewText: replySource?.content,
                       }}
                       isMine={isMine}
                       language={language}
@@ -643,9 +653,10 @@ export function Chat({
                       menuPlacement={index <= 1 ? "below" : "above"}
                       onDelete={(messageId) => onDeleteForMe(messageId)}
                       onReply={(target) => {
-                        onDraftChange(
-                          `${language === "vi" ? "Tra loi" : "Reply"}: ${target.text}\n`,
-                        );
+                        setReplyingTo({
+                          id: target.id,
+                          text: target.text,
+                        });
                       }}
                       onEdit={(messageId, currentText) => {
                         if (isMessageActionExpired(messageId, EDIT_WINDOW_MS)) {
@@ -735,6 +746,26 @@ export function Chat({
                 {item.errorMessage && <p className="mt-1 text-[11px] text-rose-500">{item.errorMessage}</p>}
               </div>
             ))}
+          </div>
+        )}
+
+        {replyingTo && (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-indigo-700">
+                {language === "vi" ? "Dang tra loi" : "Replying"}
+              </p>
+              <p className="truncate text-xs text-indigo-900">
+                {replyingTo.text}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyingTo(null)}
+              className="shrink-0 rounded-md border border-indigo-300 px-2 py-1 text-[11px] text-indigo-700 hover:bg-indigo-100"
+            >
+              {language === "vi" ? "Huy" : "Cancel"}
+            </button>
           </div>
         )}
 

@@ -9,6 +9,7 @@ public record ChatSendRequest(
     @NotBlank String type,
     @NotBlank String content,
     String fileUrl,
-    String fileName
+    String fileName,
+    String parentMessageId
 ) {
 }
