@@ -54,6 +54,9 @@ export function ChatMessageRow({
   isMine,
   language,
   recipientAvatar,
+  senderName,
+  senderAvatarUrl,
+  showSenderName = false,
   showAvatar = true,
   showMeta = true,
   menuPlacement = "above",
@@ -88,6 +91,7 @@ export function ChatMessageRow({
       if (!rowRef.current.contains(event.target as Node)) {
         setIsMenuPinned(false);
         setIsLongPressOpen(false);
+        setIsHovered(false);
       }
     };
 
@@ -100,12 +104,16 @@ export function ChatMessageRow({
     };
   }, []);
 
-  const showMenu = useMemo(() => {
-    if (isMenuPinned || isLongPressOpen) {
+  const showMenu = useMemo(
+    () => isMenuPinned || isLongPressOpen,
+    [isLongPressOpen, isMenuPinned],
+  );
+  const showActionTrigger = useMemo(() => {
+    if (!canHover) {
       return true;
     }
-    return canHover && isHovered;
-  }, [canHover, isHovered, isLongPressOpen, isMenuPinned]);
+    return isHovered || showMenu;
+  }, [canHover, isHovered, showMenu]);
   const reactionSummary = useMemo(() => summarizeReactions(message.reactions), [message.reactions]);
 
   const startLongPress = () => {
@@ -137,7 +145,7 @@ export function ChatMessageRow({
     >
       <div
         ref={rowRef}
-        className={`relative flex max-w-full items-end gap-2 rounded-xl px-1 py-1 transition-colors duration-150 ${showMenu ? "bg-slate-100/50" : "bg-transparent"}`}
+        className={`relative flex max-w-full items-end gap-2 rounded-xl px-1 py-1 transition-colors duration-150 ${showMenu ? "bg-slate-800/45" : "bg-transparent"}`}
         onTouchStart={startLongPress}
         onTouchEnd={endLongPress}
         onTouchCancel={endLongPress}
@@ -147,15 +155,50 @@ export function ChatMessageRow({
         }}
       >
         {!isMine && showAvatar && (
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">
-            {recipientAvatar ?? "U"}
-          </div>
+          senderAvatarUrl ? (
+            <img
+              src={senderAvatarUrl}
+              alt={senderName ?? recipientAvatar ?? "User"}
+              className="h-8 w-8 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-700 text-[10px] font-bold text-slate-100">
+              {recipientAvatar ?? "U"}
+            </div>
+          )
         )}
 
         {!isMine && !showAvatar && <div className="w-8 shrink-0" />}
 
         <div className={`relative flex flex-col ${isMine ? "items-end" : "items-start"}`}>
           <div className={`pointer-events-none absolute top-0 h-full w-56 ${isMine ? "-left-56" : "-right-56"}`} />
+
+          {!isMine && showSenderName && (
+            <p className="mb-1 px-1 text-[11px] font-semibold text-slate-300">
+              {senderName ?? (language === "vi" ? "Thanh vien" : "Member")}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsMenuPinned((prev) => {
+                const next = !prev;
+                if (!next) {
+                  setIsHovered(false);
+                }
+                return next;
+              });
+              setIsLongPressOpen(false);
+            }}
+            aria-label={language === "vi" ? "Mo tac vu tin nhan" : "Open message actions"}
+            title={language === "vi" ? "Tac vu" : "Actions"}
+            className={`absolute top-1/2 z-40 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border border-indigo-300 bg-white text-[12px] font-extrabold text-indigo-700 shadow-sm transition-all duration-150 ${isMine ? "-left-8" : "-right-8"} ${showActionTrigger ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
+          >
+            !
+          </button>
 
           <MessageActions
             message={message}
@@ -179,7 +222,7 @@ export function ChatMessageRow({
               {reactionSummary.map(([emoji, count]) => (
                 <span
                   key={`${message.id}-${emoji}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600 shadow-sm"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-200 shadow-sm"
                 >
                   <span>{emoji}</span>
                   <span>{count}</span>

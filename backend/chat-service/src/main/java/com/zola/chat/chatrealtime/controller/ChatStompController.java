@@ -73,6 +73,11 @@ public class ChatStompController {
         for (String memberId : conversation.participants()) {
             messagingTemplate.convertAndSendToUser(memberId, "/queue/chat", event);
         }
+        emitUnreadSyncEvents(
+            conversation.id(),
+            null,
+            conversation.participants().toArray(String[]::new)
+        );
     }
 
     @MessageMapping("/join_group")
@@ -99,6 +104,11 @@ public class ChatStompController {
             null
         );
         messagingTemplate.convertAndSendToUser(principal.getName(), "/queue/chat", event);
+        emitUnreadSyncEvents(
+            payload.conversationId(),
+            null,
+            principal.getName()
+        );
     }
 
     @MessageMapping("/send_group_message")
@@ -123,7 +133,7 @@ public class ChatStompController {
         );
 
         ChatEventResponse event = new ChatEventResponse(
-            "new_group_message",
+            "NEW_MESSAGE",
             base.actorId(),
             base.conversationId(),
             base.typing(),
@@ -136,6 +146,22 @@ public class ChatStompController {
             base.lastMessageAt()
         );
         broadcast(base.conversationId(), event);
+
+        // Keep legacy event type for older clients while preserving canonical NEW_MESSAGE.
+        ChatEventResponse legacyEvent = new ChatEventResponse(
+            "new_group_message",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), legacyEvent);
         emitUnreadSyncEvents(payload.conversationId(), base.message());
     }
 
@@ -206,7 +232,7 @@ public class ChatStompController {
         );
 
         ChatEventResponse event = new ChatEventResponse(
-            "message_replied",
+            "NEW_MESSAGE",
             base.actorId(),
             base.conversationId(),
             base.typing(),
@@ -219,6 +245,22 @@ public class ChatStompController {
             base.lastMessageAt()
         );
         broadcast(base.conversationId(), event);
+
+        // Keep legacy event type for clients that still branch on reply-specific names.
+        ChatEventResponse legacyEvent = new ChatEventResponse(
+            "message_replied",
+            base.actorId(),
+            base.conversationId(),
+            base.typing(),
+            base.online(),
+            base.targetUserId(),
+            base.message(),
+            base.unreadCount(),
+            base.totalUnreadCount(),
+            base.lastMessage(),
+            base.lastMessageAt()
+        );
+        broadcast(base.conversationId(), legacyEvent);
         emitUnreadSyncEvents(payload.conversationId(), base.message());
     }
 

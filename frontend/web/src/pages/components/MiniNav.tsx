@@ -38,22 +38,22 @@ const bottomItems: NavItem[] = [
 ];
 
 function navButtonClass(isActive: boolean) {
-    return `relative flex h-12 w-full items-center justify-center text-white transition-all duration-200 ${isActive
-        ? "border-l-4 border-white bg-indigo-800"
-        : "border-l-4 border-transparent hover:bg-indigo-800/70"
+    return `relative mx-1 flex h-11 w-auto items-center justify-center rounded-xl text-white transition-all duration-200 ${isActive
+        ? "bg-sky-600 shadow-lg shadow-sky-900/45"
+        : "hover:bg-slate-700/80"
         }`;
 }
 
 export function MiniNav({ active, onChange, messageBadge = 0 }: MiniNavProps) {
     return (
-        <aside className="flex h-screen w-20 shrink-0 flex-col bg-indigo-900">
-            <div className="flex h-20 items-center justify-center border-b border-indigo-800">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 text-sm font-extrabold tracking-wide text-white">
+        <aside className="flex h-screen w-16 shrink-0 flex-col bg-[#0d1521]">
+            <div className="flex h-16 items-center justify-center border-b border-slate-800">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-sky-600/25 text-sm font-extrabold tracking-wide text-sky-100">
                     ZL
                 </div>
             </div>
 
-            <div className="flex flex-1 flex-col pt-2">
+            <div className="flex flex-1 flex-col gap-1 pt-2">
                 {middleItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = active === item.key;
@@ -67,8 +67,8 @@ export function MiniNav({ active, onChange, messageBadge = 0 }: MiniNavProps) {
                         >
                             <Icon size={20} />
                             {item.key === "messages" && messageBadge > 0 && (
-                                <span className="absolute right-3 top-2 rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                                    {messageBadge > 99 ? "99+" : messageBadge}
+                                <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                                    {messageBadge > 9 ? "9+" : messageBadge}
                                 </span>
                             )}
                         </button>
@@ -76,7 +76,7 @@ export function MiniNav({ active, onChange, messageBadge = 0 }: MiniNavProps) {
                 })}
             </div>
 
-            <div className="border-t border-indigo-800 py-2">
+            <div className="border-t border-slate-800 py-2">
                 {bottomItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = active === item.key;

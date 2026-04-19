@@ -7,16 +7,33 @@ const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
 const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+function initials(name: string) {
+  const parts = name.split(" ").filter(Boolean);
+  if (parts.length === 0) {
+    return "U";
+  }
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 type ChatProps = {
   language: "vi" | "en";
   activeConversation: ConversationItem | null;
   activeConversationOnline: boolean;
   activeConversationPresenceLabel: string;
+  userProfileMap?: Record<string, UserProfile>;
+  showGroupPanelToggle?: boolean;
+  isGroupPanelOpen?: boolean;
+  onToggleGroupPanel?: () => void;
   messages: MessageItem[];
   myProfile: UserProfile | null;
   isLoadingMessages: boolean;
   draftMessage: string;
   onDraftChange: (value: string) => void;
+  onVoiceCall?: () => void;
+  onVideoCall?: () => void;
   onSendMessage: (options?: { parentMessageId?: string | null }) => Promise<void>;
   onSendFiles: (files: File[], caption: string) => Promise<void>;
   onEditMessage: (messageId: string, nextContent: string) => void | Promise<void>;
@@ -92,8 +109,8 @@ function inferMessageType(item: MessageItem): ChatMessage["type"] {
   if (rawType === "AUDIO") return "audio";
   if (rawType === "FILE") {
     const fileName = (item.fileName ?? "").toLowerCase();
-    if (/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileName)) return "image";
-    if (/\.(mp4|webm|mov|mkv)$/.test(fileName)) return "video";
+    if (/\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif|jfif)$/.test(fileName)) return "image";
+    if (/\.(mp4|webm|mov|mkv|avi)$/.test(fileName)) return "video";
     if (/\.(mp3|wav|ogg|m4a|aac)$/.test(fileName)) return "audio";
     return "file";
   }
@@ -141,11 +158,17 @@ export function Chat({
   activeConversation,
   activeConversationOnline,
   activeConversationPresenceLabel,
+  userProfileMap = {},
+  showGroupPanelToggle = false,
+  isGroupPanelOpen = true,
+  onToggleGroupPanel,
   messages,
   myProfile,
   isLoadingMessages,
   draftMessage,
   onDraftChange,
+  onVoiceCall,
+  onVideoCall,
   onSendMessage,
   onSendFiles,
   onEditMessage,
@@ -343,10 +366,12 @@ export function Chat({
   }, [localMessages]);
 
   const inferFileKind = (file: File): "image" | "video" | "file" => {
-    if (file.type.startsWith("image/")) {
+    const mime = (file.type ?? "").toLowerCase();
+    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jfif"].includes(ext)) {
       return "image";
     }
-    if (file.type.startsWith("video/")) {
+    if (mime.startsWith("video/") || ["mp4", "mov", "webm", "mkv", "avi"].includes(ext)) {
       return "video";
     }
     return "file";
@@ -474,99 +499,99 @@ export function Chat({
 
   if (!activeConversation) {
     return (
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden p-6 text-center sm:p-12">
-        <div className="absolute inset-0 z-0 opacity-40">
-          <div className="absolute left-[-10%] top-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-100 blur-[120px]" />
-          <div className="absolute bottom-[-10%] right-[-10%] h-[40%] w-[40%] rounded-full bg-violet-100 blur-[120px]" />
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#0f1724] p-6 text-center sm:p-12">
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(37,99,235,0.20),_rgba(15,23,36,0.92)_55%)]" />
+          <div className="absolute left-[-8%] top-[-10%] h-[42%] w-[38%] rounded-full bg-sky-600/20 blur-[130px]" />
+          <div className="absolute bottom-[-10%] right-[-10%] h-[44%] w-[40%] rounded-full bg-indigo-700/20 blur-[140px]" />
         </div>
 
-        <div className="relative z-10 max-w-xl">
-          <div className="mb-10 inline-block rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="relative mx-auto h-44 w-44">
-              <div className="absolute inset-0 scale-110 rounded-full bg-indigo-100" />
-              <div className="relative z-10 grid h-full w-full place-items-center rounded-[28px] bg-linear-to-br from-[#2d3358] to-[#59609a] text-5xl text-white">
-                <Sparkles size={42} />
-              </div>
-            </div>
+        <div className="relative z-10 max-w-xl rounded-3xl border border-slate-700/60 bg-slate-900/50 p-8 shadow-2xl backdrop-blur">
+          <div className="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-2xl bg-linear-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-indigo-900/40">
+            <Sparkles size={32} />
           </div>
-
-          <h2 className="mb-4 text-4xl font-extrabold tracking-tight text-slate-900">
-            Welcome back!
+          <h2 className="mb-3 text-3xl font-bold tracking-tight text-slate-100">
+            {language === "vi" ? "Chon cuoc tro chuyen" : "Pick a conversation"}
           </h2>
-          <p className="mx-auto mb-10 max-w-md text-lg leading-relaxed text-slate-600">
+          <p className="text-sm leading-relaxed text-slate-300">
             {language === "vi"
-              ? "Khong tu dong mo hoi thoai. Chon mot nguoi ben trai de bat dau nhan tin."
-              : "No auto-open conversation. Select someone on the left to start messaging."}
+              ? "Danh sach ben trai theo phong cach Zalo. Chon mot doan chat de bat dau, khung nhap tin se luon nam o day man hinh."
+              : "Use the Zalo-style list on the left. Select a chat to start, the composer stays pinned at the bottom."}
           </p>
-
-          <div className="grid grid-cols-1 gap-4 text-left sm:grid-cols-2">
-            <article className="rounded-2xl bg-[#f5f2ff] p-6">
-              <h4 className="mb-1 text-sm font-bold">AI Summaries</h4>
-              <p className="text-xs text-slate-600">
-                Get quick recaps of long threads instantly.
-              </p>
-            </article>
-            <article className="rounded-2xl bg-[#f5f2ff] p-6">
-              <h4 className="mb-1 text-sm font-bold">Editorial Drafts</h4>
-              <p className="text-xs text-slate-600">
-                Switch seamlessly between chat and drafting mode.
-              </p>
-            </article>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0f1724]">
+      <header className="flex h-16 items-center justify-between border-b border-slate-700/80 bg-[#182433] px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200">
             {activeConversation.name.slice(0, 2).toUpperCase()}
             <span
-              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-400"}`}
+              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#182433] ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-500"}`}
             />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">
+            <h3 className="text-base font-semibold text-slate-100">
               {activeConversation.name}
             </h3>
             <p
-              className={`text-xs ${activeConversationOnline ? "text-emerald-600" : "text-slate-500"}`}
+              className={`text-xs ${activeConversationOnline ? "text-emerald-300" : "text-slate-400"}`}
             >
               {activeConversationPresenceLabel}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-slate-500">
+        <div className="flex items-center gap-1 text-slate-300">
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
+            onClick={onVoiceCall}
+            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
           >
             <Phone size={18} />
           </button>
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
+            onClick={onVideoCall}
+            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
           >
             <Video size={18} />
           </button>
-          <button
-            type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-100 hover:text-slate-800"
-          >
-            <Info size={18} />
-          </button>
+          {showGroupPanelToggle ? (
+            <button
+              type="button"
+              onClick={onToggleGroupPanel}
+              className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isGroupPanelOpen ? "border-sky-400/60 bg-sky-500/20 text-sky-100" : "border-slate-600 text-slate-200 hover:bg-slate-700/70 hover:text-white"}`}
+              title={
+                language === "vi"
+                  ? "Bat/tat bang dieu khien nhom"
+                  : "Toggle group control panel"
+              }
+              aria-label={
+                language === "vi"
+                  ? "Bat/tat bang dieu khien nhom"
+                  : "Toggle group control panel"
+              }
+            >
+              <span className="text-lg font-extrabold leading-none">!</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
+            >
+              <Info size={18} />
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ... phần Header ... */}
-
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-slate-50/30 px-4 py-6 ${isDragOverComposer ? "ring-2 ring-indigo-300 ring-inset" : ""}`}
+        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[#0f1724] px-4 py-6 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
         onScroll={() => notifyViewportBottom(messageListRef.current)}
         onDragOver={(event) => {
           event.preventDefault();
@@ -585,17 +610,16 @@ export function Chat({
         }}
       >
         {isDragOverComposer && (
-          <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/80">
-            <p className="text-sm font-semibold text-indigo-700">
+          <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-900/60">
+            <p className="text-sm font-semibold text-sky-100">
               {language === "vi" ? "Tha file de gui" : "Drop files to upload"}
             </p>
           </div>
         )}
-        {/* Tăng chiều rộng tối đa của vùng chứa tin nhắn */}
         <div className="mx-auto w-full max-w-full lg:max-w-6xl xl:max-w-7xl">
           {isLoadingMessages ? (
             <div className="flex justify-center py-10">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-300"></div>
             </div>
           ) : (
             <div className="flex flex-col">
@@ -607,7 +631,7 @@ export function Chat({
                       void handleLoadOlderMessages();
                     }}
                     disabled={isLoadingMoreMessages}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-slate-600 bg-slate-800/90 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isLoadingMoreMessages
                       ? language === "vi"
@@ -628,10 +652,21 @@ export function Chat({
                 const sameAsNext = next?.senderId === message.senderId;
                 const showAvatar = !isMine && !sameAsNext;
                 const showMeta = !sameAsNext;
+                const senderProfile = userProfileMap[message.senderId];
+                const senderDisplayName =
+                  senderProfile?.fullName ??
+                  (message.senderId === currentUserId
+                    ? language === "vi"
+                      ? "Ban"
+                      : "You"
+                    : `User ${message.senderId.slice(0, 8)}`);
+                const senderInitial = initials(senderDisplayName);
                 const serverMessage = messages.find((item) => item.id === message.id);
                 const replySource = message.parentMessageId
                   ? messages.find((item) => item.id === message.parentMessageId)
                   : undefined;
+                const shouldShowSenderName =
+                  activeConversation?.type === "group" && !isMine && !sameAsPrev;
                 return (
                   <div
                     key={message.id}
@@ -645,9 +680,10 @@ export function Chat({
                       }}
                       isMine={isMine}
                       language={language}
-                      recipientAvatar={activeConversation.name
-                        .slice(0, 2)
-                        .toUpperCase()}
+                      recipientAvatar={senderInitial}
+                      senderName={senderDisplayName}
+                      senderAvatarUrl={senderProfile?.avatarUrl ?? null}
+                      showSenderName={shouldShowSenderName}
                       showAvatar={showAvatar}
                       showMeta={showMeta}
                       menuPlacement={index <= 1 ? "below" : "above"}
@@ -698,11 +734,9 @@ export function Chat({
         </div>
       </div>
 
-      {/* ... phần Footer ... */}
-
-      <footer className="sticky bottom-0 border-t border-slate-200/80 bg-white px-2 py-2 shadow-[0_-4px_16px_rgba(15,23,42,0.06)] sm:px-3">
+      <footer className="relative mt-auto border-t border-slate-700/80 bg-[#1b2736] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
         {isTyping && (
-          <div className="mb-2 text-xs text-slate-500">
+          <div className="mb-2 text-xs text-slate-300">
             {language === "vi" ? "Dang go..." : "Typing..."}
           </div>
         )}
@@ -710,11 +744,11 @@ export function Chat({
         {pendingUploads.length > 0 && (
           <div className="mb-2 space-y-1.5">
             {pendingUploads.map((item) => (
-              <div key={item.localId} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div key={item.localId} className="rounded-lg border border-slate-600 bg-slate-800/85 px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-700">{item.fileName}</p>
-                    <p className="text-[11px] text-slate-500">{item.fileSizeLabel}</p>
+                    <p className="truncate text-xs font-semibold text-slate-100">{item.fileName}</p>
+                    <p className="text-[11px] text-slate-300">{item.fileSizeLabel}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {item.status === "failed" && (
@@ -723,7 +757,7 @@ export function Chat({
                         onClick={() => {
                           void onRetryUpload(item.localId);
                         }}
-                        className="rounded-md border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50"
+                        className="rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10"
                       >
                         {language === "vi" ? "Gui lai" : "Retry"}
                       </button>
@@ -731,13 +765,13 @@ export function Chat({
                     <button
                       type="button"
                       onClick={() => onCancelUpload(item.localId)}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100"
+                      className="rounded-md border border-slate-500 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
                     >
                       {language === "vi" ? "Huy" : "Cancel"}
                     </button>
                   </div>
                 </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-700">
                   <div
                     className={`h-full rounded-full ${item.status === "failed" ? "bg-rose-400" : "bg-indigo-500"}`}
                     style={{ width: `${Math.max(2, item.progress)}%` }}
@@ -750,19 +784,19 @@ export function Chat({
         )}
 
         {replyingTo && (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-indigo-700">
+              <p className="text-[11px] font-semibold text-sky-200">
                 {language === "vi" ? "Dang tra loi" : "Replying"}
               </p>
-              <p className="truncate text-xs text-indigo-900">
+              <p className="truncate text-xs text-sky-100">
                 {replyingTo.text}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setReplyingTo(null)}
-              className="shrink-0 rounded-md border border-indigo-300 px-2 py-1 text-[11px] text-indigo-700 hover:bg-indigo-100"
+              className="shrink-0 rounded-md border border-sky-300/40 px-2 py-1 text-[11px] text-sky-200 hover:bg-sky-500/15"
             >
               {language === "vi" ? "Huy" : "Cancel"}
             </button>
@@ -770,12 +804,12 @@ export function Chat({
         )}
 
         {editingMessage && (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-amber-700">
+              <p className="text-[11px] font-semibold text-amber-200">
                 {language === "vi" ? "Dang chinh sua" : "Editing message"}
               </p>
-              <p className="truncate text-xs text-amber-800">
+              <p className="truncate text-xs text-amber-100">
                 {editingMessage.originalText}
               </p>
             </div>
@@ -785,7 +819,7 @@ export function Chat({
                 setEditingMessage(null);
                 onDraftChange("");
               }}
-              className="shrink-0 rounded-md border border-amber-300 px-2 py-1 text-[11px] text-amber-700 hover:bg-amber-100"
+              className="shrink-0 rounded-md border border-amber-300/45 px-2 py-1 text-[11px] text-amber-200 hover:bg-amber-500/15"
             >
               {language === "vi" ? "Huy" : "Cancel"}
             </button>
@@ -793,13 +827,13 @@ export function Chat({
         )}
 
         {showEmojiPanel && (
-          <div className="absolute bottom-16 left-3 z-20 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg sm:left-4">
+          <div className="absolute bottom-[calc(100%+8px)] left-3 z-20 rounded-2xl border border-slate-600 bg-slate-800 p-3 shadow-2xl sm:left-4">
             <div className="grid grid-cols-4 gap-2">
               {quickEmojis.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
-                  className="rounded-lg px-2 py-1 text-xl hover:bg-slate-100"
+                  className="rounded-lg px-2 py-1 text-xl hover:bg-slate-700"
                   onClick={() => onDraftChange(`${draftMessage}${emoji}`)}
                 >
                   {emoji}
@@ -814,7 +848,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => setShowAttachMenu((prev) => !prev)}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
               title={language === "vi" ? "Dinh kem" : "Attachment"}
               aria-label={language === "vi" ? "Dinh kem" : "Attachment"}
             >
@@ -822,7 +856,7 @@ export function Chat({
             </button>
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
               title={language === "vi" ? "Sticker" : "Sticker"}
             >
               <Sticker size={18} />
@@ -833,7 +867,7 @@ export function Chat({
               className="hidden"
               multiple
               disabled={isSending}
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,image/jpeg,image/jpg,image/png,image/webp,video/mp4,video/mov,video/webm"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,image/*,.heic,.heif,.avif,.jfif,video/*,.mkv,.avi"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
                 if (files.length > 0) {
@@ -847,7 +881,7 @@ export function Chat({
               type="file"
               className="hidden"
               multiple
-              accept="image/jpeg,image/jpg,image/png,image/webp"
+              accept="image/*,.heic,.heif,.avif,.jfif"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
                 if (files.length > 0) {
@@ -860,7 +894,7 @@ export function Chat({
               id={videoInputId}
               type="file"
               className="hidden"
-              accept="video/mp4,video/mov,video/webm"
+              accept="video/*,.mkv,.avi"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) {
@@ -885,7 +919,7 @@ export function Chat({
             />
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
               onClick={() => setShowEmojiPanel((prev) => !prev)}
               title={language === "vi" ? "Emoji" : "Emoji"}
             >
@@ -894,7 +928,7 @@ export function Chat({
           </div>
 
           <textarea
-            className="max-h-24 min-h-9 resize-none rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300"
+            className="max-h-24 min-h-9 resize-none rounded-2xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-sky-400"
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
@@ -907,7 +941,7 @@ export function Chat({
 
           <button
             type="button"
-            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-rose-500 hover:bg-rose-50"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-600 px-3 text-sm font-semibold text-rose-300 hover:bg-rose-500/15"
             onClick={() => {
               onDraftChange(`${draftMessage} ❤️`);
             }}
@@ -918,7 +952,7 @@ export function Chat({
 
           <button
             type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-indigo-600 px-3.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-900/40 disabled:opacity-50"
             onClick={() => {
               void handleSendMessage();
             }}
@@ -936,11 +970,11 @@ export function Chat({
         </div>
 
         {showAttachMenu && (
-          <div className="absolute bottom-16 left-3 z-20 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg sm:left-4">
+          <div className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
             <button
               type="button"
               onClick={() => document.getElementById(imageInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
               <span>{language === "vi" ? "Gui hinh anh" : "Send image"}</span>
@@ -948,7 +982,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => document.getElementById(videoInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <Video size={16} />
               <span>{language === "vi" ? "Gui video" : "Send video"}</span>
@@ -956,7 +990,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => document.getElementById(fileInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <FileText size={16} />
               <span>{language === "vi" ? "Gui tep tin" : "Send file"}</span>
@@ -964,7 +998,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => document.getElementById(mobileCameraInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
               <span>{language === "vi" ? "Chup anh/Quay nhanh" : "Capture photo/video"}</span>
@@ -1066,6 +1100,6 @@ export function Chat({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

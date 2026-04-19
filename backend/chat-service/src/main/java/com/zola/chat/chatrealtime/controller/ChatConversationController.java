@@ -90,6 +90,11 @@ public class ChatConversationController {
         for (String memberId : response.participants()) {
             messagingTemplate.convertAndSendToUser(memberId, "/queue/chat", event);
         }
+        emitUnreadSyncEvents(
+            response.id(),
+            null,
+            response.participants().toArray(String[]::new)
+        );
         return ApiResponse.ok("Group created", response);
     }
 
@@ -99,7 +104,11 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId,
         @Valid @RequestBody GroupMemberRequest request
     ) {
-        ConversationListItemResponse response = chatRealtimeService.addGroupMember(userId, conversationId, request.userId());
+        ChatRealtimeService.GroupActionResult result = chatRealtimeService.addGroupMember(userId, conversationId, request.userId());
+        ConversationListItemResponse response = result.conversation();
+        if (result.systemMessage() != null) {
+            emitUnreadSyncEvents(conversationId, result.systemMessage());
+        }
         return ApiResponse.ok("Member added", response);
     }
 
@@ -109,7 +118,11 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId,
         @Valid @RequestBody GroupMemberRequest request
     ) {
-        ConversationListItemResponse response = chatRealtimeService.removeGroupMember(userId, conversationId, request.userId());
+        ChatRealtimeService.GroupActionResult result = chatRealtimeService.removeGroupMember(userId, conversationId, request.userId());
+        ConversationListItemResponse response = result.conversation();
+        if (result.systemMessage() != null) {
+            emitUnreadSyncEvents(conversationId, result.systemMessage());
+        }
         return ApiResponse.ok("Member removed", response);
     }
 
@@ -118,8 +131,26 @@ public class ChatConversationController {
         @RequestHeader("X-User-Id") String userId,
         @PathVariable("conversationId") UUID conversationId
     ) {
-        ConversationListItemResponse response = chatRealtimeService.leaveGroupConversation(userId, conversationId);
+        ChatRealtimeService.GroupActionResult result = chatRealtimeService.leaveGroupConversation(userId, conversationId);
+        ConversationListItemResponse response = result.conversation();
+        if (result.systemMessage() != null) {
+            emitUnreadSyncEvents(conversationId, result.systemMessage());
+        }
         return ApiResponse.ok("Left group", response);
+    }
+
+    @PostMapping("/groups/join-by-link")
+    public ApiResponse<ConversationListItemResponse> joinGroupByLink(
+        @RequestHeader("X-User-Id") String userId,
+        @Valid @RequestBody JoinByLinkRequest request
+    ) {
+        ChatRealtimeService.GroupActionResult result = chatRealtimeService.joinGroupByInviteCode(userId, request.code());
+        ConversationListItemResponse response = result.conversation();
+        UUID conversationId = UUID.fromString(response.id());
+        if (result.systemMessage() != null) {
+            emitUnreadSyncEvents(conversationId, result.systemMessage());
+        }
+        return ApiResponse.ok("Joined group", response);
     }
 
     @PostMapping("/conversations/{conversationId}/set-admin")
@@ -130,6 +161,38 @@ public class ChatConversationController {
     ) {
         ConversationListItemResponse response = chatRealtimeService.setGroupAdmin(userId, conversationId, request.userId(), request.admin());
         return ApiResponse.ok("Group admin updated", response);
+    }
+
+    @GetMapping("/conversations/{conversationId}/settings")
+    public ApiResponse<Map<String, Object>> getGroupSettings(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        return ApiResponse.ok(
+            "Group settings fetched",
+            chatRealtimeService.getGroupSettings(userId, conversationId)
+        );
+    }
+
+    @PatchMapping("/conversations/{conversationId}/settings")
+    public ApiResponse<Map<String, Object>> updateGroupSettings(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @RequestBody UpdateGroupSettingsRequest request
+    ) {
+        Map<String, Object> response = chatRealtimeService.updateGroupSettings(
+            userId,
+            conversationId,
+            request.name(),
+            request.avatar(),
+            request.onlyAdminsCanMessage(),
+            request.requireApprovalToJoin(),
+            request.allowMemberInvite(),
+            request.transferOwnerId()
+        );
+
+        emitUnreadSyncEvents(conversationId, null);
+        return ApiResponse.ok("Group settings updated", response);
     }
 
     @DeleteMapping("/conversations/{conversationId}")
@@ -352,6 +415,19 @@ public class ChatConversationController {
     }
 
     public record ReactionRequest(@NotBlank String emoji) {
+    }
+
+    public record UpdateGroupSettingsRequest(
+        String name,
+        String avatar,
+        Boolean onlyAdminsCanMessage,
+        Boolean requireApprovalToJoin,
+        Boolean allowMemberInvite,
+        String transferOwnerId
+    ) {
+    }
+
+    public record JoinByLinkRequest(@NotBlank String code) {
     }
 
     private void emitUnreadSyncEvents(UUID conversationId, MessagePayload messagePayload, String... userIds) {

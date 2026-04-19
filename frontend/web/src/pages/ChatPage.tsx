@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import {
   acceptFriendRequest,
   addReaction,
+  addGroupMember,
   addFriend,
   createDirectConversation,
   createGroupConversation,
+  deleteGroupConversation,
   deleteMyProfile,
   deleteForMe,
   declineFriendRequest,
@@ -15,24 +17,31 @@ import {
   getConversations,
   getFriends,
   getFriendshipStatus,
+  getGroupSettings,
   getMessages,
   getMyProfile,
   getPendingFriendRequests,
   getPendingFriendRequestsUnreadCount,
   getUserSummary,
+  leaveGroupConversation,
+  joinGroupByInviteCode,
   markConversationRead,
   getUsersPresence,
   markPendingFriendRequestsRead,
   removeFriend,
+  removeGroupMember,
   readMessage,
   recallMessage,
   removeReaction,
   searchUserByEmail,
   sendMessage,
+  setGroupAdmin,
   toApiErrorMessage,
   updateMyProfile,
+  updateGroupSettings,
   type ConversationItem,
   type FriendContactItem,
+  type GroupSettings,
   type MessageItem,
   type PendingFriendRequestItem,
   type UserProfile,
@@ -116,11 +125,45 @@ type PendingUploadItem = {
   errorMessage?: string;
 };
 
+type QuickCallMode = "voice" | "video";
+
+type QuickCallHistoryItem = {
+  id: string;
+  conversationId: string;
+  conversationName: string;
+  mode: QuickCallMode;
+  link: string;
+  createdAt: string;
+};
+
+type GroupPreferenceItem = {
+  muted: boolean;
+  pinned: boolean;
+  hidden: boolean;
+};
+
+const GROUP_PREFERENCE_STORAGE_KEY = "zola_group_preferences_v1";
+
+function loadGroupPreferences(): Record<string, GroupPreferenceItem> {
+  try {
+    const raw = window.localStorage.getItem(GROUP_PREFERENCE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as Record<string, GroupPreferenceItem>;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function inferMediaKind(file: File): "image" | "video" | "file" {
-  if (file.type.startsWith("image/")) {
+  const mime = (file.type ?? "").toLowerCase();
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jfif"].includes(ext)) {
     return "image";
   }
-  if (file.type.startsWith("video/")) {
+  if (mime.startsWith("video/") || ["mp4", "mov", "webm", "mkv", "avi"].includes(ext)) {
     return "video";
   }
   return "file";
@@ -147,6 +190,7 @@ type UserPresenceState = {
 
 export function ChatPage() {
   const { language } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchText, setSearchText] = useState("");
   const conversations = useChatStore((state) => state.conversations);
@@ -236,7 +280,13 @@ export function ChatPage() {
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
   const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
+  const [callHistory, setCallHistory] = useState<QuickCallHistoryItem[]>([]);
   const [uploadLimitModalMessage, setUploadLimitModalMessage] = useState<string | null>(null);
+  const [groupSettingsMap, setGroupSettingsMap] = useState<Record<string, GroupSettings>>({});
+  const [groupPreferenceMap, setGroupPreferenceMap] = useState<Record<string, GroupPreferenceItem>>(
+    () => loadGroupPreferences(),
+  );
+  const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(true);
 
   const [bannerMessage, setBannerMessage] = useState("");
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
@@ -270,6 +320,8 @@ export function ChatPage() {
   const messageLoadRequestIdRef = useRef(0);
   const uploadAbortControllersRef = useRef<Record<string, AbortController>>({});
   const uploadFileRegistryRef = useRef<Record<string, { file: File; caption: string; conversationId: string }>>({});
+  const joinInviteInProgressRef = useRef(false);
+  const processedInviteCodeRef = useRef<string | null>(null);
 
   // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
@@ -490,17 +542,391 @@ export function ChatPage() {
     [activeConversationId, conversations],
   );
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        GROUP_PREFERENCE_STORAGE_KEY,
+        JSON.stringify(groupPreferenceMap),
+      );
+    } catch {
+      // Ignore localStorage write errors.
+    }
+  }, [groupPreferenceMap]);
+
+  const refreshGroupSettings = useCallback(async (conversationId: string) => {
+    try {
+      const result = await getGroupSettings(conversationId);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [conversationId]: result.data,
+      }));
+    } catch {
+      // Keep stale settings if endpoint fails temporarily.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeConversation || activeConversation.type !== "group") {
+      return;
+    }
+    void refreshGroupSettings(activeConversation.id);
+  }, [activeConversation?.id, activeConversation?.type, refreshGroupSettings]);
+
+  useEffect(() => {
+    if (activeConversation?.type === "group") {
+      setIsGroupPanelOpen(true);
+    }
+  }, [activeConversation?.id, activeConversation?.type]);
+
+  const updateGroupPreference = useCallback(
+    (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
+      setGroupPreferenceMap((prev) => {
+        const current = prev[conversationId] ?? {
+          muted: false,
+          pinned: false,
+          hidden: false,
+        };
+
+        const requestsPin = patch.pinned === true;
+        const isAlreadyPinned = Boolean(current.pinned);
+        if (requestsPin && !isAlreadyPinned) {
+          const pinnedCount = Object.values(prev).filter((item) => item?.pinned).length;
+          if (pinnedCount >= 3) {
+            setBannerMessage(
+              language === "vi"
+                ? "Chi duoc ghim toi da 3 hoi thoai"
+                : "You can pin up to 3 conversations only",
+            );
+            return prev;
+          }
+        }
+
+        const nextItem = {
+          ...current,
+          ...patch,
+        };
+        return {
+          ...prev,
+          [conversationId]: nextItem,
+        };
+      });
+    },
+    [language],
+  );
+
+  const onAddGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await addGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da them thanh vien" : "Member added",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onRemoveGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await removeGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da xoa thanh vien" : "Member removed",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onToggleGroupAdmin = async (userId: string, admin: boolean) => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await setGroupAdmin(activeConversationId, userId, admin);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        admin
+          ? language === "vi"
+            ? "Da cap quyen pho nhom"
+            : "Admin role granted"
+          : language === "vi"
+            ? "Da go quyen pho nhom"
+            : "Admin role revoked",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onUpdateActiveGroupSettings = async (input: {
+    name?: string;
+    avatar?: string | null;
+    onlyAdminsCanMessage?: boolean;
+    requireApprovalToJoin?: boolean;
+    allowMemberInvite?: boolean;
+    transferOwnerId?: string;
+  }) => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    try {
+      const result = await updateGroupSettings(activeConversationId, input);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [activeConversationId]: result.data,
+      }));
+
+      upsertConversation({
+        id: activeConversationId,
+        name: result.data.name,
+        avatar: result.data.avatar,
+        ownerId: result.data.ownerId,
+        admins: result.data.admins,
+        participants: result.data.participants,
+      });
+
+      await fetchConversations({ silent: true });
+      setBannerMessage(
+        language === "vi"
+          ? "Da cap nhat cai dat nhom"
+          : "Group settings updated",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onLeaveActiveGroup = async () => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await leaveGroupConversation(activeConversationId);
+      await fetchConversations({ silent: true });
+      hasUserOpenedConversationRef.current = false;
+      manuallyOpenedConversationIdRef.current = null;
+      setActiveConversationId(null);
+      setBannerMessage(language === "vi" ? "Da roi nhom" : "Left group");
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onDeleteActiveGroup = async () => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await deleteGroupConversation(activeConversationId);
+      await fetchConversations({ silent: true });
+      hasUserOpenedConversationRef.current = false;
+      manuallyOpenedConversationIdRef.current = null;
+      setActiveConversationId(null);
+      setBannerMessage(
+        language === "vi" ? "Da giai tan nhom" : "Group deleted",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onMentionGroupMember = (userId: string) => {
+    const displayName = userProfileMap[userId]?.fullName ?? userId;
+    const mentionToken = `@${displayName.trim().replace(/\s+/g, "_")}`;
+    setDraftMessage((prev) =>
+      `${prev}${prev.length > 0 && !prev.endsWith(" ") ? " " : ""}${mentionToken} `,
+    );
+  };
+
+  const onSendGroupTemplateMessage = async (
+    type:
+      | "STICKER"
+      | "GIF"
+      | "CONTACT"
+      | "LOCATION"
+      | "POLL"
+      | "REMINDER"
+      | "NOTE"
+      | "MEETING",
+  ) => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const prefixByType: Record<string, string> = {
+      STICKER: "Sticker",
+      GIF: "GIF",
+      CONTACT: "Contact",
+      LOCATION: "Location",
+      POLL: "Poll",
+      REMINDER: "Reminder",
+      NOTE: "Note",
+      MEETING: "Meeting",
+    };
+
+    const title =
+      type === "MEETING"
+        ? language === "vi"
+          ? "Hop nhanh"
+          : "Quick meeting"
+        : window.prompt(
+            language === "vi"
+              ? `Nhap noi dung ${prefixByType[type]}`
+              : `Enter ${prefixByType[type]} content`,
+          ) ?? "";
+
+    if (type !== "MEETING" && !title.trim()) {
+      return;
+    }
+
+    const payload =
+      type === "MEETING"
+        ? {
+            title,
+            link: `https://meet.jit.si/zola-${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`,
+            createdAt: nowIso,
+          }
+        : {
+            title: title.trim(),
+            createdAt: nowIso,
+          };
+
+    const content = JSON.stringify(payload);
+
+    try {
+      const result = await sendMessage(activeConversationId, content, {
+        type,
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(
+        language === "vi"
+          ? `Da gui ${prefixByType[type].toLowerCase()}`
+          : `${prefixByType[type]} sent`,
+      );
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onStartQuickCall = async (mode: QuickCallMode) => {
+    if (!activeConversationId || !activeConversation) {
+      setBannerMessage(
+        language === "vi"
+          ? "Hay chon cuoc tro chuyen truoc khi goi"
+          : "Select a conversation before starting a call",
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const roomToken = `${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`;
+    const link = `https://meet.jit.si/zola-${mode}-${roomToken}`;
+    const title =
+      mode === "video"
+        ? language === "vi"
+          ? "Cuoc goi video"
+          : "Video call"
+        : language === "vi"
+          ? "Cuoc goi thoai"
+          : "Voice call";
+
+    try {
+      const result = await sendMessage(
+        activeConversationId,
+        JSON.stringify({
+          title,
+          link,
+          mode,
+          createdAt: nowIso,
+        }),
+        { type: "MEETING" },
+      );
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      const conversationName = getConversationDisplayName(activeConversation);
+      setCallHistory((prev) => [
+        {
+          id: result.data.id,
+          conversationId: activeConversationId,
+          conversationName,
+          mode,
+          link,
+          createdAt: nowIso,
+        },
+        ...prev,
+      ].slice(0, 30));
+
+      window.open(link, "_blank", "noopener,noreferrer");
+      await fetchConversations({ silent: true });
+      setBannerMessage(
+        language === "vi"
+          ? mode === "video"
+            ? "Da bat dau cuoc goi video"
+            : "Da bat dau cuoc goi thoai"
+          : mode === "video"
+            ? "Video call started"
+            : "Voice call started",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
   const filteredConversations = useMemo(() => {
     const normalized = searchText.trim().toLowerCase();
-    if (!normalized) return conversations;
-    return conversations.filter((conversation) => {
+    const visible = conversations.filter(
+      (conversation) => !groupPreferenceMap[conversation.id]?.hidden,
+    );
+
+    const base = !normalized
+      ? visible
+      : visible.filter((conversation) => {
       const displayName = getConversationDisplayName(conversation);
       return (
         displayName.toLowerCase().includes(normalized) ||
         conversation.lastMessage.toLowerCase().includes(normalized)
       );
     });
-  }, [conversations, searchText, userProfileMap, myProfile?.id]);
+
+    return [...base].sort((left, right) => {
+      const leftPinned = Boolean(groupPreferenceMap[left.id]?.pinned);
+      const rightPinned = Boolean(groupPreferenceMap[right.id]?.pinned);
+      if (leftPinned !== rightPinned) {
+        return Number(rightPinned) - Number(leftPinned);
+      }
+      const leftTime = left.lastMessageAt ? Date.parse(left.lastMessageAt) : 0;
+      const rightTime = right.lastMessageAt ? Date.parse(right.lastMessageAt) : 0;
+      return rightTime - leftTime;
+    });
+  }, [conversations, groupPreferenceMap, searchText, userProfileMap, myProfile?.id]);
 
   const sidebarChats = useMemo<ChatListItem[]>(() => {
     return filteredConversations.map((conversation) => {
@@ -521,8 +947,9 @@ export function ChatPage() {
             minute: "2-digit",
           }).format(new Date(conversation.lastMessageAt))
           : "--:--",
-        lastMessage: conversation.lastMessage || "...",
+        lastMessage: `${groupPreferenceMap[conversation.id]?.muted ? "🔕 " : ""}${conversation.lastMessage || "..."}`,
         unreadCount: conversation.unreadCount ?? 0,
+        isPinned: Boolean(groupPreferenceMap[conversation.id]?.pinned),
         isOnline: isGroupConversation ? false : presence?.online ?? false,
         presenceLabel: isGroupConversation ? groupPresenceLabel : toPresenceLabel(presence),
       };
@@ -533,6 +960,7 @@ export function ChatPage() {
     presenceTick,
     userPresenceMap,
     userProfileMap,
+    groupPreferenceMap,
     myProfile?.id,
   ]);
 
@@ -735,6 +1163,52 @@ export function ChatPage() {
   }, [myProfile?.id]);
 
   useEffect(() => {
+    const inviteCode = (searchParams.get("groupInvite") ?? "").trim();
+    if (!inviteCode || !myProfile?.id) {
+      return;
+    }
+    if (joinInviteInProgressRef.current) {
+      return;
+    }
+    if (processedInviteCodeRef.current === inviteCode) {
+      return;
+    }
+
+    joinInviteInProgressRef.current = true;
+    processedInviteCodeRef.current = inviteCode;
+
+    const joinByLink = async () => {
+      try {
+        const result = await joinGroupByInviteCode(inviteCode);
+        const joinedConversationId = result.data.id;
+
+        await fetchConversations({ silent: true });
+
+        hasUserOpenedConversationRef.current = true;
+        manuallyOpenedConversationIdRef.current = joinedConversationId;
+        pendingReadSyncOnOpenRef.current = true;
+        setActiveTab("messages");
+        setActiveConversationId(joinedConversationId);
+
+        setBannerMessage(
+          language === "vi"
+            ? "Da tham gia nhom tu link moi"
+            : "Joined group from invite link",
+        );
+      } catch (error) {
+        setBannerMessage(toApiErrorMessage(error));
+      } finally {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("groupInvite");
+        setSearchParams(nextParams, { replace: true });
+        joinInviteInProgressRef.current = false;
+      }
+    };
+
+    void joinByLink();
+  }, [searchParams, setSearchParams, myProfile?.id, language]);
+
+  useEffect(() => {
     const loadProfile = async () => {
       try {
         const result = await getMyProfile();
@@ -806,17 +1280,21 @@ export function ChatPage() {
 
         const isTypingEvent =
           event.eventType === "TYPING" ||
-          event.eventType === "user_typing_group";
+          event.eventType === "user_typing_group" ||
+          event.eventType === "USER_TYPING_GROUP";
         const isConversationSyncEvent =
           event.eventType === "CONVERSATION_UPDATED" ||
           event.eventType === "UNREAD_COUNT_UPDATED" ||
           event.eventType === "TOTAL_UNREAD_UPDATED" ||
-          event.eventType === "group_created";
+          event.eventType === "group_created" ||
+          event.eventType === "GROUP_CREATED";
         const isMessageEvent =
           event.eventType === "NEW_MESSAGE" ||
           event.eventType === "MESSAGE_SENT" ||
           event.eventType === "new_group_message" ||
-          event.eventType === "message_replied";
+          event.eventType === "message_replied" ||
+          event.eventType === "NEW_GROUP_MESSAGE" ||
+          event.eventType === "MESSAGE_REPLIED";
 
         if (isTypingEvent) {
           if (event.actorId !== myUserIdRef.current) {
@@ -836,12 +1314,28 @@ export function ChatPage() {
 
         if (isConversationSyncEvent) {
           if (event.conversationId) {
+            const isGroupCreatedEvent =
+              event.eventType === "group_created" ||
+              event.eventType === "GROUP_CREATED";
             upsertConversation({
               id: event.conversationId,
+              type: isGroupCreatedEvent ? "group" : undefined,
+              name: isGroupCreatedEvent
+                ? (language === "vi" ? "Nhom moi" : "New group")
+                : undefined,
               lastMessage: event.lastMessage ?? undefined,
-              lastMessageAt: event.lastMessageAt ?? undefined,
+              lastMessageAt:
+                event.lastMessageAt ??
+                (isGroupCreatedEvent ? new Date().toISOString() : undefined),
               unreadCount: event.unreadCount ?? undefined,
             });
+
+            const client = realtimeClientRef.current;
+            if (client && client.isConnected()) {
+              client.syncConversationSubscriptions(
+                Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
+              );
+            }
           }
           if (typeof event.totalUnreadCount === "number") {
             syncTotalUnread(event.totalUnreadCount);
@@ -888,7 +1382,13 @@ export function ChatPage() {
 
         // Secondary dedup check (legacy, now unified above)
         const messageKey = `msg:${payload.messageId}`;
-        if (event.eventType === "NEW_MESSAGE" || event.eventType === "new_group_message") {
+        if (
+          event.eventType === "NEW_MESSAGE" ||
+          event.eventType === "new_group_message" ||
+          event.eventType === "NEW_GROUP_MESSAGE" ||
+          event.eventType === "MESSAGE_REPLIED" ||
+          event.eventType === "message_replied"
+        ) {
           if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
             return;
           }
@@ -1033,6 +1533,15 @@ export function ChatPage() {
           lastMessageAt: normalizedMessage.createdAt,
           unreadCount: unreadPatch,
         });
+
+        if (event.conversationId) {
+          const client = realtimeClientRef.current;
+          if (client && client.isConnected()) {
+            client.syncConversationSubscriptions(
+              Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
+            );
+          }
+        }
       },
       onSyncEvent: (event) => {
         if (event.eventType.startsWith("FRIENDSHIP_")) {
@@ -1327,30 +1836,6 @@ export function ChatPage() {
     try {
       setIsSending(true);
 
-      const activeConversation = useChatStore
-        .getState()
-        .conversations.find((item) => item.id === activeConversationId);
-
-      const realtimeClient = realtimeClientRef.current;
-      const canSendRealtime = Boolean(realtimeClient?.isConnected());
-
-      if (activeConversation?.type === "group" && canSendRealtime) {
-        const sent = realtimeClient?.publishSendGroupMessage(
-          activeConversationId,
-          content,
-          "TEXT",
-          null,
-          null,
-          options?.parentMessageId ?? null,
-        );
-
-        if (sent) {
-          setDraftMessage("");
-          await fetchConversations({ silent: true });
-          return;
-        }
-      }
-
       const result = await sendMessage(activeConversationId, content, {
         type: "TEXT",
         parentMessageId: options?.parentMessageId ?? null,
@@ -1373,10 +1858,11 @@ export function ChatPage() {
 
   const validateFileBeforeUpload = (file: File) => {
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    const mime = (file.type ?? "").toLowerCase();
     const mediaKind = inferMediaKind(file);
 
-    const imageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
-    const videoExtensions = new Set(["mp4", "mov", "webm"]);
+    const imageExtensions = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "jfif"]);
+    const videoExtensions = new Set(["mp4", "mov", "webm", "mkv", "avi"]);
     const fileExtensions = new Set([
       "pdf",
       "doc",
@@ -1391,7 +1877,7 @@ export function ChatPage() {
     ]);
 
     if (mediaKind === "image") {
-      if (!imageExtensions.has(ext)) {
+      if (!imageExtensions.has(ext) && !mime.startsWith("image/")) {
         return language === "vi"
           ? "Dinh dang anh khong ho tro"
           : "Unsupported image format";
@@ -1403,7 +1889,7 @@ export function ChatPage() {
     }
 
     if (mediaKind === "video") {
-      if (!videoExtensions.has(ext)) {
+      if (!videoExtensions.has(ext) && !mime.startsWith("video/")) {
         return language === "vi"
           ? "Dinh dang video khong ho tro"
           : "Unsupported video format";
@@ -1434,7 +1920,7 @@ export function ChatPage() {
     mediaKind: "image" | "video" | "file",
   ) => {
     const type = mediaKind === "image" ? "IMAGE" : mediaKind === "video" ? "VIDEO" : "FILE";
-    const content = caption || `📎 ${uploaded.data.fileName}`;
+    const content = caption || `Attachment: ${uploaded.data.fileName}`;
     const result = await sendMessage(conversationId, content, {
       type,
       fileName: uploaded.data.fileName,
@@ -1889,8 +2375,32 @@ export function ChatPage() {
     try {
       setIsCreatingGroup(true);
       const response = await createGroupConversation(name, memberIds);
-      const createdConversationId = response.data.id;
-      await fetchConversations();
+      const createdConversation = response.data;
+      const createdConversationId = createdConversation.id;
+
+      // Optimistically add newly created group so it appears immediately in sidebar.
+      upsertConversation({
+        id: createdConversationId,
+        type: createdConversation.type ?? "group",
+        name: createdConversation.name || name,
+        avatar: createdConversation.avatar ?? null,
+        lastMessage: createdConversation.lastMessage ?? "",
+        lastMessageAt:
+          createdConversation.lastMessageAt ?? new Date().toISOString(),
+        unreadCount: createdConversation.unreadCount ?? 0,
+        participants: createdConversation.participants ?? [],
+        admins: createdConversation.admins ?? [],
+        ownerId: createdConversation.ownerId ?? null,
+      });
+
+      const client = realtimeClientRef.current;
+      if (client && client.isConnected()) {
+        client.syncConversationSubscriptions(
+          Array.from(new Set([...conversationIdsRef.current, createdConversationId])),
+        );
+      }
+
+      void fetchConversations({ silent: true });
       hasUserOpenedConversationRef.current = true;
       manuallyOpenedConversationIdRef.current = createdConversationId;
       pendingReadSyncOnOpenRef.current = true;
@@ -2168,7 +2678,7 @@ export function ChatPage() {
   );
   const messageBadge =
     Math.max(totalUnreadCount, unreadFromConversations) > 0
-      ? Math.min(Math.max(totalUnreadCount, unreadFromConversations), 99)
+      ? Math.min(Math.max(totalUnreadCount, unreadFromConversations), 9)
       : 0;
   const contactsBadge =
     pendingFriendRequestsUnreadCount > 0
@@ -2205,12 +2715,30 @@ export function ChatPage() {
     ? activeConversationForView.participants ?? []
     : [];
 
+  const activeGroupSettings =
+    activeConversationForView?.type === "group"
+      ? groupSettingsMap[activeConversationForView.id] ?? null
+      : null;
+
+  const activeGroupPreference =
+    activeConversationForView?.type === "group"
+      ? groupPreferenceMap[activeConversationForView.id] ?? {
+          muted: false,
+          pinned: false,
+          hidden: false,
+        }
+      : {
+          muted: false,
+          pinned: false,
+          hidden: false,
+        };
+
   const typingDisplayName = typingUserId
     ? userProfileMap[typingUserId]?.fullName ?? typingUserId
     : null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-[#0d1521] text-slate-100">
       <Sidebar
         active={activeTab}
         messageBadge={messageBadge}
@@ -2528,16 +3056,86 @@ export function ChatPage() {
           )}
 
           {activeTab === "calls" && (
-            <div className="flex h-full items-center justify-center p-6 text-center">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">
+            <div className="h-full overflow-y-auto p-5">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="text-base font-semibold text-slate-800">
                   {language === "vi" ? "Cuoc goi" : "Calls"}
                 </h2>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-1 text-xs text-slate-500">
                   {language === "vi"
-                    ? "Muc calls se duoc mo rong o buoc tiep theo."
-                    : "Calls section will be expanded in the next step."}
+                    ? "Khoi tao nhanh cuoc goi thoai/video bang lien ket meeting."
+                    : "Start voice/video calls quickly using meeting links."}
                 </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={!activeConversationForView}
+                    onClick={() => {
+                      void onStartQuickCall("voice");
+                    }}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {language === "vi" ? "Goi thoai" : "Voice call"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!activeConversationForView}
+                    onClick={() => {
+                      void onStartQuickCall("video");
+                    }}
+                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {language === "vi" ? "Goi video" : "Video call"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-800">
+                  {language === "vi" ? "Lich su cuoc goi" : "Recent calls"}
+                </h3>
+
+                {callHistory.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {language === "vi"
+                      ? "Chua co cuoc goi nao trong phien nay."
+                      : "No calls in this session yet."}
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {callHistory.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-700">
+                            {item.mode === "video"
+                              ? language === "vi"
+                                ? "Goi video"
+                                : "Video call"
+                              : language === "vi"
+                                ? "Goi thoai"
+                                : "Voice call"}{" "}
+                            · {item.conversationName}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}
+                          </p>
+                        </div>
+                        <a
+                          href={item.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0 rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700"
+                        >
+                          {language === "vi" ? "Tham gia" : "Join"}
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2569,21 +3167,79 @@ export function ChatPage() {
         </aside>
       )}
 
-      <main className="min-w-0 flex-1 bg-slate-50">
+      <main className="min-w-0 flex-1 bg-[#0f1724]">
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
             {activeConversationForView?.type === "group" ? (
               <GroupChat
                 language={language}
                 conversation={activeConversationForView}
+                isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
                 userProfileMap={userProfileMap}
+                messages={messages}
+                currentUserId={myProfile?.id ?? null}
+                settings={activeGroupSettings}
+                preferences={activeGroupPreference}
+                onRefreshSettings={() => {
+                  if (activeConversationForView?.id) {
+                    void refreshGroupSettings(activeConversationForView.id);
+                  }
+                }}
+                onUpdateSettings={(payload: {
+                  name?: string;
+                  avatar?: string | null;
+                  onlyAdminsCanMessage?: boolean;
+                  requireApprovalToJoin?: boolean;
+                  allowMemberInvite?: boolean;
+                  transferOwnerId?: string;
+                }) => {
+                  void onUpdateActiveGroupSettings(payload);
+                }}
+                onAddMember={(userId: string) => {
+                  void onAddGroupMember(userId);
+                }}
+                onRemoveMember={(userId: string) => {
+                  void onRemoveGroupMember(userId);
+                }}
+                onToggleAdmin={(userId: string, admin: boolean) => {
+                  void onToggleGroupAdmin(userId, admin);
+                }}
+                onMentionMember={onMentionGroupMember}
+                onLeaveGroup={() => {
+                  void onLeaveActiveGroup();
+                }}
+                onDeleteGroup={() => {
+                  void onDeleteActiveGroup();
+                }}
+                onPreferenceChange={(patch: { muted?: boolean; pinned?: boolean; hidden?: boolean }) => {
+                  if (activeConversationForView?.id) {
+                    updateGroupPreference(activeConversationForView.id, patch);
+                  }
+                }}
+                onSendTemplateMessage={(type:
+                  | "STICKER"
+                  | "GIF"
+                  | "CONTACT"
+                  | "LOCATION"
+                  | "POLL"
+                  | "REMINDER"
+                  | "NOTE"
+                  | "MEETING") => {
+                  void onSendGroupTemplateMessage(type);
+                }}
               >
                 <Chat
                   language={language}
                   activeConversation={activeConversationForView}
                   activeConversationOnline={false}
                   activeConversationPresenceLabel={`${activeGroupMembers.length} ${language === "vi" ? "thanh vien" : "members"}`}
+                  userProfileMap={userProfileMap}
+                  showGroupPanelToggle
+                  isGroupPanelOpen={isGroupPanelOpen}
+                  onToggleGroupPanel={() => {
+                    setIsGroupPanelOpen((prev) => !prev);
+                  }}
                   messages={messages}
                   myProfile={myProfile}
                   isLoadingMessages={isLoadingMessages}
@@ -2591,6 +3247,12 @@ export function ChatPage() {
                   onDraftChange={(value) => {
                     setDraftMessage(value);
                     onTypingTextChange(value);
+                  }}
+                  onVoiceCall={() => {
+                    void onStartQuickCall("voice");
+                  }}
+                  onVideoCall={() => {
+                    void onStartQuickCall("video");
                   }}
                   onSendMessage={onSendMessage}
                   onSendFiles={onSendFiles}
@@ -2620,6 +3282,7 @@ export function ChatPage() {
                 activeConversationPresenceLabel={toPresenceLabel(
                   activeConversationPresence,
                 )}
+                userProfileMap={userProfileMap}
                 messages={messages}
                 myProfile={myProfile}
                 isLoadingMessages={isLoadingMessages}
@@ -2628,6 +3291,12 @@ export function ChatPage() {
                   setDraftMessage(value);
                   // Use debounced typing indicator
                   onTypingTextChange(value);
+                }}
+                onVoiceCall={() => {
+                  void onStartQuickCall("voice");
+                }}
+                onVideoCall={() => {
+                  void onStartQuickCall("video");
                 }}
                 onSendMessage={onSendMessage}
                 onSendFiles={onSendFiles}

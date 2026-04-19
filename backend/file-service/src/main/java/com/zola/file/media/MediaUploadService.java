@@ -9,6 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -92,6 +93,41 @@ public class MediaUploadService {
 
         String fileUrl = buildPublicUrl(objectKey);
         return new UploadedMedia(objectKey, fileUrl, originalName, file.getSize(), contentType, mediaType);
+    }
+
+    public DownloadedMedia downloadByKey(String objectKey) {
+        String normalizedKey = objectKey == null ? "" : objectKey.trim();
+        if (normalizedKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Object key is required");
+        }
+        if (storageProperties.getBucket() == null || storageProperties.getBucket().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket is not configured");
+        }
+
+        try {
+            var response = s3Client.getObjectAsBytes(
+                GetObjectRequest.builder()
+                    .bucket(storageProperties.getBucket())
+                    .key(normalizedKey)
+                    .build()
+            );
+
+            String contentType = response.response().contentType();
+            String safeContentType = contentType == null || contentType.isBlank()
+                ? "application/octet-stream"
+                : contentType;
+            String fileName = normalizedKey.contains("/")
+                ? normalizedKey.substring(normalizedKey.lastIndexOf('/') + 1)
+                : normalizedKey;
+
+            return new DownloadedMedia(response.asByteArray(), safeContentType, fileName);
+        } catch (S3Exception ex) {
+            int status = ex.statusCode();
+            if (status == 404 || status == 403) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Media not found", ex);
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to read media from object storage", ex);
+        }
     }
 
     private long maxAllowedSize(String mediaType) {
@@ -193,6 +229,13 @@ public class MediaUploadService {
         long size,
         String contentType,
         String mediaType
+    ) {
+    }
+
+    public record DownloadedMedia(
+        byte[] bytes,
+        String contentType,
+        String fileName
     ) {
     }
 }

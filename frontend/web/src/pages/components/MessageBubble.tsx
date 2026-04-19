@@ -1,6 +1,7 @@
 import { Copy, Download, FileText, Play, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ChatMessage } from "./ChatMessage.types";
+import { resolveMediaUrl } from "../utils/mediaUrl";
 
 type MessageBubbleProps = {
     message: ChatMessage;
@@ -26,6 +27,22 @@ function renderTextWithMentions(text: string) {
 
 function formatDuration(value?: string) {
     return value || "00:30";
+}
+
+function parseStructuredPayload(raw: string) {
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+            return null;
+        }
+        return parsed as {
+            title?: string;
+            link?: string;
+            createdAt?: string;
+        };
+    } catch {
+        return null;
+    }
 }
 
 async function downloadMediaToDevice(url: string, preferredFileName: string) {
@@ -89,11 +106,13 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
         return () => window.clearInterval(timer);
     }, [audioPlaying]);
 
-    const incomingTone = "bg-white text-slate-900 border border-slate-200";
-    const outgoingTone = "bg-linear-to-br from-indigo-600 via-violet-600 to-blue-600 text-white";
-    const recalledIncomingTone = "border border-amber-300 bg-amber-50 text-amber-800";
-    const recalledOutgoingTone = "border border-amber-400 bg-amber-100 text-amber-900";
+    const incomingTone = "bg-slate-800 text-slate-100 border border-slate-700";
+    const outgoingTone = "bg-linear-to-br from-sky-600 to-blue-700 text-white";
+    const recalledIncomingTone = "border border-amber-300/50 bg-amber-500/15 text-amber-100";
+    const recalledOutgoingTone = "border border-amber-300/60 bg-amber-500/20 text-amber-100";
     const isVisualMedia = message.type === "image" || message.type === "video";
+    const semanticType = (message.rawType ?? "TEXT").toUpperCase();
+    const structuredPayload = parseStructuredPayload(message.text);
 
     const bubbleFrame = message.isRecalled
         ? `w-fit min-w-[44px] max-w-[82vw] lg:max-w-[62vw] rounded-2xl px-4 py-3 shadow-sm ${isMine ? recalledOutgoingTone : recalledIncomingTone}`
@@ -103,7 +122,7 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
 
     let content: React.ReactNode;
 
-    const mediaUrl = message.mediaUrl;
+    const mediaUrl = resolveMediaUrl(message.mediaUrl);
     const mediaFileName = message.fileName ?? (message.type === "image" ? "image.jpg" : message.type === "video" ? "video.mp4" : "attachment");
 
     const copyImageReference = async () => {
@@ -143,6 +162,14 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
     } else {
     switch (message.type) {
         case "image":
+            if (!mediaUrl) {
+                content = (
+                    <div className="grid h-44 w-64 place-items-center rounded-xl bg-slate-900/50 px-3 text-center text-xs text-slate-300">
+                        Image unavailable
+                    </div>
+                );
+                break;
+            }
             content = (
                 <button
                     type="button"
@@ -151,18 +178,30 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 >
                     {isImageLoading && <div className="h-44 w-64 animate-pulse bg-slate-200" />}
                     <img
-                        src={message.mediaUrl ?? "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200"}
+                        src={mediaUrl}
                         alt={message.fileName ?? "image"}
                         className={`h-44 w-64 object-cover ${isImageLoading ? "hidden" : "block"}`}
                         onLoad={() => setIsImageLoading(false)}
+                        onError={() => {
+                            setIsImageLoading(false);
+                            setMediaActionNote("Image preview failed");
+                        }}
                     />
                 </button>
             );
             break;
         case "video":
+            if (!mediaUrl) {
+                content = (
+                    <div className="grid h-48 w-72 place-items-center rounded-xl bg-slate-900/50 px-3 text-center text-xs text-slate-300">
+                        Video unavailable
+                    </div>
+                );
+                break;
+            }
             content = (
                 <div className="relative overflow-hidden rounded-xl bg-slate-900">
-                    <video className="h-48 w-72 object-cover" src={message.mediaUrl} preload="metadata" />
+                    <video className="h-48 w-72 object-cover" src={mediaUrl} preload="metadata" />
                     <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/20">
                         <div className="grid h-10 w-10 place-items-center rounded-full bg-black/45 text-white">
                             <Play size={16} className="ml-0.5" />
@@ -226,6 +265,106 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
             break;
         case "text":
         default:
+            if (["STICKER", "GIF", "CONTACT", "LOCATION", "POLL", "REMINDER", "NOTE", "MEETING"].includes(semanticType)) {
+                const title = structuredPayload?.title ?? message.text;
+                const link = structuredPayload?.link;
+
+                if (semanticType === "STICKER") {
+                    content = (
+                        <div className="text-4xl leading-none">{title || "😀"}</div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "GIF") {
+                    const gifUrl = link ?? title;
+                    const isHttp = /^https?:\/\//i.test(gifUrl ?? "");
+                    content = isHttp ? (
+                        <img
+                            src={gifUrl}
+                            alt="gif"
+                            className="max-h-56 w-64 rounded-xl object-cover"
+                        />
+                    ) : (
+                        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700">
+                            <p className="font-semibold">GIF</p>
+                            <p className="mt-0.5 break-all text-xs">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "CONTACT") {
+                    content = (
+                        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-slate-800">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contact</p>
+                            <p className="mt-1 text-sm font-semibold">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "LOCATION") {
+                    content = (
+                        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-slate-800">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p>
+                            <p className="mt-1 text-sm">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "POLL") {
+                    content = (
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900">
+                            <p className="text-xs font-semibold uppercase tracking-wide">Poll</p>
+                            <p className="mt-1 text-sm font-medium">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "REMINDER") {
+                    content = (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            <p className="text-xs font-semibold uppercase tracking-wide">Reminder</p>
+                            <p className="mt-1 text-sm font-medium">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "NOTE") {
+                    content = (
+                        <div className="rounded-xl border border-lime-200 bg-lime-50 px-3 py-2 text-lime-900">
+                            <p className="text-xs font-semibold uppercase tracking-wide">Shared note</p>
+                            <p className="mt-1 whitespace-pre-wrap text-sm">{title}</p>
+                        </div>
+                    );
+                    break;
+                }
+
+                if (semanticType === "MEETING") {
+                    content = (
+                        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-indigo-900">
+                            <p className="text-xs font-semibold uppercase tracking-wide">Meeting</p>
+                            <p className="mt-1 text-sm font-semibold">{title}</p>
+                            {link && (
+                                <a
+                                    href={link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-1 block truncate text-xs font-semibold text-indigo-700 underline"
+                                >
+                                    {link}
+                                </a>
+                            )}
+                        </div>
+                    );
+                    break;
+                }
+            }
+
             content = (
                 <p className="max-w-full whitespace-pre-wrap wrap-break-word [word-break:break-word] text-sm leading-relaxed">
                     {renderTextWithMentions(message.text)}

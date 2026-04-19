@@ -48,8 +48,8 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: postgres
-      POSTGRES_USER: zola
-      POSTGRES_PASSWORD: zola_pass
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
     ports:
       - "5432:5432"
     volumes:
@@ -82,8 +82,8 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_DB: postgres
-      POSTGRES_USER: zola
-      POSTGRES_PASSWORD: zola_pass
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
     volumes:
       - ./bootstrap/postgres-bootstrap.sh:/bootstrap/postgres-bootstrap.sh
     entrypoint:
@@ -148,8 +148,8 @@ services:
       - "8081:8081"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
@@ -173,8 +173,8 @@ services:
       - "8082:8082"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
     depends_on:
@@ -189,8 +189,8 @@ services:
       - "8083:8083"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       CHAT_DB_NAME: ${CHAT_DB_NAME:-zola_chat_db}
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
@@ -227,8 +227,8 @@ services:
       - "8084:8084"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
-      DB_USER: ${DB_USER:-zola}
-      DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET:-zola-shared-files-dev}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-zolaadmin}

@@ -66,6 +66,7 @@ export function MessageActions({
       // Ignore clipboard errors in unsupported environments.
     } finally {
       setIsMoreOpen(false);
+      onToggleMore();
     }
   };
 
@@ -75,6 +76,7 @@ export function MessageActions({
     }
     await onRecall(message.id);
     setIsMoreOpen(false);
+    onToggleMore();
   };
 
   const sideClass = isMine ? "right-full mr-2" : "left-full ml-2";
@@ -86,7 +88,7 @@ export function MessageActions({
 
   return (
     <div
-      className={`absolute z-30 w-52 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur transition-all duration-150 ${sideClass} ${verticalClass} ${visibleClass}`}
+      className={`absolute z-30 w-52 rounded-xl border border-slate-600 bg-slate-800/95 p-2 shadow-xl backdrop-blur transition-all duration-150 ${sideClass} ${verticalClass} ${visibleClass}`}
     >
       <div className="mb-2 flex gap-1">
         {quickReactions.map((emoji) => (
@@ -96,20 +98,24 @@ export function MessageActions({
             disabled={isRecalled}
             onClick={() => {
               void onReact?.(message.id, emoji);
+              onToggleMore();
             }}
-            className="rounded-md px-1.5 py-1 text-sm transition-all duration-200 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md px-1.5 py-1 text-sm transition-all duration-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {emoji}
           </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-1 text-slate-600">
+      <div className="grid grid-cols-4 gap-1 text-slate-200">
         <button
           type="button"
           disabled={isRecalled}
-          onClick={() => onReply(message)}
-          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={() => {
+            onReply(message);
+            onToggleMore();
+          }}
+          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Reply size={14} />
           <span>{language === "vi" ? "Tra loi" : "Reply"}</span>
@@ -118,8 +124,9 @@ export function MessageActions({
           type="button"
           onClick={() => {
             void onForward?.(message.id);
+            onToggleMore();
           }}
-          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-100"
+          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-700"
         >
           <Forward size={14} />
           <span>{language === "vi" ? "Chuyen" : "Forward"}</span>
@@ -128,8 +135,9 @@ export function MessageActions({
           type="button"
           onClick={() => {
             void onDelete(message.id);
+            onToggleMore();
           }}
-          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] text-red-500 hover:bg-red-50"
+          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] text-rose-300 hover:bg-rose-500/20"
         >
           <Trash2 size={14} />
           <span>{language === "vi" ? "Xoa" : "Delete"}</span>
@@ -138,23 +146,22 @@ export function MessageActions({
           <button
             type="button"
             onClick={() => {
-              onToggleMore();
               setIsMoreOpen((prev) => !prev);
             }}
-            className="inline-flex w-full flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-100"
+            className="inline-flex w-full flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-700"
           >
             <MoreHorizontal size={14} />
             <span>More</span>
           </button>
 
           {isMoreOpen && (
-            <div className="absolute bottom-full right-0 z-40 mb-1 w-28 rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-md">
+            <div className="absolute bottom-full right-0 z-40 mb-1 w-28 rounded-lg border border-slate-600 bg-slate-800 p-1 text-xs shadow-lg">
               <button
                 type="button"
                 onClick={() => {
                   void handleCopy();
                 }}
-                className="w-full rounded-md px-2 py-1.5 text-left text-slate-700 hover:bg-slate-100"
+                className="w-full rounded-md px-2 py-1.5 text-left text-slate-100 hover:bg-slate-700"
               >
                 {language === "vi" ? "Sao chep" : "Copy"}
               </button>
@@ -165,7 +172,7 @@ export function MessageActions({
                     void onEdit(message.id, message.text);
                     setIsMoreOpen(false);
                   }}
-                  className="w-full rounded-md px-2 py-1.5 text-left text-indigo-700 hover:bg-indigo-50"
+                  className="w-full rounded-md px-2 py-1.5 text-left text-sky-300 hover:bg-sky-500/15"
                 >
                   {language === "vi" ? "Chinh sua" : "Edit"}
                 </button>
@@ -176,7 +183,7 @@ export function MessageActions({
                   onClick={() => {
                     void handleRecall();
                   }}
-                  className="w-full rounded-md px-2 py-1.5 text-left text-amber-700 hover:bg-amber-50"
+                  className="w-full rounded-md px-2 py-1.5 text-left text-amber-300 hover:bg-amber-500/15"
                 >
                   {language === "vi" ? "Thu hoi" : "Recall"}
                 </button>

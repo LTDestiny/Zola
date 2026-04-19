@@ -12,6 +12,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -95,6 +96,23 @@ public class GatewayProxyController {
                 .body(API_RESPONSE);
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid upload payload", ex);
+        } catch (RestClientResponseException ex) {
+            throw toStatusException(ex);
+        }
+    }
+
+    @GetMapping("/media/object")
+    public ResponseEntity<byte[]> proxyMediaObject(
+        @RequestParam("key") String key,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        try {
+            return restClient.get()
+                .uri(fileServiceUrl + "/api/v1/media/object?key={key}", Map.of("key", key))
+                .header("X-User-Id", userId)
+                .retrieve()
+                .toEntity(byte[].class);
         } catch (RestClientResponseException ex) {
             throw toStatusException(ex);
         }
@@ -354,6 +372,135 @@ public class GatewayProxyController {
             chatServiceUrl + "/api/v1/chat/conversations/direct",
             body,
             null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/group")
+    public ApiResponse<Object> createGroupConversation(
+        @Valid @RequestBody CreateGroupConversationRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/group",
+            body,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/add-member")
+    public ApiResponse<Object> addGroupMember(
+        @PathVariable("conversationId") String conversationId,
+        @Valid @RequestBody GroupMemberRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/add-member",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/remove-member")
+    public ApiResponse<Object> removeGroupMember(
+        @PathVariable("conversationId") String conversationId,
+        @Valid @RequestBody GroupMemberRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/remove-member",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/leave")
+    public ApiResponse<Object> leaveGroupConversation(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/leave",
+            Map.of(),
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/set-admin")
+    public ApiResponse<Object> setGroupAdmin(
+        @PathVariable("conversationId") String conversationId,
+        @Valid @RequestBody GroupAdminRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/set-admin",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/groups/join-by-link")
+    public ApiResponse<Object> joinGroupByLink(
+        @Valid @RequestBody JoinByLinkRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/groups/join-by-link",
+            body,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @GetMapping("/chat/conversations/{conversationId}/settings")
+    public ApiResponse<Object> getGroupSettings(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return getMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/settings",
+            null,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PatchMapping("/chat/conversations/{conversationId}/settings")
+    public ApiResponse<Object> updateGroupSettings(
+        @PathVariable("conversationId") String conversationId,
+        @RequestBody UpdateGroupSettingsRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return patchMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/settings",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @DeleteMapping("/chat/conversations/{conversationId}")
+    public ApiResponse<Object> deleteGroupConversation(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}",
+            Map.of("conversationId", conversationId),
             Map.of("X-User-Id", userId)
         );
     }
@@ -788,7 +935,8 @@ public class GatewayProxyController {
         String type,
         @NotBlank String content,
         String fileUrl,
-        String fileName
+        String fileName,
+        String parentMessageId
     ) {
     }
 
@@ -796,6 +944,35 @@ public class GatewayProxyController {
     }
 
     public record CreateDirectConversationRequest(@NotBlank String targetUserId) {
+    }
+
+    public record CreateGroupConversationRequest(
+        @NotBlank String name,
+        java.util.List<String> memberIds,
+        String avatar
+    ) {
+    }
+
+    public record GroupMemberRequest(@NotBlank String userId) {
+    }
+
+    public record GroupAdminRequest(
+        @NotBlank String userId,
+        boolean admin
+    ) {
+    }
+
+    public record JoinByLinkRequest(@NotBlank String code) {
+    }
+
+    public record UpdateGroupSettingsRequest(
+        String name,
+        String avatar,
+        Boolean onlyAdminsCanMessage,
+        Boolean requireApprovalToJoin,
+        Boolean allowMemberInvite,
+        String transferOwnerId
+    ) {
     }
 
     public record ForwardRequest(@NotNull java.util.UUID targetConversationId) {

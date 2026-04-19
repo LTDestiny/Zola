@@ -45,6 +45,35 @@ export type ConversationItem = {
   ownerId?: string | null;
 };
 
+type ConversationPayload = Partial<ConversationItem> & {
+  id: string;
+  requesterUnreadCount?: number;
+  requesterLastReadAt?: string | null;
+  requesterLastReadMessageId?: string | null;
+};
+
+function normalizeConversationItem(item: ConversationPayload): ConversationItem {
+  return {
+    id: String(item.id),
+    type: item.type ?? "private",
+    name: item.name ?? "",
+    avatar: item.avatar ?? null,
+    lastMessage: item.lastMessage ?? "",
+    lastMessageAt: item.lastMessageAt ?? null,
+    unreadCount: Number.isFinite(item.unreadCount)
+      ? (item.unreadCount as number)
+      : Number.isFinite(item.requesterUnreadCount)
+        ? (item.requesterUnreadCount as number)
+        : 0,
+    lastReadAt: item.lastReadAt ?? item.requesterLastReadAt ?? null,
+    lastReadMessageId:
+      item.lastReadMessageId ?? item.requesterLastReadMessageId ?? null,
+    participants: item.participants ?? [],
+    admins: item.admins ?? [],
+    ownerId: item.ownerId ?? null,
+  };
+}
+
 export type MessageReactionEntry = {
   userId: string;
   emoji: string;
@@ -87,6 +116,30 @@ export type MessageItem = {
   createdAt: string | null;
   updatedAt?: string | null;
   edited?: boolean;
+};
+
+export type GroupSettings = {
+  conversationId: string;
+  name: string;
+  avatar: string | null;
+  ownerId: string | null;
+  admins: string[];
+  participants: string[];
+  onlyAdminsCanMessage: boolean;
+  requireApprovalToJoin: boolean;
+  allowMemberInvite: boolean;
+  inviteCode?: string | null;
+  isOwner: boolean;
+  isAdmin: boolean;
+};
+
+export type UpdateGroupSettingsInput = {
+  name?: string;
+  avatar?: string | null;
+  onlyAdminsCanMessage?: boolean;
+  requireApprovalToJoin?: boolean;
+  allowMemberInvite?: boolean;
+  transferOwnerId?: string;
 };
 
 export type MessagePageData = {
@@ -241,16 +294,9 @@ export async function getConversations() {
   const response = await httpClient.get<ApiResponse<ConversationItem[]>>(
     "/api/v1/chat/conversations",
   );
-  const normalized = (response.data.data ?? []).map((item) => ({
-    ...item,
-    type: item.type ?? "private",
-    avatar: item.avatar ?? null,
-    unreadCount: Number.isFinite(item.unreadCount) ? item.unreadCount : 0,
-    lastReadAt: item.lastReadAt ?? null,
-    lastReadMessageId: item.lastReadMessageId ?? null,
-    admins: item.admins ?? [],
-    ownerId: item.ownerId ?? null,
-  }));
+  const normalized = (response.data.data ?? []).map((item) =>
+    normalizeConversationItem(item as ConversationPayload),
+  );
   return {
     ...response.data,
     data: normalized,
@@ -258,11 +304,14 @@ export async function getConversations() {
 }
 
 export async function createDirectConversation(targetUserId: string) {
-  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>(
     "/api/v1/chat/conversations/direct",
     { targetUserId },
   );
-  return response.data;
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
 }
 
 export async function createGroupConversation(
@@ -270,7 +319,7 @@ export async function createGroupConversation(
   memberIds: string[],
   avatar?: string | null,
 ) {
-  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>(
     "/api/v1/chat/conversations/group",
     {
       name,
@@ -278,7 +327,21 @@ export async function createGroupConversation(
       avatar: avatar ?? null,
     },
   );
-  return response.data;
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
+}
+
+export async function joinGroupByInviteCode(code: string) {
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>(
+    "/api/v1/chat/groups/join-by-link",
+    { code },
+  );
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
 }
 
 export async function addGroupMember(conversationId: string, userId: string) {
@@ -312,6 +375,24 @@ export async function setGroupAdmin(
   const response = await httpClient.post<ApiResponse<ConversationItem>>(
     `/api/v1/chat/conversations/${conversationId}/set-admin`,
     { userId, admin },
+  );
+  return response.data;
+}
+
+export async function getGroupSettings(conversationId: string) {
+  const response = await httpClient.get<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/settings`,
+  );
+  return response.data;
+}
+
+export async function updateGroupSettings(
+  conversationId: string,
+  input: UpdateGroupSettingsInput,
+) {
+  const response = await httpClient.patch<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/settings`,
+    input,
   );
   return response.data;
 }
@@ -376,7 +457,22 @@ export async function sendMessage(
   conversationId: string,
   content: string,
   options?: {
-    type?: "TEXT" | "EMOJI" | "FILE" | "FORWARD" | "IMAGE" | "VIDEO" | "AUDIO";
+    type?:
+      | "TEXT"
+      | "EMOJI"
+      | "FILE"
+      | "FORWARD"
+      | "IMAGE"
+      | "VIDEO"
+      | "AUDIO"
+      | "STICKER"
+      | "GIF"
+      | "CONTACT"
+      | "LOCATION"
+      | "POLL"
+      | "REMINDER"
+      | "NOTE"
+      | "MEETING";
     fileUrl?: string | null;
     fileName?: string | null;
     parentMessageId?: string | null;

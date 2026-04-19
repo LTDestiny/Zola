@@ -29,6 +29,8 @@ describe('usePresence', () => {
 
   test('fetches presence for user IDs', async () => {
     const mockPresence = {
+      success: true,
+      message: "ok",
       data: [
         { userId: 'user1', online: true, lastChangedAt: null },
         { userId: 'user2', online: false, lastChangedAt: '2024-01-15T10:00:00Z' },
@@ -105,10 +107,15 @@ describe('usePresence', () => {
   });
 
   test('debounces multiple fetch requests', async () => {
-    vi.mocked(chatApi.getUsersPresence).mockResolvedValue({ data: [] });
+    vi.mocked(chatApi.getUsersPresence).mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: [],
+    });
 
     const { rerender } = renderHook(
-      ({ userIds }) => usePresence({ userIds, refreshInterval: 0, debounceMs: 100 }),
+      ({ userIds }: { userIds: string[] }) =>
+        usePresence({ userIds, refreshInterval: 0, debounceMs: 100 }),
       { initialProps: { userIds: ['user1'] } }
     );
 

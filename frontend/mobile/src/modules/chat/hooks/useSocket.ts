@@ -47,14 +47,19 @@ function getEventKey(event: ChatRealtimeEvent): string | null {
   // Update events (RECALLED, UPDATED, READ_RECEIPT) must NEVER be deduplicated —
   // they need to overwrite the same messageId in the store.
   const isCreateEvent =
-    event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT";
+    event.eventType === "NEW_MESSAGE" ||
+    event.eventType === "MESSAGE_SENT" ||
+    event.eventType === "new_group_message" ||
+    event.eventType === "message_replied" ||
+    event.eventType === "NEW_GROUP_MESSAGE" ||
+    event.eventType === "MESSAGE_REPLIED";
   if (isCreateEvent) {
     const messageId = event.message?.id ?? event.message?.messageId;
     if (messageId) {
       return `msg:${messageId}`;
     }
   }
-  if (event.eventType === "TYPING") {
+  if (event.eventType === "TYPING" || event.eventType === "user_typing_group") {
     return `typing:${event.conversationId}:${event.typing}`;
   }
   return null;
@@ -247,7 +252,11 @@ export function useSocket() {
     });
 
     // ─── TYPING EVENT ──────────────────────────────────────────────────────
-    if (eventType === "TYPING" || event.eventType === "message:typing") {
+    if (
+      eventType === "TYPING" ||
+      eventType === "USER_TYPING_GROUP" ||
+      event.eventType === "message:typing"
+    ) {
       log("event", `⌨️ Typing event: ${conversationId.slice(0, 8)} → ${event.typing}`);
       setTyping(conversationId, Boolean(event.typing));
       return;
@@ -257,6 +266,10 @@ export function useSocket() {
     if (
       eventType === "NEW_MESSAGE" ||
       eventType === "MESSAGE_SENT" ||
+      eventType === "NEW_GROUP_MESSAGE" ||
+      eventType === "MESSAGE_REPLIED" ||
+      event.eventType === "new_group_message" ||
+      event.eventType === "message_replied" ||
       event.eventType === "message:new"
     ) {
       const message = normalizeMessage(conversationId, event.message);
@@ -355,14 +368,28 @@ export function useSocket() {
       event.eventType === "conversation:update" ||
       eventType === "CONVERSATION_UPDATED" ||
       eventType === "UNREAD_COUNT_UPDATED" ||
-      eventType === "TOTAL_UNREAD_UPDATED"
+      eventType === "TOTAL_UNREAD_UPDATED" ||
+      eventType === "GROUP_CREATED" ||
+      event.eventType === "group_created"
     ) {
       log("event", "🔄 Conversation update:", {
+        eventType: event.eventType,
         unreadCount: event.unreadCount,
         lastMessage: event.lastMessage?.slice(0, 20),
       });
 
       const patch: Parameters<typeof upsertConversation>[0] = { id: conversationId };
+
+      if (eventType === "GROUP_CREATED" || event.eventType === "group_created") {
+        patch.name = "New group";
+        patch.lastMessage = event.lastMessage ?? "";
+        patch.lastMessageAt = event.lastMessageAt ?? new Date().toISOString();
+
+        const nextIds = Array.from(
+          new Set([...conversations.map((conversation) => conversation.id), conversationId]),
+        );
+        socketService.syncConversationSubscriptions(nextIds);
+      }
 
       if (typeof event.unreadCount === "number") {
         patch.unreadCount = Math.max(0, event.unreadCount);

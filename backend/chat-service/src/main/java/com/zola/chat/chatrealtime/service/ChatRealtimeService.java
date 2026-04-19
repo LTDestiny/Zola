@@ -31,6 +31,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,6 +40,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -49,6 +51,10 @@ public class ChatRealtimeService {
 
     private static final String CONVERSATION_TYPE_PRIVATE = "private";
     private static final String CONVERSATION_TYPE_GROUP = "group";
+    private static final char[] INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
+    private static final int INVITE_CODE_LENGTH = 10;
+    private static final int INVITE_CODE_MAX_ATTEMPTS = 8;
+    private static final SecureRandom INVITE_CODE_RANDOM = new SecureRandom();
 
     private final PostgresConversationRepository conversationRepository;
     private final ConversationRepository groupConversationRepository;
@@ -58,6 +64,12 @@ public class ChatRealtimeService {
     private final PostgresMessageHiddenRepository messageHiddenRepository;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
+
+    public record GroupActionResult(
+        ConversationListItemResponse conversation,
+        MessagePayload systemMessage
+    ) {
+    }
 
     public ChatRealtimeService(
         PostgresConversationRepository conversationRepository,
@@ -117,6 +129,10 @@ public class ChatRealtimeService {
         conversation.setAdmins(new ArrayList<>(List.of(requesterId)));
         conversation.setMembers(new ArrayList<>(members));
         conversation.setParticipants(new ArrayList<>(members));
+        conversation.setOnlyAdminsCanMessage(false);
+        conversation.setRequireApprovalToJoin(false);
+        conversation.setAllowMemberInvite(true);
+        conversation.setInviteCode(generateUniqueInviteCode());
         conversation.setLastMessage("");
         conversation.setLastMessageAt(now.toString());
         conversation.setCreatedAt(now);
@@ -125,42 +141,72 @@ public class ChatRealtimeService {
 
         return toGroupConversationResponse(conversation, requesterId);
     }
-
     @Transactional
-    public ConversationListItemResponse addGroupMember(String actorId, UUID conversationId, String userId) {
+    public GroupActionResult addGroupMember(String actorId, UUID conversationId, String userId) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
-        ensureGroupAdmin(conversation, actorId);
-
-        List<String> members = new ArrayList<>(normalizeMembers(conversation));
-        if (!members.contains(userId)) {
-            members.add(userId);
-            conversation.setMembers(members);
-            conversation.setParticipants(members);
-            conversation.setUpdatedAt(Instant.now());
-            groupConversationRepository.save(conversation);
+        String normalizedUserId = userId == null ? "" : userId.trim();
+        if (normalizedUserId.isBlank()) {
+            throw new IllegalArgumentException("userId must not be blank");
         }
 
-        return toGroupConversationListItem(conversation, actorId);
+        boolean actorIsOwner = actorId.equals(conversation.getOwnerId());
+        boolean actorIsAdmin = normalizeAdmins(conversation).contains(actorId);
+        if (!actorIsOwner && !actorIsAdmin && !conversation.isAllowMemberInvite()) {
+            throw new ForbiddenOperationException("Only owner/admin can add members when invite link is disabled");
+        }
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        if (members.contains(normalizedUserId)) {
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
+        }
+
+        members.add(normalizedUserId);
+        conversation.setMembers(members);
+        conversation.setParticipants(members);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        markAllMessagesAsSeenForUser(conversation.getId(), normalizedUserId);
+        MessagePayload systemMessage = createGroupSystemMessage(
+            conversation,
+            actorId,
+            "[System] " + actorId + " added " + normalizedUserId + " to the group"
+        );
+
+        return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
     }
 
     @Transactional
-    public ConversationListItemResponse removeGroupMember(String actorId, UUID conversationId, String userId) {
+    public GroupActionResult removeGroupMember(String actorId, UUID conversationId, String userId) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
-        ensureGroupAdmin(conversation, actorId);
+        String normalizedUserId = userId == null ? "" : userId.trim();
+        if (normalizedUserId.isBlank()) {
+            throw new IllegalArgumentException("userId must not be blank");
+        }
 
-        if (userId.equals(conversation.getOwnerId())) {
+        boolean actorIsOwner = actorId.equals(conversation.getOwnerId());
+        boolean actorIsAdmin = normalizeAdmins(conversation).contains(actorId);
+        if (!actorIsOwner && !actorIsAdmin) {
+            throw new ForbiddenOperationException("Only owner or admin can remove members");
+        }
+
+        if (normalizedUserId.equals(conversation.getOwnerId())) {
             throw new ForbiddenOperationException("Owner cannot be removed from group");
         }
 
+        if (normalizeAdmins(conversation).contains(normalizedUserId) && !actorIsOwner) {
+            throw new ForbiddenOperationException("Only owner can remove another admin");
+        }
+
         List<String> members = new ArrayList<>(normalizeMembers(conversation));
-        if (!members.remove(userId)) {
-            return toGroupConversationListItem(conversation, actorId);
+        if (!members.remove(normalizedUserId)) {
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
         }
 
         List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
-        admins.remove(userId);
+        admins.remove(normalizedUserId);
 
         conversation.setMembers(members);
         conversation.setParticipants(members);
@@ -168,11 +214,17 @@ public class ChatRealtimeService {
         conversation.setUpdatedAt(Instant.now());
         groupConversationRepository.save(conversation);
 
-        return toGroupConversationListItem(conversation, actorId);
+        MessagePayload systemMessage = createGroupSystemMessage(
+            conversation,
+            actorId,
+            "[System] " + actorId + " removed " + normalizedUserId + " from the group"
+        );
+
+        return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
     }
 
     @Transactional
-    public ConversationListItemResponse leaveGroupConversation(String actorId, UUID conversationId) {
+    public GroupActionResult leaveGroupConversation(String actorId, UUID conversationId) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
 
@@ -197,7 +249,7 @@ public class ChatRealtimeService {
                 false
             );
             deleteConversationAndMessages(conversation.getId());
-            return removed;
+            return new GroupActionResult(removed, null);
         }
 
         List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
@@ -217,7 +269,53 @@ public class ChatRealtimeService {
         conversation.setUpdatedAt(Instant.now());
         groupConversationRepository.save(conversation);
 
-        return toGroupConversationListItem(conversation, actorId);
+        MessagePayload systemMessage = createGroupSystemMessage(
+            conversation,
+            actorId,
+            "[System] " + actorId + " left the group"
+        );
+
+        return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
+    }
+
+    @Transactional
+    public GroupActionResult joinGroupByInviteCode(String actorId, String inviteCode) {
+        String normalizedCode = inviteCode == null ? "" : inviteCode.trim();
+        if (normalizedCode.isBlank()) {
+            throw new IllegalArgumentException("Invite code must not be blank");
+        }
+
+        ConversationDocument conversation = groupConversationRepository.findByInviteCode(normalizedCode)
+            .orElseThrow(() -> new ResourceNotFoundException("Invite link is invalid or expired"));
+        if (!CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType()))) {
+            throw new ResourceNotFoundException("Invite link is invalid or expired");
+        }
+        if (conversation.isRequireApprovalToJoin()) {
+            throw new ForbiddenOperationException("This group requires admin approval to join");
+        }
+        if (!conversation.isAllowMemberInvite()) {
+            throw new ForbiddenOperationException("Invite link is currently disabled for this group");
+        }
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        if (members.contains(actorId)) {
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
+        }
+
+        members.add(actorId);
+        conversation.setMembers(members);
+        conversation.setParticipants(members);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        markAllMessagesAsSeenForUser(conversation.getId(), actorId);
+        MessagePayload systemMessage = createGroupSystemMessage(
+            conversation,
+            actorId,
+            "[System] " + actorId + " joined the group via invite link"
+        );
+
+        return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
     }
 
     @Transactional
@@ -253,6 +351,100 @@ public class ChatRealtimeService {
         groupConversationRepository.save(conversation);
 
         return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
+    public Map<String, Object> getGroupSettings(String actorId, UUID conversationId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureInviteCode(conversation);
+        return toGroupSettingsPayload(conversation, actorId);
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroupSettings(
+        String actorId,
+        UUID conversationId,
+        String name,
+        String avatar,
+        Boolean onlyAdminsCanMessage,
+        Boolean requireApprovalToJoin,
+        Boolean allowMemberInvite,
+        String transferOwnerId
+    ) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureInviteCode(conversation);
+
+        boolean isOwner = actorId.equals(conversation.getOwnerId());
+        boolean isAdmin = normalizeAdmins(conversation).contains(actorId);
+        boolean changed = false;
+
+        if (name != null || avatar != null) {
+            if (!isOwner && !isAdmin) {
+                throw new ForbiddenOperationException("Only group admin can update group info");
+            }
+
+            if (name != null) {
+                String normalizedName = name.trim();
+                if (normalizedName.isBlank()) {
+                    throw new IllegalArgumentException("Group name must not be blank");
+                }
+                conversation.setName(normalizedName);
+                changed = true;
+            }
+
+            if (avatar != null) {
+                String normalizedAvatar = avatar.trim();
+                conversation.setAvatar(normalizedAvatar.isBlank() ? null : normalizedAvatar);
+                changed = true;
+            }
+        }
+
+        if (onlyAdminsCanMessage != null || requireApprovalToJoin != null || allowMemberInvite != null || transferOwnerId != null) {
+            if (!isOwner) {
+                throw new ForbiddenOperationException("Only owner can update security and invitation settings");
+            }
+
+            if (onlyAdminsCanMessage != null) {
+                conversation.setOnlyAdminsCanMessage(onlyAdminsCanMessage);
+                changed = true;
+            }
+            if (requireApprovalToJoin != null) {
+                conversation.setRequireApprovalToJoin(requireApprovalToJoin);
+                changed = true;
+            }
+            if (allowMemberInvite != null) {
+                conversation.setAllowMemberInvite(allowMemberInvite);
+                changed = true;
+            }
+
+            if (transferOwnerId != null) {
+                String normalizedOwnerId = transferOwnerId.trim();
+                if (normalizedOwnerId.isBlank()) {
+                    throw new IllegalArgumentException("transferOwnerId must not be blank");
+                }
+
+                if (!normalizeMembers(conversation).contains(normalizedOwnerId)) {
+                    throw new ForbiddenOperationException("New owner must be a group member");
+                }
+
+                conversation.setOwnerId(normalizedOwnerId);
+                List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
+                if (!admins.contains(normalizedOwnerId)) {
+                    admins.add(normalizedOwnerId);
+                }
+                conversation.setAdmins(admins);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            conversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(conversation);
+        }
+
+        return toGroupSettingsPayload(conversation, actorId);
     }
 
     @Transactional
@@ -1127,6 +1319,13 @@ public class ChatRealtimeService {
 
     private ChatEventResponse sendGroupMessage(String senderId, ChatSendRequest request, ConversationDocument conversation) {
         ensureGroupMember(conversation, senderId);
+        if (conversation.isOnlyAdminsCanMessage()) {
+            boolean isOwner = senderId.equals(conversation.getOwnerId());
+            boolean isAdmin = normalizeAdmins(conversation).contains(senderId);
+            if (!isOwner && !isAdmin) {
+                throw new ForbiddenOperationException("Only admins can send messages in this group");
+            }
+        }
         String normalizedType = (request.type() == null || request.type().isBlank()) ? "TEXT" : request.type().trim().toUpperCase();
         String normalizedContent = request.content() == null ? "" : request.content().trim();
         if (normalizedContent.isBlank()) {
@@ -1247,6 +1446,122 @@ public class ChatRealtimeService {
             conversation.getOwnerId(),
             false
         );
+    }
+
+    private Map<String, Object> toGroupSettingsPayload(ConversationDocument conversation, String requesterId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("conversationId", conversation.getId());
+        payload.put("name", Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"));
+        payload.put("avatar", conversation.getAvatar());
+        payload.put("ownerId", conversation.getOwnerId());
+        payload.put("admins", normalizeAdmins(conversation));
+        payload.put("participants", normalizeMembers(conversation));
+        payload.put("onlyAdminsCanMessage", conversation.isOnlyAdminsCanMessage());
+        payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
+        payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
+        payload.put("inviteCode", Optional.ofNullable(conversation.getInviteCode()).orElse(""));
+        payload.put("isOwner", requesterId.equals(conversation.getOwnerId()));
+        payload.put("isAdmin", normalizeAdmins(conversation).contains(requesterId));
+        return payload;
+    }
+
+    private String ensureInviteCode(ConversationDocument conversation) {
+        String inviteCode = conversation.getInviteCode();
+        if (inviteCode != null && !inviteCode.isBlank()) {
+            return inviteCode;
+        }
+
+        String generated = generateUniqueInviteCode();
+        conversation.setInviteCode(generated);
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+        return generated;
+    }
+
+    private String generateUniqueInviteCode() {
+        for (int attempt = 0; attempt < INVITE_CODE_MAX_ATTEMPTS; attempt += 1) {
+            String candidate = randomInviteCode();
+            if (groupConversationRepository.findByInviteCode(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+
+        return UUID.randomUUID().toString().replace("-", "").substring(0, INVITE_CODE_LENGTH).toUpperCase();
+    }
+
+    private String randomInviteCode() {
+        StringBuilder builder = new StringBuilder(INVITE_CODE_LENGTH);
+        for (int index = 0; index < INVITE_CODE_LENGTH; index += 1) {
+            int charIndex = INVITE_CODE_RANDOM.nextInt(INVITE_CODE_CHARS.length);
+            builder.append(INVITE_CODE_CHARS[charIndex]);
+        }
+        return builder.toString();
+    }
+
+    private void markAllMessagesAsSeenForUser(String conversationId, String userId) {
+        List<MessageDocument> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        if (items.isEmpty()) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        for (MessageDocument item : items) {
+            Set<String> deliveredTo = item.getDeliveredTo() == null ? new HashSet<>() : new HashSet<>(item.getDeliveredTo());
+            Set<String> seenBy = item.getSeenBy() == null ? new HashSet<>() : new HashSet<>(item.getSeenBy());
+            boolean changed = false;
+
+            if (deliveredTo.add(userId)) {
+                item.setDeliveredTo(deliveredTo);
+                changed = true;
+            }
+            if (seenBy.add(userId)) {
+                item.setSeenBy(seenBy);
+                changed = true;
+            }
+
+            if (changed) {
+                item.setUpdatedAt(now.toString());
+                messageRepository.save(item);
+            }
+        }
+    }
+
+    private MessagePayload createGroupSystemMessage(ConversationDocument conversation, String actorId, String content) {
+        Instant now = Instant.now();
+
+        MessageDocument item = new MessageDocument();
+        item.setConversationId(conversation.getId());
+        item.setId(generateMessageId());
+        item.setSenderId(actorId);
+        item.setReceiverId(null);
+        item.setType("SYSTEM");
+        item.setContent(content);
+        item.setParentMessageId(null);
+        item.setFileUrl(null);
+        item.setFileName(null);
+        item.setReactions(Collections.emptyList());
+        item.setReactionEntries(Collections.emptyList());
+        item.setCreatedAt(now.toString());
+        item.setUpdatedAt(now.toString());
+        item.setRecalled(false);
+        item.setEdited(false);
+        item.setSeenBy(new HashSet<>(Set.of(actorId)));
+
+        Set<String> deliveredTo = new HashSet<>(Set.of(actorId));
+        for (String memberId : normalizeMembers(conversation)) {
+            if (onlineUserChecker.isOnline(memberId)) {
+                deliveredTo.add(memberId);
+            }
+        }
+        item.setDeliveredTo(deliveredTo);
+        messageRepository.save(item);
+
+        conversation.setLastMessage(content);
+        conversation.setLastMessageAt(now.toString());
+        conversation.setUpdatedAt(now);
+        groupConversationRepository.save(conversation);
+
+        return toMessagePayload(item);
     }
 
     private void deleteConversationAndMessages(String conversationId) {

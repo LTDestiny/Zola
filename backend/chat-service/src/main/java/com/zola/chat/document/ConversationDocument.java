@@ -29,6 +29,18 @@ public class ConversationDocument {
     @Field("owner_id")
     private String ownerId;
 
+    @Field("only_admins_can_message")
+    private Boolean onlyAdminsCanMessage;
+
+    @Field("require_approval_to_join")
+    private Boolean requireApprovalToJoin;
+
+    @Field("allow_member_invite")
+    private Boolean allowMemberInvite;
+
+    @Field("invite_code")
+    private String inviteCode;
+
     @Field("last_message")
     private String lastMessage;
 
@@ -115,6 +127,38 @@ public class ConversationDocument {
 
     public void setOwnerId(String ownerId) {
         this.ownerId = ownerId;
+    }
+
+    public boolean isOnlyAdminsCanMessage() {
+        return Boolean.TRUE.equals(onlyAdminsCanMessage);
+    }
+
+    public void setOnlyAdminsCanMessage(Boolean onlyAdminsCanMessage) {
+        this.onlyAdminsCanMessage = onlyAdminsCanMessage;
+    }
+
+    public boolean isRequireApprovalToJoin() {
+        return Boolean.TRUE.equals(requireApprovalToJoin);
+    }
+
+    public void setRequireApprovalToJoin(Boolean requireApprovalToJoin) {
+        this.requireApprovalToJoin = requireApprovalToJoin;
+    }
+
+    public boolean isAllowMemberInvite() {
+        return allowMemberInvite == null || allowMemberInvite;
+    }
+
+    public void setAllowMemberInvite(Boolean allowMemberInvite) {
+        this.allowMemberInvite = allowMemberInvite;
+    }
+
+    public String getInviteCode() {
+        return inviteCode;
+    }
+
+    public void setInviteCode(String inviteCode) {
+        this.inviteCode = inviteCode;
     }
 
     public String getLastMessage() {

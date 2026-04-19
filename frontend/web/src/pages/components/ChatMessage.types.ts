@@ -24,6 +24,9 @@ export interface ChatMessageProps {
   isMine: boolean;
   language: "vi" | "en";
   recipientAvatar?: string;
+  senderName?: string;
+  senderAvatarUrl?: string | null;
+  showSenderName?: boolean;
   showAvatar?: boolean;
   showMeta?: boolean;
   menuPlacement?: "above" | "below";
