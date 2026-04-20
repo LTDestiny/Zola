@@ -492,6 +492,7 @@ export function ChatPage() {
   const [processingFriendshipId, setProcessingFriendshipId] = useState<
     string | null
   >(null);
+  const [isAddingGroupMembers, setIsAddingGroupMembers] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
@@ -1018,19 +1019,77 @@ export function ChatPage() {
     [ensureHiddenConversationPin, hiddenConversationPin, language, verifyHiddenConversationPin],
   );
 
-  const onAddGroupMember = async (userId: string) => {
+  const onAddGroupMembers = async (userIds: string[]) => {
     if (!activeConversationId) {
-      return;
+      return false;
     }
-    try {
-      await addGroupMember(activeConversationId, userId);
-      await fetchConversations({ silent: true });
-      await refreshGroupSettings(activeConversationId);
+
+    const uniqueUserIds = Array.from(
+      new Set(userIds.map((value) => value.trim()).filter(Boolean)),
+    );
+
+    const memberSet = new Set(activeGroupMembers);
+    const idsToAdd = uniqueUserIds.filter((userId) => !memberSet.has(userId));
+
+    if (idsToAdd.length === 0) {
       setBannerMessage(
-        language === "vi" ? "Da them thanh vien" : "Member added",
+        language === "vi"
+          ? "Nhung nguoi da chon da co trong nhom"
+          : "Selected users are already in this group",
       );
+      return false;
+    }
+
+    setIsAddingGroupMembers(true);
+    try {
+      const results = await Promise.allSettled(
+        idsToAdd.map((userId) => addGroupMember(activeConversationId, userId)),
+      );
+
+      const successCount = results.filter(
+        (item) => item.status === "fulfilled",
+      ).length;
+      const failedCount = results.length - successCount;
+
+      if (successCount > 0) {
+        await fetchConversations({ silent: true });
+        await refreshGroupSettings(activeConversationId);
+      }
+
+      if (failedCount === 0) {
+        setBannerMessage(
+          language === "vi"
+            ? `Da them ${successCount} thanh vien`
+            : `Added ${successCount} member(s)`,
+        );
+        return true;
+      }
+
+      if (successCount === 0) {
+        const firstRejected = results.find(
+          (item): item is PromiseRejectedResult => item.status === "rejected",
+        );
+        setBannerMessage(
+          firstRejected
+            ? toApiErrorMessage(firstRejected.reason)
+            : language === "vi"
+              ? "Khong the them thanh vien"
+              : "Unable to add members",
+        );
+        return false;
+      }
+
+      setBannerMessage(
+        language === "vi"
+          ? `Da them ${successCount} thanh vien, ${failedCount} nguoi that bai`
+          : `Added ${successCount} member(s), ${failedCount} failed`,
+      );
+      return true;
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
+      return false;
+    } finally {
+      setIsAddingGroupMembers(false);
     }
   };
 
@@ -5318,6 +5377,7 @@ export function ChatPage() {
                 conversation={activeConversationForView}
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
+                friendContacts={friendContacts}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 currentUserId={myProfile?.id ?? null}
@@ -5338,9 +5398,10 @@ export function ChatPage() {
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
                 }}
-                onAddMember={(userId: string) => {
-                  void onAddGroupMember(userId);
+                onAddMembers={(userIds: string[]) => {
+                  return onAddGroupMembers(userIds);
                 }}
+                isAddingMembers={isAddingGroupMembers}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
                 }}

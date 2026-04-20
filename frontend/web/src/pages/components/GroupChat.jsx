@@ -82,6 +82,7 @@ export function GroupChat({
   conversation,
   isPanelOpen = true,
   members,
+  friendContacts,
   userProfileMap,
   messages,
   currentUserId,
@@ -89,7 +90,8 @@ export function GroupChat({
   preferences,
   onRefreshSettings,
   onUpdateSettings,
-  onAddMember,
+  onAddMembers,
+  isAddingMembers,
   onRemoveMember,
   onToggleAdmin,
   onMentionMember,
@@ -100,12 +102,15 @@ export function GroupChat({
   children,
 }) {
   const safeMembers = members ?? [];
+  const safeFriendContacts = friendContacts ?? [];
   const safeMessages = messages ?? [];
 
   const [nameDraft, setNameDraft] = useState(conversation?.name ?? "");
   const [avatarDraft, setAvatarDraft] = useState(conversation?.avatar ?? "");
-  const [memberIdDraft, setMemberIdDraft] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [memberPickerSearch, setMemberPickerSearch] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState([]);
+  const [isMemberPickerOpen, setIsMemberPickerOpen] = useState(false);
   const [manageMode, setManageMode] = useState(false);
   const [openSections, setOpenSections] = useState({
     members: true,
@@ -173,6 +178,42 @@ export function GroupChat({
     });
   }, [safeMembers, searchText, userProfileMap]);
 
+  const addableFriendCandidates = useMemo(() => {
+    const memberSet = new Set(safeMembers);
+    const myId = currentUserId ?? null;
+    const normalized = memberPickerSearch.trim().toLowerCase();
+
+    return safeFriendContacts
+      .map((friend, index) => {
+        const profile = userProfileMap?.[friend.userId];
+        const displayName = profile?.fullName ?? `User ${friend.userId.slice(0, 8)}`;
+        const email = profile?.email ?? "";
+        return {
+          userId: friend.userId,
+          displayName,
+          email,
+          avatarUrl: profile?.avatarUrl ?? null,
+          sortKey: `${displayName}-${friend.userId}-${index}`,
+        };
+      })
+      .filter((candidate) => candidate.userId && candidate.userId !== myId)
+      .filter((candidate) => !memberSet.has(candidate.userId))
+      .filter((candidate) => {
+        if (!normalized) {
+          return true;
+        }
+        const name = candidate.displayName.toLowerCase();
+        const email = candidate.email.toLowerCase();
+        const id = candidate.userId.toLowerCase();
+        return (
+          name.includes(normalized) ||
+          email.includes(normalized) ||
+          id.includes(normalized)
+        );
+      })
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  }, [safeFriendContacts, safeMembers, currentUserId, memberPickerSearch, userProfileMap]);
+
   const mediaItems = useMemo(() => {
     return parsedMessages
       .filter((item) => {
@@ -235,6 +276,43 @@ export function GroupChat({
       await navigator.clipboard.writeText(joinLink);
     } catch {
       // Ignore clipboard errors.
+    }
+  };
+
+  const openMemberPicker = () => {
+    if (!canInviteMembers) {
+      return;
+    }
+    setMemberPickerSearch("");
+    setSelectedMemberIds([]);
+    setIsMemberPickerOpen(true);
+  };
+
+  const closeMemberPicker = () => {
+    if (isAddingMembers) {
+      return;
+    }
+    setIsMemberPickerOpen(false);
+    setMemberPickerSearch("");
+    setSelectedMemberIds([]);
+  };
+
+  const toggleCandidate = (userId) => {
+    setSelectedMemberIds((current) => {
+      if (current.includes(userId)) {
+        return current.filter((id) => id !== userId);
+      }
+      return [...current, userId];
+    });
+  };
+
+  const submitAddMembers = async () => {
+    if (selectedMemberIds.length === 0 || !onAddMembers) {
+      return;
+    }
+    const completed = await onAddMembers(selectedMemberIds);
+    if (completed !== false) {
+      closeMemberPicker();
     }
   };
 
@@ -316,16 +394,7 @@ export function GroupChat({
             <button
               type="button"
               disabled={!canInviteMembers}
-              onClick={() => {
-                const targetUserId = window.prompt(
-                  language === "vi"
-                    ? "Nhap userId thanh vien can them"
-                    : "Enter member userId",
-                );
-                if (targetUserId && targetUserId.trim()) {
-                  onAddMember?.(targetUserId.trim());
-                }
-              }}
+              onClick={openMemberPicker}
               className={`${iconActionBase} ${canInviteMembers ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-800/60 text-slate-500"}`}
             >
               <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
@@ -811,27 +880,18 @@ export function GroupChat({
                     </div>
 
                     {canInviteMembers && (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={memberIdDraft}
-                          onChange={(event) => setMemberIdDraft(event.target.value)}
-                          placeholder={language === "vi" ? "Nhap userId de them" : "Enter userId to add"}
-                          className="h-9 min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100"
-                        />
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900/45 px-3 py-2">
+                        <p className="text-xs text-slate-300">
+                          {language === "vi"
+                            ? "Them tu danh sach ban be"
+                            : "Add from friend list"}
+                        </p>
                         <button
                           type="button"
-                          onClick={() => {
-                            const nextUserId = memberIdDraft.trim();
-                            if (!nextUserId) {
-                              return;
-                            }
-                            onAddMember?.(nextUserId);
-                            setMemberIdDraft("");
-                          }}
-                          className="rounded-lg bg-sky-600 px-3 text-sm font-semibold text-white hover:bg-sky-500"
+                          onClick={openMemberPicker}
+                          className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
                         >
-                          +
+                          {language === "vi" ? "Chon" : "Select"}
                         </button>
                       </div>
                     )}
@@ -961,6 +1021,112 @@ export function GroupChat({
           </section>
         </div>
       </aside>
+
+      {isMemberPickerOpen && (
+        <div className="fixed inset-0 z-90 grid place-items-center bg-slate-900/70 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-[#111b2a] p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100">
+                  {language === "vi" ? "Them thanh vien" : "Add members"}
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  {language === "vi"
+                    ? "Chon mot hoac nhieu ban be de them vao nhom"
+                    : "Select one or multiple friends to add into this group"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeMemberPicker}
+                disabled={isAddingMembers}
+                className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {language === "vi" ? "Dong" : "Close"}
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={memberPickerSearch}
+              onChange={(event) => setMemberPickerSearch(event.target.value)}
+              placeholder={language === "vi" ? "Tim theo ten, email, userId" : "Search by name, email, userId"}
+              className="mt-3 h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500"
+            />
+
+            <div className="mt-3 max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+              {addableFriendCandidates.length === 0 ? (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/45 px-3 py-4 text-sm text-slate-300">
+                  {language === "vi"
+                    ? "Khong co ban be phu hop de them vao nhom"
+                    : "No matching friends available to add"}
+                </div>
+              ) : (
+                addableFriendCandidates.map((candidate) => {
+                  const selected = selectedMemberIds.includes(candidate.userId);
+                  return (
+                    <button
+                      key={candidate.userId}
+                      type="button"
+                      onClick={() => toggleCandidate(candidate.userId)}
+                      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${selected ? "border-sky-400 bg-sky-500/10" : "border-slate-700 bg-slate-900/35 hover:bg-slate-800"}`}
+                    >
+                      {candidate.avatarUrl ? (
+                        <img
+                          src={candidate.avatarUrl}
+                          alt={candidate.displayName}
+                          className="h-10 w-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-10 w-10 place-items-center rounded-full bg-slate-700 text-xs font-semibold text-slate-100">
+                          {initials(candidate.displayName)}
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-100">
+                          {candidate.displayName}
+                        </p>
+                        <p className="truncate text-xs text-slate-400">
+                          {candidate.email || candidate.userId}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`h-4 w-4 rounded-full border ${selected ? "border-sky-400 bg-sky-400" : "border-slate-500"}`}
+                      />
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-300">
+                {language === "vi"
+                  ? `Da chon ${selectedMemberIds.length} nguoi`
+                  : `${selectedMemberIds.length} selected`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void submitAddMembers();
+                }}
+                disabled={isAddingMembers || selectedMemberIds.length === 0}
+                className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isAddingMembers
+                  ? language === "vi"
+                    ? "Dang them..."
+                    : "Adding..."
+                  : language === "vi"
+                    ? "Them thanh vien"
+                    : "Add members"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
