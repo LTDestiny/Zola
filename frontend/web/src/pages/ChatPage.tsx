@@ -493,6 +493,7 @@ export function ChatPage() {
     string | null
   >(null);
   const [isAddingGroupMembers, setIsAddingGroupMembers] = useState(false);
+  const [isUpdatingGroupProfile, setIsUpdatingGroupProfile] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
@@ -1138,13 +1139,20 @@ export function ChatPage() {
     requireApprovalToJoin?: boolean;
     allowMemberInvite?: boolean;
     transferOwnerId?: string;
+    successMessageVi?: string;
+    successMessageEn?: string;
   }) => {
     if (!activeConversationId) {
-      return;
+      return false;
     }
 
     try {
-      const result = await updateGroupSettings(activeConversationId, input);
+      const {
+        successMessageVi,
+        successMessageEn,
+        ...payload
+      } = input;
+      const result = await updateGroupSettings(activeConversationId, payload);
       setGroupSettingsMap((prev) => ({
         ...prev,
         [activeConversationId]: result.data,
@@ -1162,11 +1170,81 @@ export function ChatPage() {
       await fetchConversations({ silent: true });
       setBannerMessage(
         language === "vi"
-          ? "Da cap nhat cai dat nhom"
-          : "Group settings updated",
+          ? successMessageVi ?? "Da cap nhat cai dat nhom"
+          : successMessageEn ?? "Group settings updated",
       );
+      return true;
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
+      return false;
+    }
+  };
+
+  const onSaveActiveGroupName = async (nextName: string) => {
+    const trimmedName = nextName.trim();
+    if (!trimmedName) {
+      setBannerMessage(
+        language === "vi" ? "Ten nhom khong duoc de trong" : "Group name is required",
+      );
+      return false;
+    }
+
+    return onUpdateActiveGroupSettings({
+      name: trimmedName,
+      successMessageVi: "Da doi ten nhom",
+      successMessageEn: "Group name updated",
+    });
+  };
+
+  const onSelectActiveGroupAvatar = async (file: File | null) => {
+    if (!file) {
+      return false;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setBannerMessage(
+        language === "vi"
+          ? "Vui long chon file hinh anh"
+          : "Please choose an image file",
+      );
+      return false;
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setBannerMessage(
+        language === "vi"
+          ? "Anh nhom vuot qua 10MB"
+          : "Group avatar exceeds 10MB",
+      );
+      return false;
+    }
+
+    try {
+      setIsUpdatingGroupProfile(true);
+      const uploaded = await uploadMedia(file);
+      return onUpdateActiveGroupSettings({
+        avatar: uploaded.data.fileUrl,
+        successMessageVi: "Da cap nhat anh nhom",
+        successMessageEn: "Group avatar updated",
+      });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+      return false;
+    } finally {
+      setIsUpdatingGroupProfile(false);
+    }
+  };
+
+  const onClearActiveGroupAvatar = async () => {
+    setIsUpdatingGroupProfile(true);
+    try {
+      return onUpdateActiveGroupSettings({
+        avatar: null,
+        successMessageVi: "Da xoa anh nhom",
+        successMessageEn: "Group avatar removed",
+      });
+    } finally {
+      setIsUpdatingGroupProfile(false);
     }
   };
 
@@ -5402,6 +5480,16 @@ export function ChatPage() {
                   return onAddGroupMembers(userIds);
                 }}
                 isAddingMembers={isAddingGroupMembers}
+                onSaveGroupName={(nextName: string) => {
+                  return onSaveActiveGroupName(nextName);
+                }}
+                onSelectGroupAvatar={(file: File | null) => {
+                  return onSelectActiveGroupAvatar(file);
+                }}
+                onClearGroupAvatar={() => {
+                  return onClearActiveGroupAvatar();
+                }}
+                isUpdatingGroupProfile={isUpdatingGroupProfile}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
                 }}

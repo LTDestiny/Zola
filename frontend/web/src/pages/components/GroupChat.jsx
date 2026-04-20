@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BellOff,
@@ -92,6 +92,10 @@ export function GroupChat({
   onUpdateSettings,
   onAddMembers,
   isAddingMembers,
+  onSaveGroupName,
+  onSelectGroupAvatar,
+  onClearGroupAvatar,
+  isUpdatingGroupProfile,
   onRemoveMember,
   onToggleAdmin,
   onMentionMember,
@@ -106,8 +110,8 @@ export function GroupChat({
   const safeMessages = messages ?? [];
 
   const [nameDraft, setNameDraft] = useState(conversation?.name ?? "");
-  const [avatarDraft, setAvatarDraft] = useState(conversation?.avatar ?? "");
   const [searchText, setSearchText] = useState("");
+  const [isHeaderEditOpen, setIsHeaderEditOpen] = useState(false);
   const [memberPickerSearch, setMemberPickerSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
   const [isMemberPickerOpen, setIsMemberPickerOpen] = useState(false);
@@ -129,11 +133,12 @@ export function GroupChat({
     createPoll: true,
     sendMessage: true,
   });
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     setNameDraft(conversation?.name ?? "");
-    setAvatarDraft(conversation?.avatar ?? "");
     setManageMode(false);
+    setIsHeaderEditOpen(false);
   }, [conversation?.id, conversation?.name, conversation?.avatar]);
 
   const ownerId = settings?.ownerId ?? conversation?.ownerId ?? null;
@@ -316,11 +321,31 @@ export function GroupChat({
     }
   };
 
-  const saveGroupInfo = async () => {
-    await onUpdateSettings?.({
-      name: nameDraft.trim(),
-      avatar: avatarDraft.trim() ? avatarDraft.trim() : null,
-    });
+  const saveHeaderGroupName = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    const completed = await onSaveGroupName?.(trimmed);
+    if (completed !== false) {
+      setIsHeaderEditOpen(false);
+    }
+  };
+
+  const triggerAvatarSelect = () => {
+    if (!canOpenManage || isUpdatingGroupProfile) {
+      return;
+    }
+    avatarInputRef.current?.click?.();
+  };
+
+  const onAvatarInputChanged = async (event) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      return;
+    }
+    await onSelectGroupAvatar?.(file);
+    event.target.value = "";
   };
 
   const renderMemberTag = (memberId) => {
@@ -349,23 +374,125 @@ export function GroupChat({
           </p>
 
           <div className="mt-4 flex flex-col items-center">
-            {conversation?.avatar ? (
-              <img
-                src={conversation.avatar}
-                alt={conversation?.name ?? "Group"}
-                className="h-16 w-16 rounded-full object-cover"
-              />
-            ) : (
-              <div className="grid h-16 w-16 place-items-center rounded-full bg-sky-500/25 text-lg font-bold text-sky-100">
-                {initials(conversation?.name ?? "Group")}
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                void onAvatarInputChanged(event);
+              }}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={triggerAvatarSelect}
+              disabled={!canOpenManage || isUpdatingGroupProfile}
+              className={`group relative rounded-full ${canOpenManage ? "cursor-pointer" : "cursor-default"}`}
+              title={
+                canOpenManage
+                  ? language === "vi"
+                    ? "Doi anh nhom"
+                    : "Change group avatar"
+                  : undefined
+              }
+            >
+              {conversation?.avatar ? (
+                <img
+                  src={conversation.avatar}
+                  alt={conversation?.name ?? "Group"}
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-sky-500/25 text-lg font-bold text-sky-100">
+                  {initials(conversation?.name ?? "Group")}
+                </div>
+              )}
+              {canOpenManage && (
+                <span className="pointer-events-none absolute inset-0 rounded-full bg-black/0 transition group-hover:bg-black/20" />
+              )}
+            </button>
+
+            {isHeaderEditOpen ? (
+              <div className="mt-3 w-full space-y-2">
+                <input
+                  type="text"
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                  placeholder={language === "vi" ? "Ten nhom" : "Group name"}
+                  className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                />
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNameDraft(conversation?.name ?? "");
+                      setIsHeaderEditOpen(false);
+                    }}
+                    className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                  >
+                    {language === "vi" ? "Huy" : "Cancel"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void saveHeaderGroupName();
+                    }}
+                    disabled={isUpdatingGroupProfile || !nameDraft.trim()}
+                    className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {language === "vi" ? "Luu ten" : "Save name"}
+                  </button>
+                </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                disabled={!canOpenManage}
+                onClick={() => {
+                  if (canOpenManage) {
+                    setIsHeaderEditOpen(true);
+                  }
+                }}
+                className={`mt-3 text-center text-4xl font-semibold text-slate-100 ${canOpenManage ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
+              >
+                {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
+              </button>
             )}
-            <p className="mt-3 text-center text-4xl font-semibold text-slate-100">
-              {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
-            </p>
+
             <p className="mt-1 text-xs text-slate-400">
               {language === "vi" ? "Cong dong" : "Community"}
             </p>
+            {canOpenManage && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={triggerAvatarSelect}
+                  disabled={isUpdatingGroupProfile}
+                  className="rounded-lg border border-slate-600 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isUpdatingGroupProfile
+                    ? language === "vi"
+                      ? "Dang cap nhat..."
+                      : "Updating..."
+                    : language === "vi"
+                      ? "Doi anh"
+                      : "Change avatar"}
+                </button>
+                {conversation?.avatar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onClearGroupAvatar?.();
+                    }}
+                    disabled={isUpdatingGroupProfile}
+                    className="rounded-lg border border-rose-500/40 px-2 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {language === "vi" ? "Xoa anh" : "Remove avatar"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-2">
@@ -823,37 +950,6 @@ export function GroupChat({
                         : "Only the owner can change security and invite-link settings"}
                     </p>
                   )}
-                </div>
-
-                <div className="rounded-xl bg-slate-900/45 p-3">
-                  <p className="text-sm font-semibold text-slate-100">
-                    {language === "vi" ? "Thong tin nhom" : "Group profile"}
-                  </p>
-                  <div className="mt-2 space-y-2">
-                    <input
-                      type="text"
-                      value={nameDraft}
-                      onChange={(event) => setNameDraft(event.target.value)}
-                      placeholder={language === "vi" ? "Ten nhom" : "Group name"}
-                      className="h-9 w-full rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100"
-                    />
-                    <input
-                      type="text"
-                      value={avatarDraft}
-                      onChange={(event) => setAvatarDraft(event.target.value)}
-                      placeholder="Avatar URL"
-                      className="h-9 w-full rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void saveGroupInfo();
-                      }}
-                      className="w-full rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500"
-                    >
-                      {language === "vi" ? "Luu thong tin" : "Save group profile"}
-                    </button>
-                  </div>
                 </div>
 
                 <Section
