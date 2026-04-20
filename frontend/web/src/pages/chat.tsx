@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
+import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
 import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
 import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
 
@@ -23,6 +23,8 @@ type ChatProps = {
   activeConversation: ConversationItem | null;
   activeConversationOnline: boolean;
   activeConversationPresenceLabel: string;
+  activeConversationPinned?: boolean;
+  headerUnreadBadgeCount?: number;
   userProfileMap?: Record<string, UserProfile>;
   showGroupPanelToggle?: boolean;
   isGroupPanelOpen?: boolean;
@@ -117,10 +119,73 @@ function inferMessageType(item: MessageItem): ChatMessage["type"] {
   return "text";
 }
 
+function toDisplayNameFromId(
+  userId: string,
+  language: "vi" | "en",
+  myId?: string,
+  userProfileMap: Record<string, UserProfile> = {},
+) {
+  if (myId && userId === myId) {
+    return language === "vi" ? "ban" : "you";
+  }
+  return userProfileMap[userId]?.fullName ?? `User ${userId.slice(0, 8)}`;
+}
+
+function formatSystemMessageContent(
+  rawContent: string,
+  language: "vi" | "en",
+  myId?: string,
+  userProfileMap: Record<string, UserProfile> = {},
+) {
+  const content = String(rawContent ?? "").trim();
+  if (!content) {
+    return language === "vi" ? "Thong bao he thong" : "System notification";
+  }
+
+  const prefixed = content.replace(/^\[System\]\s*/i, "").trim();
+
+  const addedMatch = prefixed.match(/^(\S+)\s+added\s+(\S+)\s+to the group$/i);
+  if (addedMatch) {
+    const actor = toDisplayNameFromId(addedMatch[1], language, myId, userProfileMap);
+    const target = toDisplayNameFromId(addedMatch[2], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da them ${target} vao nhom`
+      : `${actor} added ${target} to the group`;
+  }
+
+  const removedMatch = prefixed.match(/^(\S+)\s+removed\s+(\S+)\s+from the group$/i);
+  if (removedMatch) {
+    const actor = toDisplayNameFromId(removedMatch[1], language, myId, userProfileMap);
+    const target = toDisplayNameFromId(removedMatch[2], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da xoa ${target} khoi nhom`
+      : `${actor} removed ${target} from the group`;
+  }
+
+  const joinedMatch = prefixed.match(/^(\S+)\s+joined the group via invite link$/i);
+  if (joinedMatch) {
+    const actor = toDisplayNameFromId(joinedMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da tham gia nhom bang link moi`
+      : `${actor} joined via invite link`;
+  }
+
+  const leftMatch = prefixed.match(/^(\S+)\s+left the group$/i);
+  if (leftMatch) {
+    const actor = toDisplayNameFromId(leftMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da roi nhom`
+      : `${actor} left the group`;
+  }
+
+  return prefixed;
+}
+
 function mapToUiMessage(
   item: MessageItem,
   language: "vi" | "en",
   myId?: string,
+  userProfileMap: Record<string, UserProfile> = {},
 ): ChatMessage {
   const rawType = (item.type ?? "TEXT").toUpperCase();
   const isMine = item.senderId === myId;
@@ -133,10 +198,14 @@ function mapToUiMessage(
         ? "You recalled a message"
         : "This message was recalled";
 
+  const normalizedText = rawType === "SYSTEM"
+    ? formatSystemMessageContent(item.content, language, myId, userProfileMap)
+    : item.content;
+
   return {
     id: item.id,
     senderId: item.senderId,
-    text: item.recalled ? recalledText : item.content,
+    text: item.recalled ? recalledText : normalizedText,
     isRecalled: Boolean(item.recalled),
     timestamp: formatTime(item.createdAt, language),
     status: toStatus(item, myId),
@@ -158,6 +227,8 @@ export function Chat({
   activeConversation,
   activeConversationOnline,
   activeConversationPresenceLabel,
+  activeConversationPinned = false,
+  headerUnreadBadgeCount = 0,
   userProfileMap = {},
   showGroupPanelToggle = false,
   isGroupPanelOpen = true,
@@ -221,9 +292,9 @@ export function Chat({
 
   const mappedFromServer = useMemo(() => {
     return messages.map((item) =>
-      mapToUiMessage(item, language, currentUserId),
+      mapToUiMessage(item, language, currentUserId, userProfileMap),
     );
-  }, [messages, language, currentUserId]);
+  }, [messages, language, currentUserId, userProfileMap]);
 
   useEffect(() => {
     setLocalMessages(mappedFromServer);
@@ -534,9 +605,22 @@ export function Chat({
             />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-slate-100">
-              {activeConversation.name}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-100">
+                {activeConversation.name}
+              </h3>
+              {activeConversationPinned && (
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                  <Pin size={10} className="mr-1" />
+                  {language === "vi" ? "Ghim" : "Pinned"}
+                </span>
+              )}
+              {headerUnreadBadgeCount > 0 && (
+                <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {headerUnreadBadgeCount > 9 ? "9+" : headerUnreadBadgeCount}
+                </span>
+              )}
+            </div>
             <p
               className={`text-xs ${activeConversationOnline ? "text-emerald-300" : "text-slate-400"}`}
             >
@@ -645,6 +729,19 @@ export function Chat({
               )}
 
               {localMessages.map((message, index) => {
+                const isSystemMessage = (message.rawType ?? "").toUpperCase() === "SYSTEM";
+
+                if (isSystemMessage) {
+                  return (
+                    <div key={message.id} className="my-3 flex justify-center">
+                      <div className="max-w-[90%] rounded-full border border-slate-600 bg-slate-800/80 px-4 py-1.5 text-center text-xs text-slate-200">
+                        <span>{message.text}</span>
+                        <span className="ml-2 text-[10px] text-slate-400">{message.timestamp}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isMine = message.senderId === currentUserId;
                 const prev = localMessages[index - 1];
                 const next = localMessages[index + 1];

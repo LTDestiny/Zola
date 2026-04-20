@@ -1,4 +1,14 @@
 services:
+  coturn:
+    image: coturn/coturn
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "5349:5349"
+      - "5349:5349/udp"
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf
+
   zola-web:
     build:
       context: ../frontend/web
@@ -8,6 +18,7 @@ services:
     environment:
       VITE_API_URL: http://localhost:8080
       VITE_WS_URL: ws://localhost:8083/ws
+      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:localhost:3478?transport=udp","turn:localhost:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     command: >

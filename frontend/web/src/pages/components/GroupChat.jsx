@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  ExternalLink,
   FileText,
   Image as ImageIcon,
   Newspaper,
@@ -377,18 +378,40 @@ export function GroupChat({
                         <p className="text-xs text-slate-300">
                           {language === "vi" ? "Link tham gia nhom" : "Join link"}
                         </p>
-                        <p className="truncate text-sm font-semibold text-sky-300">
-                          {joinLink || (language === "vi" ? "Dang tao link..." : "Generating link...")}
-                        </p>
+                        {joinLink ? (
+                          <a
+                            href={joinLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate text-sm font-semibold text-sky-300 underline decoration-sky-400/60 underline-offset-2"
+                          >
+                            {joinLink}
+                          </a>
+                        ) : (
+                          <p className="truncate text-sm font-semibold text-sky-300">
+                            {language === "vi" ? "Dang tao link..." : "Generating link..."}
+                          </p>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={copyJoinLink}
-                        disabled={!joinLink}
-                        className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
-                      >
-                        <Copy size={14} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={joinLink || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!joinLink}
+                          className={`grid h-8 w-8 place-items-center rounded-lg ${joinLink ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "pointer-events-none bg-slate-800/60 text-slate-500"}`}
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={copyJoinLink}
+                          disabled={!joinLink}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -688,17 +711,39 @@ export function GroupChat({
 
                   <div className="mt-3 rounded-lg bg-[#0d1d36] px-2 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold text-sky-200">
-                        {joinLink || (language === "vi" ? "Dang tao link..." : "Generating link...")}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={copyJoinLink}
-                        disabled={!joinLink}
-                        className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
-                      >
-                        <Copy size={14} />
-                      </button>
+                      {joinLink ? (
+                        <a
+                          href={joinLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block min-w-0 truncate text-sm font-semibold text-sky-200 underline decoration-sky-300/60 underline-offset-2"
+                        >
+                          {joinLink}
+                        </a>
+                      ) : (
+                        <p className="truncate text-sm font-semibold text-sky-200">
+                          {language === "vi" ? "Dang tao link..." : "Generating link..."}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={joinLink || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!joinLink}
+                          className={`grid h-8 w-8 place-items-center rounded-lg ${joinLink ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "pointer-events-none bg-slate-800/60 text-slate-500"}`}
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={copyJoinLink}
+                          disabled={!joinLink}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 

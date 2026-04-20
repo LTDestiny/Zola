@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class SocketAuthChannelInterceptor implements ChannelInterceptor {
@@ -51,11 +52,35 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
                     LOGGER.warn("[ws-auth] Reject websocket CONNECT with invalid token payload (no userId)");
                     return null;
                 }
-                accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                UsernamePasswordAuthenticationToken authenticationToken =
+                    new UsernamePasswordAuthenticationToken(userId, null, List.of());
+                accessor.setUser(authenticationToken);
+                Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+                if (sessionAttributes != null) {
+                    sessionAttributes.put("ws_user_id", userId);
+                }
                 LOGGER.info("[ws-auth] CONNECT authenticated successfully, userId={}", userId);
             } catch (Exception ex) {
                 LOGGER.warn("[ws-auth] Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
                 return null;
+            }
+            return message;
+        }
+
+        if (
+            StompCommand.SEND.equals(command) ||
+            StompCommand.SUBSCRIBE.equals(command) ||
+            StompCommand.UNSUBSCRIBE.equals(command) ||
+            StompCommand.DISCONNECT.equals(command)
+        ) {
+            if (accessor.getUser() == null) {
+                Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+                Object sessionUserId = sessionAttributes == null
+                    ? null
+                    : sessionAttributes.get("ws_user_id");
+                if (sessionUserId instanceof String userId && !userId.isBlank()) {
+                    accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                }
             }
         }
         return message;

@@ -68,10 +68,33 @@ export type PresenceRealtimeEvent = {
   lastChangedAt?: string;   // Legacy field name
 };
 
+export type CallSignalType =
+  | "CALL_INVITE"
+  | "CALL_ACCEPT"
+  | "CALL_REJECT"
+  | "CALL_JOINED"
+  | "CALL_LEAVE"
+  | "WEBRTC_OFFER"
+  | "WEBRTC_ANSWER"
+  | "WEBRTC_ICE"
+  | "CALL_END";
+
+export type CallRealtimeEvent = {
+  actorId: string;
+  conversationId: string;
+  targetUserId: string | null;
+  callId: string;
+  mode: "voice" | "video";
+  signalType: CallSignalType;
+  payload: string | null;
+  createdAt: string;
+};
+
 type RealtimeHandlers = {
   onEvent: (event: ChatRealtimeEvent) => void;
   onSyncEvent?: (event: SyncRealtimeEvent) => void;
   onPresenceEvent?: (event: PresenceRealtimeEvent) => void;
+  onCallEvent?: (event: CallRealtimeEvent) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (message: string) => void;
@@ -80,22 +103,28 @@ type RealtimeHandlers = {
 export class ChatRealtimeClient {
   private readonly client: Client;
   private readonly conversationSubscriptions = new Map<string, StompSubscription>();
+  private readonly callTopicSubscriptions = new Map<string, StompSubscription>();
   private userQueueSubscription: StompSubscription | null = null;
   private notificationsQueueSubscription: StompSubscription | null = null; // NEW: For unread counts
   private syncQueueSubscription: StompSubscription | null = null;
   private presenceSubscription: StompSubscription | null = null;
+  private callQueueSubscription: StompSubscription | null = null;
+  private globalCallTopicSubscription: StompSubscription | null = null;
   private readonly onEvent: (event: ChatRealtimeEvent) => void;
   private readonly onSyncEvent?: (event: SyncRealtimeEvent) => void;
   private readonly onPresenceEvent?: (event: PresenceRealtimeEvent) => void;
+  private readonly onCallEvent?: (event: CallRealtimeEvent) => void;
   private readonly onError?: (message: string) => void;
 
   // Track pending conversation IDs for reconnect
   private pendingConversationIds = new Set<string>();
+  private readonly processedCallEventKeys = new Set<string>();
 
   constructor(accessToken: string, handlers: RealtimeHandlers) {
     this.onEvent = handlers.onEvent;
     this.onSyncEvent = handlers.onSyncEvent;
     this.onPresenceEvent = handlers.onPresenceEvent;
+    this.onCallEvent = handlers.onCallEvent;
     this.onError = handlers.onError;
 
     const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
@@ -109,7 +138,7 @@ export class ChatRealtimeClient {
       },
       debug: (str) => {
         // Log STOMP frames for debugging
-        if (DEBUG && str.includes(">>>") || str.includes("<<<")) {
+        if (DEBUG && (str.includes(">>>") || str.includes("<<<"))) {
           log("stomp", str.slice(0, 100));
         }
       },
@@ -149,15 +178,24 @@ export class ChatRealtimeClient {
       subscription.unsubscribe();
     });
     this.conversationSubscriptions.clear();
+    this.callTopicSubscriptions.forEach((subscription) => {
+      subscription.unsubscribe();
+    });
+    this.callTopicSubscriptions.clear();
     this.pendingConversationIds.clear();
+    this.processedCallEventKeys.clear();
     this.userQueueSubscription?.unsubscribe();
     this.notificationsQueueSubscription?.unsubscribe();
     this.syncQueueSubscription?.unsubscribe();
     this.presenceSubscription?.unsubscribe();
+    this.callQueueSubscription?.unsubscribe();
+    this.globalCallTopicSubscription?.unsubscribe();
     this.userQueueSubscription = null;
     this.notificationsQueueSubscription = null;
     this.syncQueueSubscription = null;
     this.presenceSubscription = null;
+    this.callQueueSubscription = null;
+    this.globalCallTopicSubscription = null;
     this.client.deactivate();
   }
 
@@ -203,6 +241,10 @@ export class ChatRealtimeClient {
       try { sub.unsubscribe(); } catch { /* ignore */ }
     });
     this.conversationSubscriptions.clear();
+    this.callTopicSubscriptions.forEach((sub) => {
+      try { sub.unsubscribe(); } catch { /* ignore */ }
+    });
+    this.callTopicSubscriptions.clear();
 
     // Resubscribe to all pending
     this.pendingConversationIds.forEach((id) => {
@@ -219,6 +261,9 @@ export class ChatRealtimeClient {
       return;
     }
     if (this.conversationSubscriptions.has(conversationId)) {
+      if (!this.callTopicSubscriptions.has(conversationId)) {
+        this.subscribeCallTopic(conversationId);
+      }
       return;
     }
 
@@ -239,6 +284,50 @@ export class ChatRealtimeClient {
     );
     this.conversationSubscriptions.set(conversationId, subscription);
     log("subscribe", `✅ Subscribed to conversation ${conversationId.slice(0, 8)}`);
+    this.subscribeCallTopic(conversationId);
+  }
+
+  private subscribeCallTopic(conversationId: string) {
+    if (!this.client.connected || this.callTopicSubscriptions.has(conversationId)) {
+      return;
+    }
+
+    const subscription = this.client.subscribe(
+      `/topic/call/${conversationId}`,
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as CallRealtimeEvent;
+          this.emitCallEvent(event, `topic/call/${conversationId.slice(0, 8)}`);
+        } catch {
+          this.onError?.("Cannot parse call topic realtime event");
+        }
+      },
+    );
+
+    this.callTopicSubscriptions.set(conversationId, subscription);
+    log("subscribe", `✅ Subscribed to call topic ${conversationId.slice(0, 8)}`);
+  }
+
+  private emitCallEvent(event: CallRealtimeEvent, source: string) {
+    const dedupKey = `${event.signalType}|${event.callId}|${event.actorId}|${event.targetUserId ?? "-"}|${event.createdAt}`;
+    if (this.processedCallEventKeys.has(dedupKey)) {
+      return;
+    }
+
+    this.processedCallEventKeys.add(dedupKey);
+    if (this.processedCallEventKeys.size > 1200) {
+      const first = this.processedCallEventKeys.values().next().value;
+      if (first) {
+        this.processedCallEventKeys.delete(first);
+      }
+    }
+
+    log("event", `[${source}] ${event.signalType}`, {
+      callId: event.callId,
+      conversationId: event.conversationId?.slice(0, 8),
+      targetUserId: event.targetUserId?.slice(0, 8),
+    });
+    this.onCallEvent?.(event);
   }
 
   syncConversationSubscriptions(conversationIds: string[]) {
@@ -250,12 +339,32 @@ export class ChatRealtimeClient {
     }
 
     const expected = new Set(conversationIds.filter(Boolean));
+    const current = new Set(this.conversationSubscriptions.keys());
+
+    let changed = expected.size !== current.size;
+    if (!changed) {
+      for (const id of expected) {
+        if (!current.has(id)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
 
     // Unsubscribe from removed conversations
     this.conversationSubscriptions.forEach((subscription, id) => {
       if (!expected.has(id)) {
         subscription.unsubscribe();
         this.conversationSubscriptions.delete(id);
+        const callTopicSubscription = this.callTopicSubscriptions.get(id);
+        if (callTopicSubscription) {
+          callTopicSubscription.unsubscribe();
+          this.callTopicSubscriptions.delete(id);
+        }
         this.pendingConversationIds.delete(id);
       }
     });
@@ -342,6 +451,36 @@ export class ChatRealtimeClient {
       },
     );
     log("subscribe", "✅ Subscribed to /topic/presence");
+
+    // 5. Subscribe to /user/queue/call
+    this.callQueueSubscription?.unsubscribe();
+    this.callQueueSubscription = this.client.subscribe(
+      "/user/queue/call",
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as CallRealtimeEvent;
+          this.emitCallEvent(event, "user/queue/call");
+        } catch {
+          this.onError?.("Cannot parse call queue realtime event");
+        }
+      },
+    );
+    log("subscribe", "✅ Subscribed to /user/queue/call");
+
+    // 6. Subscribe to /topic/call as a global fallback channel
+    this.globalCallTopicSubscription?.unsubscribe();
+    this.globalCallTopicSubscription = this.client.subscribe(
+      "/topic/call",
+      (message) => {
+        try {
+          const event = JSON.parse(message.body) as CallRealtimeEvent;
+          this.emitCallEvent(event, "topic/call");
+        } catch {
+          this.onError?.("Cannot parse global call topic event");
+        }
+      },
+    );
+    log("subscribe", "✅ Subscribed to /topic/call");
   }
 
   publishSend(
@@ -490,6 +629,31 @@ export class ChatRealtimeClient {
       messageId,
       emoji,
       remove,
+    });
+  }
+
+  publishCallSignal(
+    conversationId: string,
+    targetUserId: string | null,
+    callId: string,
+    mode: "voice" | "video",
+    signalType: CallSignalType,
+    payload?: unknown,
+  ): boolean {
+    const normalizedPayload =
+      payload == null
+        ? null
+        : typeof payload === "string"
+          ? payload
+          : JSON.stringify(payload);
+
+    return this.safePublish("/app/call.signal", {
+      conversationId,
+      targetUserId,
+      callId,
+      mode,
+      signalType,
+      payload: normalizedPayload,
     });
   }
 }

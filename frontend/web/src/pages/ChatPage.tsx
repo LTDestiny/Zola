@@ -49,6 +49,8 @@ import {
 import { uploadMedia } from "../api/mediaApi";
 import {
   ChatRealtimeClient,
+  type CallRealtimeEvent,
+  type CallSignalType,
   type ChatRealtimeEvent,
   type PresenceRealtimeEvent,
 } from "../api/chatRealtime";
@@ -58,6 +60,13 @@ import { Chat } from "./chat";
 import { AddFriendModal } from "./components/AddFriendModal";
 import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
+import {
+  InAppCallOverlay,
+  type ActiveCallView,
+  type InAppCallMode,
+  type InAppCallStatus,
+  type IncomingCallView,
+} from "./components/InAppCallOverlay";
 // @ts-expect-error JSX module without TS declarations
 import { CreateGroupModal } from "./components/CreateGroupModal.jsx";
 // @ts-expect-error JSX module without TS declarations
@@ -66,6 +75,10 @@ import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
 import { useTyping } from "../hooks/useTyping";
+import {
+  CallManager,
+  type CallLifecycleEvent,
+} from "./call/CallManager";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -132,8 +145,41 @@ type QuickCallHistoryItem = {
   conversationId: string;
   conversationName: string;
   mode: QuickCallMode;
-  link: string;
+  direction: "incoming" | "outgoing";
+  status: "started" | "connected" | "ended" | "missed" | "rejected";
   createdAt: string;
+};
+
+type DirectCallSession = {
+  callId: string;
+  conversationId: string;
+  conversationType: "private" | "group";
+  initiatorUserId: string;
+  peerUserId?: string;
+  peerDisplayName: string;
+  mode: InAppCallMode;
+  direction: "incoming" | "outgoing";
+  status: InAppCallStatus;
+  startedAt: string;
+  participantIds: string[];
+};
+
+type IncomingCallState = {
+  callId: string;
+  conversationId: string;
+  conversationType: "private" | "group";
+  initiatorUserId: string;
+  peerUserId: string;
+  peerDisplayName: string;
+  mode: InAppCallMode;
+};
+
+type ParsedCallSignalPayload = {
+  reason?: string;
+  description?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  initiatorUserId?: string;
+  conversationType?: "private" | "group";
 };
 
 type GroupPreferenceItem = {
@@ -143,6 +189,7 @@ type GroupPreferenceItem = {
 };
 
 const GROUP_PREFERENCE_STORAGE_KEY = "zola_group_preferences_v1";
+const HIDDEN_CHAT_PIN_STORAGE_KEY = "zola_hidden_chat_pin_v1";
 
 function loadGroupPreferences(): Record<string, GroupPreferenceItem> {
   try {
@@ -155,6 +202,35 @@ function loadGroupPreferences(): Record<string, GroupPreferenceItem> {
   } catch {
     return {};
   }
+}
+
+function loadHiddenConversationPin(): string | null {
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_CHAT_PIN_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const normalized = raw.trim();
+    return /^\d{4,8}$/.test(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistHiddenConversationPin(pin: string | null) {
+  try {
+    if (!pin) {
+      window.localStorage.removeItem(HIDDEN_CHAT_PIN_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(HIDDEN_CHAT_PIN_STORAGE_KEY, pin);
+  } catch {
+    // Ignore localStorage persistence errors.
+  }
+}
+
+function isValidConversationPin(pin: string) {
+  return /^\d{4,8}$/.test(pin.trim());
 }
 
 function inferMediaKind(file: File): "image" | "video" | "file" {
@@ -183,6 +259,95 @@ function formatBytes(value: number) {
   return `${next.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+function stopMediaStream(stream: MediaStream | null) {
+  if (!stream) {
+    return;
+  }
+  stream.getTracks().forEach((track) => {
+    track.stop();
+  });
+}
+
+function parseCallSignalPayload(payload: string | null): ParsedCallSignalPayload {
+  if (!payload) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as ParsedCallSignalPayload;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function loadWebRtcIceServers(): RTCIceServer[] {
+  const fallback: RTCIceServer[] = [
+    {
+      urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
+    },
+  ];
+
+  const raw = import.meta.env.VITE_WEBRTC_ICE_SERVERS;
+  if (!raw || typeof raw !== "string") {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Array<{
+      urls?: string | string[];
+      username?: string;
+      credential?: string;
+    }>;
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return fallback;
+    }
+
+    const normalized = parsed
+      .map((item): RTCIceServer | null => {
+        const urls = item?.urls;
+        if (!urls) {
+          return null;
+        }
+        if (typeof urls === "string" && !urls.trim()) {
+          return null;
+        }
+        if (Array.isArray(urls) && urls.length === 0) {
+          return null;
+        }
+
+        const normalizedItem: RTCIceServer = {
+          urls,
+        };
+
+        if (item.username) {
+          normalizedItem.username = item.username;
+        }
+        if (item.credential) {
+          normalizedItem.credential = item.credential;
+        }
+
+        return normalizedItem;
+      })
+      .filter((item): item is RTCIceServer => Boolean(item));
+
+    return normalized.length > 0 ? normalized : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const WEBRTC_ICE_SERVERS = loadWebRtcIceServers();
+const WEBRTC_FORCE_RELAY =
+  String(import.meta.env.VITE_WEBRTC_FORCE_RELAY ?? "false").toLowerCase() ===
+  "true";
+const WEBRTC_ICE_POLICY: RTCIceTransportPolicy = WEBRTC_FORCE_RELAY
+  ? "relay"
+  : "all";
+const CALL_CONNECT_TIMEOUT_MS = 30000;
+const CALL_INVITE_RETRY_MS = 1800;
+
 type UserPresenceState = {
   online: boolean;
   lastChangedAt: string | null;
@@ -201,6 +366,8 @@ export function ChatPage() {
   const upsertConversation = useChatStore((state) => state.upsertConversation);
   const markConversationReadLocal = useChatStore((state) => state.markConversationRead);
   const syncTotalUnread = useChatStore((state) => state.syncTotalUnread);
+  const lastReadSyncedMessageByConversationRef = useRef<Record<string, string>>({});
+  const readSyncInFlightRef = useRef<Record<string, string>>({});
 
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
@@ -217,19 +384,36 @@ export function ChatPage() {
     conversationId: string,
     messageId: string,
   ) => {
-    const realtimeSent = Boolean(
-      realtimeClientRef.current?.publishRead(conversationId, messageId),
-    );
-
-    if (realtimeSent) {
+    const alreadySynced =
+      lastReadSyncedMessageByConversationRef.current[conversationId] === messageId;
+    const inFlightForSameMessage =
+      readSyncInFlightRef.current[conversationId] === messageId;
+    if (alreadySynced || inFlightForSameMessage) {
       return;
     }
 
+    readSyncInFlightRef.current[conversationId] = messageId;
     try {
-      await readMessage(conversationId, messageId);
-    } catch (error) {
-      // Avoid unhandled promise rejection when gateway has stale routes.
-      setBannerMessage(toApiErrorMessage(error));
+      const realtimeSent = Boolean(
+        realtimeClientRef.current?.publishRead(conversationId, messageId),
+      );
+
+      if (realtimeSent) {
+        lastReadSyncedMessageByConversationRef.current[conversationId] = messageId;
+        return;
+      }
+
+      try {
+        await readMessage(conversationId, messageId);
+        lastReadSyncedMessageByConversationRef.current[conversationId] = messageId;
+      } catch (error) {
+        // Avoid unhandled promise rejection when gateway has stale routes.
+        setBannerMessage(toApiErrorMessage(error));
+      }
+    } finally {
+      if (readSyncInFlightRef.current[conversationId] === messageId) {
+        delete readSyncInFlightRef.current[conversationId];
+      }
     }
   };
 
@@ -237,8 +421,16 @@ export function ChatPage() {
     conversationId: string,
     messageId: string,
   ) => {
+    if (lastReadSyncedMessageByConversationRef.current[conversationId] === messageId) {
+      return;
+    }
+
     // Prefer realtime read receipt first so sender sees "seen" immediately.
     await markMessageAsRead(conversationId, messageId);
+
+    if (lastReadSyncedMessageByConversationRef.current[conversationId] !== messageId) {
+      return;
+    }
 
     // Persist read cursor when endpoint is available; safely degrade on older deployments.
     await markConversationRead(conversationId, messageId).catch(() => {
@@ -281,6 +473,17 @@ export function ChatPage() {
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
   const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
   const [callHistory, setCallHistory] = useState<QuickCallHistoryItem[]>([]);
+  const [activeCall, setActiveCall] = useState<DirectCallSession | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null);
+  const [localCallStream, setLocalCallStream] = useState<MediaStream | null>(null);
+  const [remoteCallStreams, setRemoteCallStreams] = useState<Record<string, MediaStream>>({});
+  const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(true);
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [hiddenConversationPin, setHiddenConversationPin] = useState<string | null>(
+    () => loadHiddenConversationPin(),
+  );
+  const [settingsPinDraft, setSettingsPinDraft] = useState("");
+  const [settingsPinConfirmDraft, setSettingsPinConfirmDraft] = useState("");
   const [uploadLimitModalMessage, setUploadLimitModalMessage] = useState<string | null>(null);
   const [groupSettingsMap, setGroupSettingsMap] = useState<Record<string, GroupSettings>>({});
   const [groupPreferenceMap, setGroupPreferenceMap] = useState<Record<string, GroupPreferenceItem>>(
@@ -322,6 +525,36 @@ export function ChatPage() {
   const uploadFileRegistryRef = useRef<Record<string, { file: File; caption: string; conversationId: string }>>({});
   const joinInviteInProgressRef = useRef(false);
   const processedInviteCodeRef = useRef<string | null>(null);
+  const activeCallRef = useRef<DirectCallSession | null>(null);
+  const incomingCallRef = useRef<IncomingCallState | null>(null);
+  const localCallStreamRef = useRef<MediaStream | null>(null);
+  const remoteCallStreamsRef = useRef<Record<string, MediaStream>>({});
+  const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
+  const pendingOffersRef = useRef<Record<string, RTCSessionDescriptionInit>>({});
+  const pendingIceCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const peerIceRestartAttemptsRef = useRef<Record<string, number>>({});
+  const inviteRetryTimerRef = useRef<number | null>(null);
+  const unansweredCallTimerRef = useRef<number | null>(null);
+  const callManagerRef = useRef(new CallManager());
+
+  const transitionCallState = useCallback(
+    (event: CallLifecycleEvent, callId?: string) => {
+      callManagerRef.current.transition(event, callId);
+    },
+    [],
+  );
+
+  const clearOutgoingCallGuards = useCallback(() => {
+    if (inviteRetryTimerRef.current) {
+      window.clearTimeout(inviteRetryTimerRef.current);
+      inviteRetryTimerRef.current = null;
+    }
+    if (unansweredCallTimerRef.current) {
+      window.clearTimeout(unansweredCallTimerRef.current);
+      unansweredCallTimerRef.current = null;
+    }
+    callManagerRef.current.stopOutgoingGuards();
+  }, []);
 
   // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
@@ -364,6 +597,22 @@ export function ChatPage() {
   useEffect(() => {
     userProfileMapRef.current = userProfileMap;
   }, [userProfileMap]);
+
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
+
+  useEffect(() => {
+    localCallStreamRef.current = localCallStream;
+  }, [localCallStream]);
+
+  useEffect(() => {
+    remoteCallStreamsRef.current = remoteCallStreams;
+  }, [remoteCallStreams]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -460,8 +709,12 @@ export function ChatPage() {
   };
 
   const getPresenceForUser = (
-    userId: string,
+    userId: string | null | undefined,
   ): UserPresenceState | undefined => {
+    if (!userId) {
+      return undefined;
+    }
+
     const profilePresence = userProfileMap[userId];
     const realtimePresence = userPresenceMap[userId];
 
@@ -487,14 +740,14 @@ export function ChatPage() {
 
   const resolvePeerUserId = (conversation: ConversationItem) => {
     if (conversation.type === "group") {
-      return conversation.ownerId ?? conversation.participants?.[0] ?? conversation.name;
+      return conversation.ownerId ?? conversation.participants?.[0] ?? null;
     }
-    const myId = myProfile?.id ?? null;
+    const myId = myUserIdRef.current ?? myProfile?.id ?? null;
     const peer = conversation.participants?.find((id) => id && id !== myId);
     if (peer) {
       return peer;
     }
-    return conversation.name;
+    return null;
   };
 
   const getConversationDisplayName = (conversation: ConversationItem) => {
@@ -503,7 +756,7 @@ export function ChatPage() {
     }
 
     const peerUserId = resolvePeerUserId(conversation);
-    const profile = userProfileMap[peerUserId];
+    const profile = peerUserId ? userProfileMap[peerUserId] : undefined;
     if (profile?.fullName) {
       return profile.fullName;
     }
@@ -578,6 +831,66 @@ export function ChatPage() {
     }
   }, [activeConversation?.id, activeConversation?.type]);
 
+  const ensureHiddenConversationPin = useCallback(() => {
+    if (hiddenConversationPin) {
+      return hiddenConversationPin;
+    }
+
+    const firstPin =
+      window.prompt(
+        language === "vi"
+          ? "Tao ma PIN (4-8 so) de an cuoc tro chuyen"
+          : "Create a PIN (4-8 digits) to hide conversations",
+      ) ?? "";
+
+    const normalizedFirstPin = firstPin.trim();
+    if (!isValidConversationPin(normalizedFirstPin)) {
+      setBannerMessage(
+        language === "vi"
+          ? "PIN phai gom 4 den 8 chu so"
+          : "PIN must contain 4 to 8 digits",
+      );
+      return null;
+    }
+
+    const secondPin =
+      window.prompt(
+        language === "vi" ? "Nhap lai ma PIN" : "Confirm your PIN",
+      ) ?? "";
+
+    if (secondPin.trim() !== normalizedFirstPin) {
+      setBannerMessage(
+        language === "vi" ? "PIN xac nhan khong khop" : "PIN confirmation does not match",
+      );
+      return null;
+    }
+
+    setHiddenConversationPin(normalizedFirstPin);
+    persistHiddenConversationPin(normalizedFirstPin);
+    setBannerMessage(language === "vi" ? "Da tao ma PIN an chat" : "Hidden-chat PIN created");
+    return normalizedFirstPin;
+  }, [hiddenConversationPin, language]);
+
+  const verifyHiddenConversationPin = useCallback(() => {
+    if (!hiddenConversationPin) {
+      return true;
+    }
+
+    const enteredPin =
+      window.prompt(
+        language === "vi"
+          ? "Nhap ma PIN de xac nhan an cuoc tro chuyen"
+          : "Enter PIN to hide this conversation",
+      ) ?? "";
+
+    if (enteredPin.trim() !== hiddenConversationPin) {
+      setBannerMessage(language === "vi" ? "Sai ma PIN" : "Incorrect PIN");
+      return false;
+    }
+
+    return true;
+  }, [hiddenConversationPin, language]);
+
   const updateGroupPreference = useCallback(
     (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
       setGroupPreferenceMap((prev) => {
@@ -601,6 +914,17 @@ export function ChatPage() {
           }
         }
 
+        if (patch.hidden === true && !current.hidden) {
+          const ensuredPin = ensureHiddenConversationPin();
+          if (!ensuredPin) {
+            return prev;
+          }
+
+          if (hiddenConversationPin && !verifyHiddenConversationPin()) {
+            return prev;
+          }
+        }
+
         const nextItem = {
           ...current,
           ...patch,
@@ -611,7 +935,7 @@ export function ChatPage() {
         };
       });
     },
-    [language],
+    [ensureHiddenConversationPin, hiddenConversationPin, language, verifyHiddenConversationPin],
   );
 
   const onAddGroupMember = async (userId: string) => {
@@ -829,7 +1153,1089 @@ export function ChatPage() {
     }
   };
 
+  const appendCallHistory = useCallback((item: QuickCallHistoryItem) => {
+    setCallHistory((prev) => [item, ...prev].slice(0, 30));
+  }, []);
+
+  const updateCallHistoryStatus = useCallback(
+    (callId: string, status: QuickCallHistoryItem["status"]) => {
+      setCallHistory((prev) =>
+        prev.map((item) => (item.id === callId ? { ...item, status } : item)),
+      );
+    },
+    [],
+  );
+
+  const addParticipantToActiveCall = useCallback((userId: string) => {
+    if (!userId) {
+      return;
+    }
+
+    setActiveCall((prev) => {
+      if (!prev || prev.participantIds.includes(userId)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        participantIds: [...prev.participantIds, userId],
+      };
+    });
+  }, []);
+
+  const removeParticipantFromActiveCall = useCallback((userId: string) => {
+    if (!userId) {
+      return;
+    }
+
+    setActiveCall((prev) => {
+      if (!prev || !prev.participantIds.includes(userId)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        participantIds: prev.participantIds.filter((id) => id !== userId),
+      };
+    });
+  }, []);
+
+  const closePeerConnection = useCallback(
+    (peerUserId: string) => {
+      const connection = peerConnectionsRef.current[peerUserId];
+      if (connection) {
+        connection.onicecandidate = null;
+        connection.ontrack = null;
+        connection.onconnectionstatechange = null;
+        connection.close();
+        delete peerConnectionsRef.current[peerUserId];
+      }
+
+      delete pendingOffersRef.current[peerUserId];
+      delete pendingIceCandidatesRef.current[peerUserId];
+      delete peerIceRestartAttemptsRef.current[peerUserId];
+
+      const remoteStream = remoteCallStreamsRef.current[peerUserId];
+      delete remoteCallStreamsRef.current[peerUserId];
+      if (remoteStream) {
+        stopMediaStream(remoteStream);
+        setRemoteCallStreams((prev) => {
+          const next = { ...prev };
+          delete next[peerUserId];
+          remoteCallStreamsRef.current = next;
+          return next;
+        });
+      }
+
+      removeParticipantFromActiveCall(peerUserId);
+    },
+    [removeParticipantFromActiveCall],
+  );
+
+  const resetCallRuntime = useCallback(() => {
+    clearOutgoingCallGuards();
+
+    Object.values(peerConnectionsRef.current).forEach((connection) => {
+      connection.onicecandidate = null;
+      connection.oniceconnectionstatechange = null;
+      connection.ontrack = null;
+      connection.onconnectionstatechange = null;
+      connection.close();
+    });
+    peerConnectionsRef.current = {};
+
+    pendingOffersRef.current = {};
+    pendingIceCandidatesRef.current = {};
+    peerIceRestartAttemptsRef.current = {};
+
+    stopMediaStream(localCallStreamRef.current);
+    Object.values(remoteCallStreamsRef.current).forEach((stream) => {
+      stopMediaStream(stream);
+    });
+    localCallStreamRef.current = null;
+    remoteCallStreamsRef.current = {};
+
+    setLocalCallStream(null);
+    setRemoteCallStreams({});
+    setIncomingCall(null);
+    setActiveCall(null);
+    setIsMicrophoneEnabled(true);
+    setIsCameraEnabled(true);
+    transitionCallState("RESET");
+  }, [clearOutgoingCallGuards, transitionCallState]);
+
+  const publishCallSignal = useCallback(
+    (
+      conversationId: string,
+      targetUserId: string | null,
+      callId: string,
+      mode: InAppCallMode,
+      signalType: CallSignalType,
+      payload?: unknown,
+    ) => {
+      const client = realtimeClientRef.current;
+      if (!client || !client.isConnected()) {
+        return false;
+      }
+
+      return client.publishCallSignal(
+        conversationId,
+        targetUserId,
+        callId,
+        mode,
+        signalType,
+        payload,
+      );
+    },
+    [],
+  );
+
+  const acquireLocalStream = useCallback(
+    async (mode: InAppCallMode) => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          language === "vi"
+            ? "Trinh duyet khong ho tro cuoc goi"
+            : "This browser does not support in-app calling",
+        );
+      }
+
+      stopMediaStream(localCallStreamRef.current);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video:
+          mode === "video"
+            ? {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+              }
+            : false,
+      });
+
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = mode === "video";
+      });
+
+      localCallStreamRef.current = stream;
+      remoteCallStreamsRef.current = {};
+      setLocalCallStream(stream);
+      setRemoteCallStreams({});
+      setIsMicrophoneEnabled(true);
+      setIsCameraEnabled(mode === "video" && stream.getVideoTracks().length > 0);
+      return stream;
+    },
+    [language],
+  );
+
+  const flushPendingIceCandidatesForPeer = useCallback(async (peerUserId: string) => {
+    const connection = peerConnectionsRef.current[peerUserId];
+    if (!connection || !connection.remoteDescription) {
+      return;
+    }
+
+    const pending = [...(pendingIceCandidatesRef.current[peerUserId] ?? [])];
+    delete pendingIceCandidatesRef.current[peerUserId];
+
+    for (const candidate of pending) {
+      try {
+        await connection.addIceCandidate(candidate);
+      } catch {
+        // Ignore malformed candidate payloads from older clients.
+      }
+    }
+  }, []);
+
+  const attachLocalTracks = useCallback((connection: RTCPeerConnection) => {
+    const localStream = localCallStreamRef.current;
+    if (!localStream) {
+      return;
+    }
+
+    const attachedTrackIds = new Set(
+      connection
+        .getSenders()
+        .map((sender) => sender.track?.id)
+        .filter((trackId): trackId is string => Boolean(trackId)),
+    );
+
+    localStream.getTracks().forEach((track) => {
+      if (!attachedTrackIds.has(track.id)) {
+        connection.addTrack(track, localStream);
+      }
+    });
+  }, []);
+
+  const createPeerConnection = useCallback(
+    (session: DirectCallSession, peerUserId: string) => {
+      const existingConnection = peerConnectionsRef.current[peerUserId];
+      if (
+        existingConnection &&
+        existingConnection.connectionState !== "closed" &&
+        existingConnection.connectionState !== "failed"
+      ) {
+        return existingConnection;
+      }
+
+      if (existingConnection) {
+        existingConnection.onicecandidate = null;
+        existingConnection.oniceconnectionstatechange = null;
+        existingConnection.ontrack = null;
+        existingConnection.onconnectionstatechange = null;
+        existingConnection.close();
+        delete peerConnectionsRef.current[peerUserId];
+      }
+
+      const shouldForceRelay =
+        WEBRTC_FORCE_RELAY ||
+        (peerIceRestartAttemptsRef.current[peerUserId] ?? 0) > 0;
+
+      const connection = new RTCPeerConnection({
+        iceServers: WEBRTC_ICE_SERVERS,
+        iceTransportPolicy: shouldForceRelay ? "relay" : WEBRTC_ICE_POLICY,
+      });
+
+      connection.onicecandidate = (event) => {
+        if (!event.candidate) {
+          return;
+        }
+
+        publishCallSignal(
+          session.conversationId,
+          peerUserId,
+          session.callId,
+          session.mode,
+          "WEBRTC_ICE",
+          {
+            candidate: event.candidate.toJSON(),
+            iceConnectionState: connection.iceConnectionState,
+          },
+        );
+      };
+
+      connection.oniceconnectionstatechange = () => {
+        if (!activeCallRef.current || activeCallRef.current.callId !== session.callId) {
+          return;
+        }
+
+        const iceState = connection.iceConnectionState;
+        if (iceState === "connected" || iceState === "completed") {
+          peerIceRestartAttemptsRef.current[peerUserId] = 0;
+          return;
+        }
+
+        if (iceState !== "failed" && iceState !== "disconnected") {
+          return;
+        }
+
+        const attempts = peerIceRestartAttemptsRef.current[peerUserId] ?? 0;
+        if (attempts >= 2) {
+          closePeerConnection(peerUserId);
+          return;
+        }
+        peerIceRestartAttemptsRef.current[peerUserId] = attempts + 1;
+
+        void (async () => {
+          try {
+            if (connection.signalingState !== "stable") {
+              return;
+            }
+
+            if (attempts === 0 && !WEBRTC_FORCE_RELAY) {
+              connection.setConfiguration({
+                iceServers: WEBRTC_ICE_SERVERS,
+                iceTransportPolicy: "relay",
+              });
+            }
+
+            const restartOffer = await connection.createOffer({
+              iceRestart: true,
+              offerToReceiveAudio: true,
+              offerToReceiveVideo: session.mode === "video",
+            });
+            await connection.setLocalDescription(restartOffer);
+
+            publishCallSignal(
+              session.conversationId,
+              peerUserId,
+              session.callId,
+              session.mode,
+              "WEBRTC_OFFER",
+              {
+                description: restartOffer,
+                initiatorUserId: session.initiatorUserId,
+                conversationType: session.conversationType,
+                restart: true,
+              },
+            );
+          } catch {
+            closePeerConnection(peerUserId);
+          }
+        })();
+      };
+
+      connection.ontrack = (event) => {
+        const [stream] = event.streams;
+        setRemoteCallStreams((prev) => {
+          if (stream) {
+            const next = {
+              ...prev,
+              [peerUserId]: stream,
+            };
+            remoteCallStreamsRef.current = next;
+            return next;
+          }
+
+          const fallback = prev[peerUserId] ?? new MediaStream();
+          fallback.addTrack(event.track);
+          const next = {
+            ...prev,
+            [peerUserId]: fallback,
+          };
+          remoteCallStreamsRef.current = next;
+          return next;
+        });
+
+        setActiveCall((prev) =>
+          prev && prev.callId === session.callId
+            ? { ...prev, status: "connected" }
+            : prev,
+        );
+        updateCallHistoryStatus(session.callId, "connected");
+        addParticipantToActiveCall(peerUserId);
+      };
+
+      connection.onconnectionstatechange = () => {
+        if (connection.connectionState === "connected") {
+          clearOutgoingCallGuards();
+          transitionCallState("PEER_CONNECTED", session.callId);
+          setActiveCall((prev) =>
+            prev && prev.callId === session.callId
+              ? { ...prev, status: "connected" }
+              : prev,
+          );
+          updateCallHistoryStatus(session.callId, "connected");
+          addParticipantToActiveCall(peerUserId);
+          return;
+        }
+
+        if (connection.connectionState === "failed") {
+          closePeerConnection(peerUserId);
+          setBannerMessage(
+            language === "vi"
+              ? "Mat ket noi voi mot thanh vien trong cuoc goi"
+              : "Connection with one participant was lost",
+          );
+          return;
+        }
+
+        if (connection.connectionState === "closed") {
+          closePeerConnection(peerUserId);
+        }
+      };
+
+      peerConnectionsRef.current[peerUserId] = connection;
+      return connection;
+    },
+    [
+      addParticipantToActiveCall,
+      clearOutgoingCallGuards,
+      closePeerConnection,
+      language,
+      publishCallSignal,
+      transitionCallState,
+      updateCallHistoryStatus,
+    ],
+  );
+
+  const processPendingOffer = useCallback(
+    async (session: DirectCallSession, peerUserId: string) => {
+      const offer = pendingOffersRef.current[peerUserId];
+      const connection = createPeerConnection(session, peerUserId);
+      if (!offer || !connection) {
+        return false;
+      }
+
+      attachLocalTracks(connection);
+
+      if (connection.signalingState === "have-local-offer") {
+        await connection.setLocalDescription({ type: "rollback" });
+      }
+
+      await connection.setRemoteDescription(offer);
+      delete pendingOffersRef.current[peerUserId];
+      await flushPendingIceCandidatesForPeer(peerUserId);
+
+      const answer = await connection.createAnswer();
+      await connection.setLocalDescription(answer);
+
+      const sent = publishCallSignal(
+        session.conversationId,
+        peerUserId,
+        session.callId,
+        session.mode,
+        "WEBRTC_ANSWER",
+        {
+          description: answer,
+          initiatorUserId: session.initiatorUserId,
+          conversationType: session.conversationType,
+        },
+      );
+
+      if (!sent) {
+        throw new Error(
+          language === "vi"
+            ? "Khong gui duoc tin hieu tra loi cuoc goi"
+            : "Cannot send call answer signal",
+        );
+      }
+
+      return true;
+    },
+    [
+      attachLocalTracks,
+      createPeerConnection,
+      flushPendingIceCandidatesForPeer,
+      language,
+      publishCallSignal,
+    ],
+  );
+
+  const createOfferForPeer = useCallback(
+    async (session: DirectCallSession, peerUserId: string) => {
+      const connection = createPeerConnection(session, peerUserId);
+      attachLocalTracks(connection);
+
+      const offer = await connection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: session.mode === "video",
+      });
+      await connection.setLocalDescription(offer);
+
+      const sent = publishCallSignal(
+        session.conversationId,
+        peerUserId,
+        session.callId,
+        session.mode,
+        "WEBRTC_OFFER",
+        {
+          description: offer,
+          initiatorUserId: session.initiatorUserId,
+          conversationType: session.conversationType,
+        },
+      );
+
+      if (!sent) {
+        throw new Error(
+          language === "vi"
+            ? "Khong the gui loi moi ket noi video"
+            : "Cannot send call negotiation offer",
+        );
+      }
+    },
+    [attachLocalTracks, createPeerConnection, language, publishCallSignal],
+  );
+
+  const onEndDirectCall = useCallback(
+    (reason = "ended", notifyPeer = true) => {
+      const currentCall = activeCallRef.current;
+      if (currentCall && notifyPeer) {
+        const myUserId = myUserIdRef.current;
+
+        if (currentCall.conversationType === "group") {
+          const signalType: CallSignalType =
+            myUserId && currentCall.initiatorUserId === myUserId
+              ? "CALL_END"
+              : "CALL_LEAVE";
+
+          publishCallSignal(
+            currentCall.conversationId,
+            null,
+            currentCall.callId,
+            currentCall.mode,
+            signalType,
+            {
+              reason,
+              initiatorUserId: currentCall.initiatorUserId,
+              conversationType: "group",
+            },
+          );
+        } else if (currentCall.peerUserId) {
+          publishCallSignal(
+            currentCall.conversationId,
+            currentCall.peerUserId,
+            currentCall.callId,
+            currentCall.mode,
+            "CALL_END",
+            {
+              reason,
+              initiatorUserId: currentCall.initiatorUserId,
+              conversationType: "private",
+            },
+          );
+        }
+      }
+
+      if (currentCall) {
+        clearOutgoingCallGuards();
+        transitionCallState("END", currentCall.callId);
+        updateCallHistoryStatus(currentCall.callId, "ended");
+      }
+
+      resetCallRuntime();
+    },
+    [
+      clearOutgoingCallGuards,
+      publishCallSignal,
+      resetCallRuntime,
+      transitionCallState,
+      updateCallHistoryStatus,
+    ],
+  );
+
+  const onRejectIncomingCall = useCallback(() => {
+    const pendingCall = incomingCallRef.current;
+    if (!pendingCall) {
+      return;
+    }
+
+    publishCallSignal(
+      pendingCall.conversationId,
+      pendingCall.peerUserId,
+      pendingCall.callId,
+      pendingCall.mode,
+      "CALL_REJECT",
+      {
+        reason: "declined",
+        initiatorUserId: pendingCall.initiatorUserId,
+        conversationType: pendingCall.conversationType,
+      },
+    );
+
+    appendCallHistory({
+      id: pendingCall.callId,
+      conversationId: pendingCall.conversationId,
+      conversationName: pendingCall.peerDisplayName,
+      mode: pendingCall.mode,
+      direction: "incoming",
+      status: "rejected",
+      createdAt: new Date().toISOString(),
+    });
+
+    transitionCallState("END", pendingCall.callId);
+
+    setIncomingCall(null);
+    pendingOffersRef.current = {};
+    pendingIceCandidatesRef.current = {};
+  }, [appendCallHistory, publishCallSignal, transitionCallState]);
+
+  const onAcceptIncomingCall = useCallback(async () => {
+    const pendingCall = incomingCallRef.current;
+    if (!pendingCall) {
+      return;
+    }
+
+    hasUserOpenedConversationRef.current = true;
+    manuallyOpenedConversationIdRef.current = pendingCall.conversationId;
+    setActiveConversationId(pendingCall.conversationId);
+    setActiveTab("messages");
+    setIncomingCall(null);
+
+    const session: DirectCallSession = {
+      callId: pendingCall.callId,
+      conversationId: pendingCall.conversationId,
+      conversationType: pendingCall.conversationType,
+      initiatorUserId: pendingCall.initiatorUserId,
+      peerUserId:
+        pendingCall.conversationType === "private"
+          ? pendingCall.peerUserId
+          : undefined,
+      peerDisplayName: pendingCall.peerDisplayName,
+      mode: pendingCall.mode,
+      direction: "incoming",
+      status: "connecting",
+      startedAt: new Date().toISOString(),
+      participantIds: [],
+    };
+
+    transitionCallState("LOCAL_ACCEPTED", session.callId);
+    setActiveCall(session);
+    appendCallHistory({
+      id: session.callId,
+      conversationId: session.conversationId,
+      conversationName: session.peerDisplayName,
+      mode: session.mode,
+      direction: "incoming",
+      status: "started",
+      createdAt: session.startedAt,
+    });
+
+    try {
+      await acquireLocalStream(session.mode);
+
+      const acceptSent = publishCallSignal(
+        session.conversationId,
+        pendingCall.peerUserId,
+        session.callId,
+        session.mode,
+        "CALL_ACCEPT",
+        {
+          acceptedAt: new Date().toISOString(),
+          initiatorUserId: session.initiatorUserId,
+          conversationType: session.conversationType,
+        },
+      );
+
+      if (!acceptSent) {
+        throw new Error(
+          language === "vi"
+            ? "Khong the nhan cuoc goi khi realtime dang ngat"
+            : "Cannot answer call while realtime is disconnected",
+        );
+      }
+
+      if (session.conversationType === "group") {
+        publishCallSignal(
+          session.conversationId,
+          null,
+          session.callId,
+          session.mode,
+          "CALL_JOINED",
+          {
+            initiatorUserId: session.initiatorUserId,
+            conversationType: "group",
+          },
+        );
+
+        const offerSources = Object.keys(pendingOffersRef.current);
+        for (const peerUserId of offerSources) {
+          await processPendingOffer(session, peerUserId);
+        }
+      } else if (pendingCall.peerUserId) {
+        await processPendingOffer(session, pendingCall.peerUserId);
+      }
+    } catch (error) {
+      publishCallSignal(
+        session.conversationId,
+        pendingCall.peerUserId,
+        session.callId,
+        session.mode,
+        "CALL_END",
+        {
+          reason: "accept_failed",
+          initiatorUserId: session.initiatorUserId,
+          conversationType: session.conversationType,
+        },
+      );
+      updateCallHistoryStatus(session.callId, "missed");
+      resetCallRuntime();
+
+      const detail = (error as { message?: string })?.message;
+      setBannerMessage(detail || toApiErrorMessage(error));
+    }
+  }, [
+    acquireLocalStream,
+    appendCallHistory,
+    language,
+    processPendingOffer,
+    publishCallSignal,
+    setActiveConversationId,
+    updateCallHistoryStatus,
+    resetCallRuntime,
+  ]);
+
+  const onToggleMicrophone = useCallback(() => {
+    const stream = localCallStreamRef.current;
+    if (!stream) {
+      return;
+    }
+
+    const nextEnabled = !isMicrophoneEnabled;
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = nextEnabled;
+    });
+    setIsMicrophoneEnabled(nextEnabled);
+  }, [isMicrophoneEnabled]);
+
+  const onToggleCamera = useCallback(() => {
+    const stream = localCallStreamRef.current;
+    const call = activeCallRef.current;
+    if (!stream || !call || call.mode !== "video") {
+      return;
+    }
+
+    const nextEnabled = !isCameraEnabled;
+    stream.getVideoTracks().forEach((track) => {
+      track.enabled = nextEnabled;
+    });
+    setIsCameraEnabled(nextEnabled);
+  }, [isCameraEnabled]);
+
+  const startOutgoingCallGuards = useCallback(
+    (session: DirectCallSession) => {
+      clearOutgoingCallGuards();
+      callManagerRef.current.startOutgoingGuards(session.callId);
+
+      const inviteTarget =
+        session.conversationType === "group" ? null : session.peerUserId ?? null;
+
+      const scheduleRetry = () => {
+        inviteRetryTimerRef.current = window.setTimeout(() => {
+          const currentCall = activeCallRef.current;
+          if (!currentCall || currentCall.callId !== session.callId) {
+            return;
+          }
+          if (
+            currentCall.status === "connected" ||
+            currentCall.status === "connecting"
+          ) {
+            return;
+          }
+
+          publishCallSignal(
+            session.conversationId,
+            inviteTarget,
+            session.callId,
+            session.mode,
+            "CALL_INVITE",
+            {
+              createdAt: session.startedAt,
+              initiatorUserId: session.initiatorUserId,
+              conversationType: session.conversationType,
+              retry: true,
+            },
+          );
+
+          scheduleRetry();
+        }, CALL_INVITE_RETRY_MS);
+      };
+
+      scheduleRetry();
+
+      unansweredCallTimerRef.current = window.setTimeout(() => {
+        const currentCall = activeCallRef.current;
+        if (!currentCall || currentCall.callId !== session.callId) {
+          return;
+        }
+        if (currentCall.status === "connected") {
+          return;
+        }
+
+        transitionCallState("TIMEOUT", session.callId);
+        publishCallSignal(
+          session.conversationId,
+          inviteTarget,
+          session.callId,
+          session.mode,
+          "CALL_END",
+          {
+            reason: "no_answer_timeout",
+            initiatorUserId: session.initiatorUserId,
+            conversationType: session.conversationType,
+          },
+        );
+        updateCallHistoryStatus(session.callId, "missed");
+        resetCallRuntime();
+        setBannerMessage(
+          language === "vi"
+            ? "Khong co phan hoi cuoc goi"
+            : "Call timed out without answer",
+        );
+      }, CALL_CONNECT_TIMEOUT_MS);
+    },
+    [
+      clearOutgoingCallGuards,
+      language,
+      publishCallSignal,
+      resetCallRuntime,
+      transitionCallState,
+      updateCallHistoryStatus,
+    ],
+  );
+
+  const handleCallEvent = useCallback(
+    (event: CallRealtimeEvent) => {
+      const myUserId = myUserIdRef.current;
+      if (!myUserId || !event.callId || !event.conversationId) {
+        return;
+      }
+
+      // Ignore the server echo for the sender tab.
+      if (event.actorId === myUserId) {
+        return;
+      }
+
+      if (event.targetUserId && event.targetUserId !== myUserId) {
+        return;
+      }
+
+      const mode: InAppCallMode = event.mode === "video" ? "video" : "voice";
+      const peerDisplayName =
+        userProfileMapRef.current[event.actorId]?.fullName ??
+        `User ${event.actorId.slice(0, 8)}`;
+      const payload = parseCallSignalPayload(event.payload);
+      const conversationType: "private" | "group" =
+        payload.conversationType === "group" || event.targetUserId === null
+          ? "group"
+          : "private";
+      const initiatorUserId = payload.initiatorUserId ?? event.actorId;
+
+      const currentCall = activeCallRef.current;
+      if (currentCall && currentCall.callId !== event.callId && event.signalType === "CALL_INVITE") {
+        publishCallSignal(event.conversationId, event.actorId, event.callId, mode, "CALL_REJECT", {
+          reason: "busy",
+          initiatorUserId,
+          conversationType,
+        });
+        return;
+      }
+
+      if (currentCall && currentCall.callId !== event.callId) {
+        return;
+      }
+
+      if (event.signalType === "CALL_INVITE") {
+        if (!activeCallRef.current) {
+          transitionCallState("INCOMING_INVITE", event.callId);
+          setIncomingCall({
+            callId: event.callId,
+            conversationId: event.conversationId,
+            conversationType,
+            initiatorUserId,
+            peerUserId: event.actorId,
+            peerDisplayName,
+            mode,
+          });
+          setBannerMessage(
+            conversationType === "group"
+              ? language === "vi"
+                ? `${peerDisplayName} dang mo cuoc goi nhom`
+                : `${peerDisplayName} started a group call`
+              : language === "vi"
+                ? `${peerDisplayName} dang goi cho ban`
+                : `${peerDisplayName} is calling you`,
+          );
+        }
+        return;
+      }
+
+      if (event.signalType === "CALL_ACCEPT") {
+        if (currentCall && currentCall.callId === event.callId) {
+          clearOutgoingCallGuards();
+          transitionCallState("REMOTE_ACCEPTED", event.callId);
+          setActiveCall((prev) =>
+            prev && prev.callId === event.callId
+              ? { ...prev, status: "connecting" }
+              : prev,
+          );
+          addParticipantToActiveCall(event.actorId);
+
+          if (currentCall.conversationType === "private") {
+            const connection = peerConnectionsRef.current[event.actorId];
+            const shouldCreateFallbackOffer =
+              !connection || !connection.localDescription;
+            if (shouldCreateFallbackOffer) {
+              void createOfferForPeer(currentCall, event.actorId).catch(() => {
+                closePeerConnection(event.actorId);
+              });
+            }
+          }
+        }
+        return;
+      }
+
+      if (event.signalType === "CALL_REJECT") {
+        if (currentCall && currentCall.callId === event.callId) {
+          clearOutgoingCallGuards();
+          transitionCallState("END", event.callId);
+          if (currentCall.conversationType === "private") {
+            updateCallHistoryStatus(event.callId, "rejected");
+            resetCallRuntime();
+          }
+
+          const reason = payload.reason ?? "declined";
+          setBannerMessage(
+            reason === "busy"
+              ? language === "vi"
+                ? `${peerDisplayName} dang ban`
+                : `${peerDisplayName} is busy`
+              : language === "vi"
+                ? `${peerDisplayName} da tu choi cuoc goi`
+                : `${peerDisplayName} declined the call`,
+          );
+        }
+        return;
+      }
+
+      if (event.signalType === "CALL_JOINED") {
+        if (!currentCall || currentCall.callId !== event.callId) {
+          return;
+        }
+
+        addParticipantToActiveCall(event.actorId);
+
+        if (event.actorId === myUserId) {
+          return;
+        }
+
+        void createOfferForPeer(currentCall, event.actorId).catch(() => {
+          closePeerConnection(event.actorId);
+        });
+        return;
+      }
+
+      if (event.signalType === "CALL_LEAVE") {
+        if (!currentCall || currentCall.callId !== event.callId) {
+          return;
+        }
+
+        closePeerConnection(event.actorId);
+        if (currentCall.conversationType === "private") {
+          clearOutgoingCallGuards();
+          transitionCallState("END", event.callId);
+          updateCallHistoryStatus(event.callId, "ended");
+          resetCallRuntime();
+          return;
+        }
+        setBannerMessage(
+          language === "vi"
+            ? `${peerDisplayName} da roi cuoc goi`
+            : `${peerDisplayName} left the call`,
+        );
+        return;
+      }
+
+      if (event.signalType === "CALL_END") {
+        if (currentCall && currentCall.callId === event.callId) {
+          clearOutgoingCallGuards();
+          transitionCallState("END", event.callId);
+          updateCallHistoryStatus(event.callId, "ended");
+          resetCallRuntime();
+          setBannerMessage(
+            language === "vi"
+              ? `${peerDisplayName} da ket thuc cuoc goi`
+              : `${peerDisplayName} ended the call`,
+          );
+        }
+        if (incomingCallRef.current?.callId === event.callId) {
+          setIncomingCall(null);
+        }
+        return;
+      }
+
+      if (event.signalType === "WEBRTC_OFFER") {
+        if (!payload.description) {
+          return;
+        }
+
+        pendingOffersRef.current[event.actorId] = payload.description;
+
+        if (!activeCallRef.current) {
+          setIncomingCall({
+            callId: event.callId,
+            conversationId: event.conversationId,
+            conversationType,
+            initiatorUserId,
+            peerUserId: event.actorId,
+            peerDisplayName,
+            mode,
+          });
+          return;
+        }
+
+        if (activeCallRef.current.callId === event.callId) {
+          void processPendingOffer(activeCallRef.current, event.actorId).catch(() => {
+            updateCallHistoryStatus(event.callId, "missed");
+            closePeerConnection(event.actorId);
+          });
+        }
+        return;
+      }
+
+      if (event.signalType === "WEBRTC_ANSWER") {
+        if (!payload.description || !currentCall || currentCall.callId !== event.callId) {
+          return;
+        }
+
+        const connection = peerConnectionsRef.current[event.actorId];
+        if (!connection) {
+          return;
+        }
+
+        void (async () => {
+          try {
+            if (connection.signalingState === "closed") {
+              return;
+            }
+            await connection.setRemoteDescription(payload.description as RTCSessionDescriptionInit);
+            await flushPendingIceCandidatesForPeer(event.actorId);
+            setActiveCall((prev) =>
+              prev && prev.callId === event.callId
+                ? { ...prev, status: "connecting" }
+                : prev,
+            );
+          } catch {
+            updateCallHistoryStatus(event.callId, "ended");
+            resetCallRuntime();
+            setBannerMessage(
+              language === "vi"
+                ? "Khong the ket noi cuoc goi"
+                : "Cannot establish call connection",
+            );
+          }
+        })();
+        return;
+      }
+
+      if (event.signalType === "WEBRTC_ICE") {
+        if (!payload.candidate || !currentCall || currentCall.callId !== event.callId) {
+          return;
+        }
+
+        const connection = peerConnectionsRef.current[event.actorId];
+        if (!connection) {
+          const pending = pendingIceCandidatesRef.current[event.actorId] ?? [];
+          pending.push(payload.candidate);
+          pendingIceCandidatesRef.current[event.actorId] = pending;
+          return;
+        }
+
+        if (connection.remoteDescription) {
+          void connection.addIceCandidate(payload.candidate).catch(() => {
+            // Ignore malformed candidate payloads.
+          });
+        } else {
+          const pending = pendingIceCandidatesRef.current[event.actorId] ?? [];
+          pending.push(payload.candidate);
+          pendingIceCandidatesRef.current[event.actorId] = pending;
+        }
+      }
+    },
+    [
+      addParticipantToActiveCall,
+      clearOutgoingCallGuards,
+      closePeerConnection,
+      createOfferForPeer,
+      flushPendingIceCandidatesForPeer,
+      language,
+      processPendingOffer,
+      publishCallSignal,
+      resetCallRuntime,
+      transitionCallState,
+      updateCallHistoryStatus,
+    ],
+  );
+
   const onStartQuickCall = async (mode: QuickCallMode) => {
+    if (activeCallRef.current) {
+      setBannerMessage(
+        language === "vi"
+          ? "Hay ket thuc cuoc goi hien tai truoc"
+          : "Please end the current call first",
+      );
+      return;
+    }
+
     if (!activeConversationId || !activeConversation) {
       setBannerMessage(
         language === "vi"
@@ -839,74 +2245,170 @@ export function ChatPage() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const roomToken = `${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`;
-    const link = `https://meet.jit.si/zola-${mode}-${roomToken}`;
-    const title =
-      mode === "video"
-        ? language === "vi"
-          ? "Cuoc goi video"
-          : "Video call"
-        : language === "vi"
-          ? "Cuoc goi thoai"
-          : "Voice call";
-
-    try {
-      const result = await sendMessage(
-        activeConversationId,
-        JSON.stringify({
-          title,
-          link,
-          mode,
-          createdAt: nowIso,
-        }),
-        { type: "MEETING" },
-      );
-
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-
-      const conversationName = getConversationDisplayName(activeConversation);
-      setCallHistory((prev) => [
-        {
-          id: result.data.id,
-          conversationId: activeConversationId,
-          conversationName,
-          mode,
-          link,
-          createdAt: nowIso,
-        },
-        ...prev,
-      ].slice(0, 30));
-
-      window.open(link, "_blank", "noopener,noreferrer");
-      await fetchConversations({ silent: true });
+    const currentUserId = myUserIdRef.current;
+    if (!currentUserId) {
       setBannerMessage(
         language === "vi"
-          ? mode === "video"
-            ? "Da bat dau cuoc goi video"
-            : "Da bat dau cuoc goi thoai"
-          : mode === "video"
-            ? "Video call started"
-            : "Voice call started",
+          ? "Thong tin tai khoan chua san sang, vui long thu lai"
+          : "Account context is not ready yet, please try again",
+      );
+      return;
+    }
+
+    const conversationType: "private" | "group" =
+      activeConversation.type === "group" ? "group" : "private";
+
+    const peerUserId =
+      conversationType === "private"
+        ? resolvePeerUserId(activeConversation)
+        : undefined;
+
+    if (conversationType === "private" && (!peerUserId || peerUserId === myUserIdRef.current)) {
+      setBannerMessage(
+        language === "vi"
+          ? "Khong xac dinh duoc nguoi nhan"
+          : "Cannot determine call recipient",
+      );
+      return;
+    }
+
+    const startedAt = new Date().toISOString();
+    const callId = `${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const initiatorUserId = currentUserId;
+    const session: DirectCallSession = {
+      callId,
+      conversationId: activeConversationId,
+      conversationType,
+      initiatorUserId,
+      peerUserId: peerUserId ?? undefined,
+      peerDisplayName: getConversationDisplayName(activeConversation),
+      mode,
+      direction: "outgoing",
+      status: "calling",
+      startedAt,
+      participantIds: [],
+    };
+
+    setIncomingCall(null);
+    setActiveCall(session);
+    setActiveTab("messages");
+
+    appendCallHistory({
+      id: callId,
+      conversationId: activeConversationId,
+      conversationName: session.peerDisplayName,
+      mode,
+      direction: "outgoing",
+      status: "started",
+      createdAt: startedAt,
+    });
+
+    try {
+      await acquireLocalStream(mode);
+
+      const inviteTarget = conversationType === "group" ? null : peerUserId ?? null;
+      const inviteSent = publishCallSignal(
+        session.conversationId,
+        inviteTarget,
+        session.callId,
+        session.mode,
+        "CALL_INVITE",
+        {
+          createdAt: startedAt,
+          initiatorUserId,
+          conversationType,
+        },
+      );
+
+      if (!inviteSent) {
+        throw new Error(
+          language === "vi"
+            ? "Realtime dang mat ket noi"
+            : "Realtime connection is unavailable",
+        );
+      }
+
+      if (conversationType === "group") {
+        const joinedSent = publishCallSignal(
+          session.conversationId,
+          null,
+          session.callId,
+          session.mode,
+          "CALL_JOINED",
+          {
+            initiatorUserId,
+            conversationType,
+          },
+        );
+
+        if (!joinedSent) {
+          throw new Error(
+            language === "vi"
+              ? "Khong the bat dau cuoc goi nhom"
+              : "Cannot start group call",
+          );
+        }
+      } else if (peerUserId) {
+        // Wait for CALL_ACCEPT before creating SDP offer to avoid glare/race conditions.
+      }
+
+      transitionCallState("OUTGOING_START", callId);
+      startOutgoingCallGuards(session);
+      setActiveCall((prev) =>
+        prev && prev.callId === callId
+          ? {
+              ...prev,
+              status: "ringing",
+              participantIds:
+                prev.conversationType === "group"
+                  ? prev.participantIds
+                  : peerUserId
+                    ? Array.from(new Set([...prev.participantIds, peerUserId]))
+                    : prev.participantIds,
+            }
+          : prev,
       );
     } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
+      clearOutgoingCallGuards();
+      transitionCallState("END", callId);
+      updateCallHistoryStatus(callId, "missed");
+      resetCallRuntime();
+      const detail = (error as { message?: string })?.message;
+      setBannerMessage(detail || toApiErrorMessage(error));
     }
   };
 
+  useEffect(() => {
+    return () => {
+      clearOutgoingCallGuards();
+      callManagerRef.current.dispose();
+
+      stopMediaStream(localCallStreamRef.current);
+      Object.values(remoteCallStreamsRef.current).forEach((stream) => {
+        stopMediaStream(stream);
+      });
+
+      Object.values(peerConnectionsRef.current).forEach((connection) => {
+        connection.onicecandidate = null;
+        connection.oniceconnectionstatechange = null;
+        connection.ontrack = null;
+        connection.onconnectionstatechange = null;
+        connection.close();
+      });
+    };
+  }, [clearOutgoingCallGuards]);
+
   const filteredConversations = useMemo(() => {
-    const normalized = searchText.trim().toLowerCase();
+    const rawSearch = searchText.trim();
+    const normalized = rawSearch.toLowerCase();
+    const isPinUnlockQuery = Boolean(hiddenConversationPin && rawSearch === hiddenConversationPin);
     const visible = conversations.filter(
-      (conversation) => !groupPreferenceMap[conversation.id]?.hidden,
+      (conversation) => isPinUnlockQuery || !groupPreferenceMap[conversation.id]?.hidden,
     );
 
-    const base = !normalized
+    const base = isPinUnlockQuery
+      ? visible
+      : !normalized
       ? visible
       : visible.filter((conversation) => {
       const displayName = getConversationDisplayName(conversation);
@@ -926,7 +2428,14 @@ export function ChatPage() {
       const rightTime = right.lastMessageAt ? Date.parse(right.lastMessageAt) : 0;
       return rightTime - leftTime;
     });
-  }, [conversations, groupPreferenceMap, searchText, userProfileMap, myProfile?.id]);
+  }, [
+    conversations,
+    groupPreferenceMap,
+    hiddenConversationPin,
+    searchText,
+    userProfileMap,
+    myProfile?.id,
+  ]);
 
   const sidebarChats = useMemo<ChatListItem[]>(() => {
     return filteredConversations.map((conversation) => {
@@ -1237,7 +2746,6 @@ export function ChatPage() {
     const client = new ChatRealtimeClient(accessToken, {
       onConnect: () => {
         setIsRealtimeConnected(true);
-        client.subscribeUserQueue();
         client.syncConversationSubscriptions(conversationIdsRef.current);
       },
       onDisconnect: () => {
@@ -1331,7 +2839,9 @@ export function ChatPage() {
             });
 
             const client = realtimeClientRef.current;
-            if (client && client.isConnected()) {
+            const shouldSyncSubscriptions =
+              !conversationIdsRef.current.includes(event.conversationId);
+            if (client && client.isConnected() && shouldSyncSubscriptions) {
               client.syncConversationSubscriptions(
                 Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
               );
@@ -1496,6 +3006,14 @@ export function ChatPage() {
               markConversationReadLocal(event.conversationId);
             }
           }
+
+          if (
+            event.eventType === "READ_RECEIPT" &&
+            event.actorId === myUserIdRef.current &&
+            event.conversationId
+          ) {
+            lastReadSyncedMessageByConversationRef.current[event.conversationId] = normalizedMessage.id;
+          }
         }
 
         let unreadPatch = event.unreadCount ?? undefined;
@@ -1536,7 +3054,9 @@ export function ChatPage() {
 
         if (event.conversationId) {
           const client = realtimeClientRef.current;
-          if (client && client.isConnected()) {
+          const shouldSyncSubscriptions =
+            !conversationIdsRef.current.includes(event.conversationId);
+          if (client && client.isConnected() && shouldSyncSubscriptions) {
             client.syncConversationSubscriptions(
               Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
             );
@@ -1616,6 +3136,9 @@ export function ChatPage() {
             lastChangedAt: event.lastSeenAt ?? event.lastChangedAt ?? null,
           },
         ]);
+      },
+      onCallEvent: (event) => {
+        handleCallEvent(event);
       },
     });
 
@@ -1729,9 +3252,22 @@ export function ChatPage() {
     if (!latestMessageId) {
       return;
     }
+
+    const myUserId = myUserIdRef.current;
+    const alreadySeenByMe = Boolean(
+      myUserId && latestMessage?.seenBy?.includes(myUserId),
+    );
+    const lastSyncedMessageId =
+      lastReadSyncedMessageByConversationRef.current[activeConversationId];
+    const shouldSendReadSync =
+      lastSyncedMessageId !== latestMessageId &&
+      (!alreadySeenByMe || shouldSyncAfterManualOpen);
+
     markConversationReadLocal(activeConversationId);
     pendingReadSyncOnOpenRef.current = false;
-    void syncConversationReadState(activeConversationId, latestMessageId);
+    if (shouldSendReadSync) {
+      void syncConversationReadState(activeConversationId, latestMessageId);
+    }
   }, [
     activeConversationId,
     activeTab,
@@ -1764,8 +3300,20 @@ export function ChatPage() {
       if (!latestMessageId) {
         return;
       }
+
+      const myUserId = myUserIdRef.current;
+      const alreadySeenByMe = Boolean(
+        myUserId && latestMessage?.seenBy?.includes(myUserId),
+      );
+      const lastSyncedMessageId =
+        lastReadSyncedMessageByConversationRef.current[
+          activeConversationIdRef.current
+        ];
+
       markConversationReadLocal(activeConversationIdRef.current);
-      void syncConversationReadState(activeConversationIdRef.current, latestMessageId);
+      if (!alreadySeenByMe && lastSyncedMessageId !== latestMessageId) {
+        void syncConversationReadState(activeConversationIdRef.current, latestMessageId);
+      }
     };
 
     window.addEventListener("focus", syncReadWhenFocused);
@@ -2626,6 +4174,77 @@ export function ChatPage() {
     }
   };
 
+  const onSaveHiddenConversationPin = () => {
+    const nextPin = settingsPinDraft.trim();
+    const confirmPin = settingsPinConfirmDraft.trim();
+
+    if (!isValidConversationPin(nextPin)) {
+      setBannerMessage(
+        language === "vi"
+          ? "PIN phai gom 4 den 8 chu so"
+          : "PIN must contain 4 to 8 digits",
+      );
+      return;
+    }
+
+    if (nextPin !== confirmPin) {
+      setBannerMessage(
+        language === "vi" ? "PIN xac nhan khong khop" : "PIN confirmation does not match",
+      );
+      return;
+    }
+
+    setHiddenConversationPin(nextPin);
+    persistHiddenConversationPin(nextPin);
+    setSettingsPinDraft("");
+    setSettingsPinConfirmDraft("");
+    setBannerMessage(
+      language === "vi" ? "Da cap nhat ma PIN an chat" : "Hidden-chat PIN updated",
+    );
+  };
+
+  const onRemoveHiddenConversationPin = () => {
+    if (!hiddenConversationPin) {
+      return;
+    }
+
+    const enteredPin =
+      window.prompt(
+        language === "vi"
+          ? "Nhap ma PIN hien tai de xoa"
+          : "Enter current PIN to remove it",
+      ) ?? "";
+
+    if (enteredPin.trim() !== hiddenConversationPin) {
+      setBannerMessage(language === "vi" ? "Sai ma PIN" : "Incorrect PIN");
+      return;
+    }
+
+    setHiddenConversationPin(null);
+    persistHiddenConversationPin(null);
+    setGroupPreferenceMap((prev) => {
+      let changed = false;
+      const next: Record<string, GroupPreferenceItem> = {};
+
+      Object.entries(prev).forEach(([conversationId, value]) => {
+        if (value.hidden) {
+          changed = true;
+          next[conversationId] = {
+            ...value,
+            hidden: false,
+          };
+        } else {
+          next[conversationId] = value;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+    setSettingsPinDraft("");
+    setSettingsPinConfirmDraft("");
+    setBannerMessage(language === "vi" ? "Da xoa ma PIN an chat" : "Hidden-chat PIN removed");
+  };
+
   const reloadConversationMessagesWithRetry = async (
     conversationId: string,
     attempts = 4,
@@ -2676,14 +4295,27 @@ export function ChatPage() {
     (sum, item) => sum + Math.max(0, item.unreadCount ?? 0),
     0,
   );
-  const messageBadge =
-    Math.max(totalUnreadCount, unreadFromConversations) > 0
-      ? Math.min(Math.max(totalUnreadCount, unreadFromConversations), 9)
-      : 0;
+  const globalUnreadCount = Math.max(totalUnreadCount, unreadFromConversations);
+  const messageBadge = globalUnreadCount > 0 ? globalUnreadCount : 0;
   const contactsBadge =
     pendingFriendRequestsUnreadCount > 0
       ? Math.min(pendingFriendRequestsUnreadCount, 99)
       : 0;
+
+  const activeConversationForView = activeConversation
+    ? {
+      ...activeConversation,
+      name: getConversationDisplayName(activeConversation),
+    }
+    : null;
+
+  const activeConversationPinned = activeConversationForView
+    ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
+    : false;
+
+  const headerUnreadBadgeCount = activeConversationForView
+    ? Math.max(Math.max(0, activeConversationForView.unreadCount ?? 0), globalUnreadCount)
+    : globalUnreadCount;
 
   const onChangeTab = (tab: ChatTab) => {
     // ═══════════════════════════════════════════════════════════════════════
@@ -2704,12 +4336,7 @@ export function ChatPage() {
     ? getPresenceForUser(resolvePeerUserId(activeConversation))
     : undefined;
 
-  const activeConversationForView = activeConversation
-    ? {
-      ...activeConversation,
-      name: getConversationDisplayName(activeConversation),
-    }
-    : null;
+  const remoteCallStreamList = useMemo(() => Object.values(remoteCallStreams), [remoteCallStreams]);
 
   const activeGroupMembers = activeConversationForView?.type === "group"
     ? activeConversationForView.participants ?? []
@@ -2735,6 +4362,23 @@ export function ChatPage() {
 
   const typingDisplayName = typingUserId
     ? userProfileMap[typingUserId]?.fullName ?? typingUserId
+    : null;
+
+  const activeCallView: ActiveCallView | null = activeCall
+    ? {
+      callId: activeCall.callId,
+      peerDisplayName: activeCall.peerDisplayName,
+      mode: activeCall.mode,
+      status: activeCall.status,
+    }
+    : null;
+
+  const incomingCallView: IncomingCallView | null = incomingCall
+    ? {
+      callId: incomingCall.callId,
+      peerDisplayName: incomingCall.peerDisplayName,
+      mode: incomingCall.mode,
+    }
     : null;
 
   return (
@@ -2771,7 +4415,8 @@ export function ChatPage() {
             });
           }
         }}
-        onCreateChat={() => setIsCreateGroupOpen(true)}
+        onAddFriend={() => setIsAddFriendOpen(true)}
+        onCreateGroup={() => setIsCreateGroupOpen(true)}
       />
 
       {activeTab !== "messages" && (
@@ -3063,8 +4708,8 @@ export function ChatPage() {
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   {language === "vi"
-                    ? "Khoi tao nhanh cuoc goi thoai/video bang lien ket meeting."
-                    : "Start voice/video calls quickly using meeting links."}
+                    ? "Bat dau cuoc goi thoai/video truc tiep ngay trong ung dung."
+                    : "Start voice/video calls directly inside the app."}
                 </p>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
@@ -3124,14 +4769,27 @@ export function ChatPage() {
                             {new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}
                           </p>
                         </div>
-                        <a
-                          href={item.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="shrink-0 rounded-md border border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-700"
-                        >
-                          {language === "vi" ? "Tham gia" : "Join"}
-                        </a>
+                        <span className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                          {item.status === "connected"
+                            ? language === "vi"
+                              ? "Da ket noi"
+                              : "Connected"
+                            : item.status === "rejected"
+                              ? language === "vi"
+                                ? "Bi tu choi"
+                                : "Declined"
+                              : item.status === "missed"
+                                ? language === "vi"
+                                  ? "Nho"
+                                  : "Missed"
+                                : item.status === "ended"
+                                  ? language === "vi"
+                                    ? "Da ket thuc"
+                                    : "Ended"
+                                  : language === "vi"
+                                    ? "Dang goi"
+                                    : "Calling"}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -3152,6 +4810,67 @@ export function ChatPage() {
                     : "Customize account and app preferences"}
                 </p>
               </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-800">
+                  {language === "vi" ? "Ma PIN an cuoc tro chuyen" : "Hidden conversation PIN"}
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  {language === "vi"
+                    ? hiddenConversationPin
+                      ? "Nhap PIN trong o Search de hien lai cuoc tro chuyen da an"
+                      : "Tao PIN de bat buoc bao ve khi an chat"
+                    : hiddenConversationPin
+                      ? "Enter this PIN in Search to reveal hidden conversations"
+                      : "Create a PIN to protect hidden conversations"}
+                </p>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={settingsPinDraft}
+                    onChange={(event) => setSettingsPinDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder={language === "vi" ? "PIN moi (4-8 so)" : "New PIN (4-8 digits)"}
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700"
+                  />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={settingsPinConfirmDraft}
+                    onChange={(event) => setSettingsPinConfirmDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder={language === "vi" ? "Nhap lai PIN" : "Confirm PIN"}
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700"
+                  />
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onSaveHiddenConversationPin}
+                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                  >
+                    {hiddenConversationPin
+                      ? language === "vi"
+                        ? "Doi PIN"
+                        : "Change PIN"
+                      : language === "vi"
+                        ? "Tao PIN"
+                        : "Create PIN"}
+                  </button>
+
+                  {hiddenConversationPin && (
+                    <button
+                      type="button"
+                      onClick={onRemoveHiddenConversationPin}
+                      className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                    >
+                      {language === "vi" ? "Xoa PIN" : "Remove PIN"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="mt-4">
                 <Link
                   to="/login"
@@ -3234,6 +4953,8 @@ export function ChatPage() {
                   activeConversation={activeConversationForView}
                   activeConversationOnline={false}
                   activeConversationPresenceLabel={`${activeGroupMembers.length} ${language === "vi" ? "thanh vien" : "members"}`}
+                  activeConversationPinned={activeConversationPinned}
+                  headerUnreadBadgeCount={headerUnreadBadgeCount}
                   userProfileMap={userProfileMap}
                   showGroupPanelToggle
                   isGroupPanelOpen={isGroupPanelOpen}
@@ -3282,6 +5003,8 @@ export function ChatPage() {
                 activeConversationPresenceLabel={toPresenceLabel(
                   activeConversationPresence,
                 )}
+                activeConversationPinned={activeConversationPinned}
+                headerUnreadBadgeCount={headerUnreadBadgeCount}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 myProfile={myProfile}
@@ -3379,6 +5102,25 @@ export function ChatPage() {
           setForwardMessageId(null);
         }}
         onConfirm={onConfirmForwardTargets}
+      />
+
+      <InAppCallOverlay
+        language={language}
+        incomingCall={incomingCallView}
+        activeCall={activeCallView}
+        localStream={localCallStream}
+        remoteStreams={remoteCallStreamList}
+        microphoneEnabled={isMicrophoneEnabled}
+        cameraEnabled={isCameraEnabled}
+        onAcceptIncoming={() => {
+          void onAcceptIncomingCall();
+        }}
+        onRejectIncoming={onRejectIncomingCall}
+        onEndCall={() => {
+          onEndDirectCall("manual_end", true);
+        }}
+        onToggleMicrophone={onToggleMicrophone}
+        onToggleCamera={onToggleCamera}
       />
 
       {bannerMessage && (

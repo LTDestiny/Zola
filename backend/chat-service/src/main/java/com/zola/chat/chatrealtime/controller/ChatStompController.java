@@ -9,12 +9,16 @@ import com.zola.chat.chatrealtime.dto.ChatReactionRequest;
 import com.zola.chat.chatrealtime.dto.ChatRecallRequest;
 import com.zola.chat.chatrealtime.dto.ChatSendRequest;
 import com.zola.chat.chatrealtime.dto.ChatTypingRequest;
+import com.zola.chat.chatrealtime.dto.CallSignalEvent;
 import com.zola.chat.chatrealtime.service.ChatRealtimeService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.security.Principal;
 import java.util.List;
 import java.util.LinkedHashSet;
@@ -23,6 +27,8 @@ import java.util.UUID;
 
 @Controller
 public class ChatStompController {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChatStompController.class);
 
     private final ChatRealtimeService chatRealtimeService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -40,6 +46,113 @@ public class ChatStompController {
         ChatEventResponse event = chatRealtimeService.sendMessage(principal.getName(), request);
         broadcast(event.conversationId(), event);
         emitUnreadSyncEvents(UUID.fromString(event.conversationId()), event.message());
+    }
+
+    @MessageMapping({"/call.signal", "/signal/call"})
+    public void callSignal(@Payload CallSignalPayload payload, Principal principal) {
+        if (principal == null || principal.getName() == null || payload == null) {
+            return;
+        }
+
+        if (
+            payload.conversationId() == null ||
+            payload.callId() == null ||
+            payload.callId().isBlank() ||
+            payload.signalType() == null ||
+            payload.signalType().isBlank()
+        ) {
+            return;
+        }
+
+        Set<String> supportedSignals = Set.of(
+            "CALL_INVITE",
+            "CALL_ACCEPT",
+            "CALL_REJECT",
+            "CALL_JOINED",
+            "CALL_LEAVE",
+            "WEBRTC_OFFER",
+            "WEBRTC_ANSWER",
+            "WEBRTC_ICE",
+            "CALL_END"
+        );
+        String signalType = payload.signalType().trim().toUpperCase();
+        if (!supportedSignals.contains(signalType)) {
+            return;
+        }
+
+        String actorId = principal.getName();
+        Set<String> members = new LinkedHashSet<>(chatRealtimeService.listConversationMembers(payload.conversationId()));
+        if (!members.contains(actorId)) {
+            return;
+        }
+
+        String normalizedTargetUserId = payload.targetUserId() == null ? null : payload.targetUserId().trim();
+        boolean hasDirectTarget = normalizedTargetUserId != null && !normalizedTargetUserId.isBlank();
+        boolean isOneToOneConversation = members.size() == 2;
+
+        if (isOneToOneConversation) {
+            // For 1-1 chats, always resolve target as the other member for maximum reliability.
+            normalizedTargetUserId = members.stream()
+                .filter(memberId -> !actorId.equals(memberId))
+                .findFirst()
+                .orElse(null);
+            hasDirectTarget = normalizedTargetUserId != null && !normalizedTargetUserId.isBlank();
+        }
+
+        if (hasDirectTarget) {
+            if (actorId.equals(normalizedTargetUserId) || !members.contains(normalizedTargetUserId)) {
+                // Fallback for 1-1 conversations when client resolves peer id incorrectly.
+                if (members.size() == 2) {
+                    normalizedTargetUserId = members.stream()
+                        .filter(memberId -> !actorId.equals(memberId))
+                        .findFirst()
+                        .orElse(null);
+                    hasDirectTarget = normalizedTargetUserId != null && !normalizedTargetUserId.isBlank();
+                }
+            }
+        }
+
+        CallSignalEvent event = new CallSignalEvent(
+            actorId,
+            payload.conversationId().toString(),
+            hasDirectTarget ? normalizedTargetUserId : null,
+            payload.callId(),
+            payload.mode() == null || payload.mode().isBlank() ? "voice" : payload.mode(),
+            signalType,
+            payload.payload(),
+            Instant.now().toString()
+        );
+
+        LOGGER.info(
+            "[call-signal] actor={} conversation={} signal={} target={} members={}",
+            actorId,
+            payload.conversationId(),
+            signalType,
+            hasDirectTarget ? normalizedTargetUserId : "broadcast",
+            members.size()
+        );
+
+        if (hasDirectTarget && normalizedTargetUserId != null) {
+            // Direct signaling between two peers.
+            messagingTemplate.convertAndSendToUser(normalizedTargetUserId, "/queue/call", event);
+        } else {
+            // Group signaling fan-out to all members except sender.
+            for (String memberId : members) {
+                if (memberId.equals(actorId)) {
+                    continue;
+                }
+                messagingTemplate.convertAndSendToUser(memberId, "/queue/call", event);
+            }
+        }
+
+        // Echo back to caller so all active tabs stay in sync.
+        messagingTemplate.convertAndSendToUser(actorId, "/queue/call", event);
+
+        // Fallback channel: deliver call signals to conversation topic so peers still receive
+        // events when user-queue routing is impacted by broker/user destination issues.
+        messagingTemplate.convertAndSend("/topic/call/" + payload.conversationId(), event);
+        // Global fallback for clients that are not yet subscribed to per-conversation call topics.
+        messagingTemplate.convertAndSend("/topic/call", event);
     }
 
     @MessageMapping("/create_group")
@@ -436,6 +549,16 @@ public class ChatStompController {
         String fileUrl,
         String fileName,
         String parentMessageId
+    ) {
+    }
+
+    public record CallSignalPayload(
+        UUID conversationId,
+        String targetUserId,
+        String callId,
+        String mode,
+        String signalType,
+        String payload
     ) {
     }
 }

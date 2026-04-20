@@ -1,7 +1,7 @@
 import { Copy, Download, FileText, Play, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ChatMessage } from "./ChatMessage.types";
-import { resolveMediaUrl } from "../utils/mediaUrl";
+import { resolveMediaCandidates } from "../utils/mediaUrl";
 
 type MessageBubbleProps = {
     message: ChatMessage;
@@ -83,10 +83,19 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
     const [audioProgress, setAudioProgress] = useState(25);
     const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
     const [mediaActionNote, setMediaActionNote] = useState<string | null>(null);
+    const [mediaCandidateIndex, setMediaCandidateIndex] = useState(0);
 
     useEffect(() => {
         setIsImageLoading(message.type === "image");
-    }, [message.id, message.type]);
+    }, [message.id, message.type, mediaCandidateIndex]);
+
+    useEffect(() => {
+        setMediaCandidateIndex(0);
+    }, [message.id, message.mediaUrl]);
+
+    useEffect(() => {
+        setMediaActionNote(null);
+    }, [message.id, message.mediaUrl, mediaCandidateIndex]);
 
     useEffect(() => {
         if (!audioPlaying) {
@@ -122,8 +131,17 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
 
     let content: React.ReactNode;
 
-    const mediaUrl = resolveMediaUrl(message.mediaUrl);
+    const mediaCandidates = resolveMediaCandidates(message.mediaUrl);
+    const mediaUrl = mediaCandidates[mediaCandidateIndex] ?? undefined;
     const mediaFileName = message.fileName ?? (message.type === "image" ? "image.jpg" : message.type === "video" ? "video.mp4" : "attachment");
+
+    const onMediaPreviewError = () => {
+        if (mediaCandidateIndex < mediaCandidates.length - 1) {
+            setMediaCandidateIndex((prev) => prev + 1);
+            return;
+        }
+        setMediaActionNote("Image preview failed");
+    };
 
     const copyImageReference = async () => {
         if (!mediaUrl) {
@@ -184,7 +202,7 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                         onLoad={() => setIsImageLoading(false)}
                         onError={() => {
                             setIsImageLoading(false);
-                            setMediaActionNote("Image preview failed");
+                            onMediaPreviewError();
                         }}
                     />
                 </button>
@@ -201,7 +219,12 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
             }
             content = (
                 <div className="relative overflow-hidden rounded-xl bg-slate-900">
-                    <video className="h-48 w-72 object-cover" src={mediaUrl} preload="metadata" />
+                    <video
+                        className="h-48 w-72 object-cover"
+                        src={mediaUrl}
+                        preload="metadata"
+                        onError={onMediaPreviewError}
+                    />
                     <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/20">
                         <div className="grid h-10 w-10 place-items-center rounded-full bg-black/45 text-white">
                             <Play size={16} className="ml-0.5" />

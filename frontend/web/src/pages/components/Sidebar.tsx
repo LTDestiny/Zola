@@ -11,7 +11,8 @@ export interface SidebarProps {
   onTabChange: (tab: MiniNavTab) => void;
   onSearchTextChange: (value: string) => void;
   onSelectChat: (chatId: string) => void;
-  onCreateChat: () => void;
+  onAddFriend: () => void;
+  onCreateGroup: () => void;
 }
 
 export function Sidebar({
@@ -24,7 +25,8 @@ export function Sidebar({
   onTabChange,
   onSearchTextChange,
   onSelectChat,
-  onCreateChat,
+  onAddFriend,
+  onCreateGroup,
 }: SidebarProps) {
   return (
     <div className="flex shrink-0">
@@ -40,7 +42,8 @@ export function Sidebar({
         searchText={searchText}
         onSearchTextChange={onSearchTextChange}
         onSelectChat={onSelectChat}
-        onCreateChat={onCreateChat}
+        onAddFriend={onAddFriend}
+        onCreateGroup={onCreateGroup}
       />
     </div>
   );

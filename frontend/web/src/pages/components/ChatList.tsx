@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { Edit3, Pin, Search } from "lucide-react";
+import { Pin, Search, UserPlus, UsersRound } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHAT LIST COMPONENT - With presence indicators
@@ -25,7 +25,8 @@ export interface ChatListProps {
     searchText: string;
     onSearchTextChange: (value: string) => void;
     onSelectChat: (chatId: string) => void;
-    onCreateChat: () => void;
+    onAddFriend: () => void;
+    onCreateGroup: () => void;
 }
 
 // ─── PRESENCE BADGE ─────────────────────────────────────────────────────────────
@@ -126,7 +127,8 @@ export function ChatList({
     searchText,
     onSearchTextChange,
     onSelectChat,
-    onCreateChat,
+    onAddFriend,
+    onCreateGroup,
 }: ChatListProps) {
     const [viewMode, setViewMode] = useState<"all" | "unread">("all");
 
@@ -142,14 +144,26 @@ export function ChatList({
         <aside className="flex h-screen w-80 shrink-0 flex-col border-r border-slate-800 bg-[#131b28]">
             <div className="flex items-center justify-between px-5 pb-3 pt-5">
                 <h2 className="text-2xl font-bold text-slate-100">Chats</h2>
-                <button
-                    type="button"
-                    onClick={onCreateChat}
-                    className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
-                    title="Create new chat"
-                >
-                    <Edit3 size={18} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={onAddFriend}
+                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
+                        title="Add friend"
+                        aria-label="Add friend"
+                    >
+                        <UserPlus size={18} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onCreateGroup}
+                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
+                        title="Create group"
+                        aria-label="Create group"
+                    >
+                        <UsersRound size={18} />
+                    </button>
+                </div>
             </div>
 
             <div className="sticky top-0 z-10 bg-[#131b28] px-4 pb-3">

@@ -23,6 +23,7 @@ public class GatewayJwtFilter extends OncePerRequestFilter {
         "/api/v1/auth/login/request-otp",
         "/api/v1/auth/login/verify-otp",
         "/api/v1/auth/register",
+        "/api/v1/media/object",
         "/api/v1/auth/refresh",
         "/api/v1/auth/forgot-password",
         "/api/v1/auth/verify-otp",

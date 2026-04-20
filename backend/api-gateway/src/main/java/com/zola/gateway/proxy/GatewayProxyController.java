@@ -106,11 +106,16 @@ public class GatewayProxyController {
         @RequestParam("key") String key,
         HttpServletRequest request
     ) {
-        String userId = currentUserId(request);
+        String userId = currentUserIdOrNull(request);
         try {
-            return restClient.get()
-                .uri(fileServiceUrl + "/api/v1/media/object?key={key}", Map.of("key", key))
-                .header("X-User-Id", userId)
+            var requestSpec = restClient.get()
+                .uri(fileServiceUrl + "/api/v1/media/object?key={key}", Map.of("key", key));
+
+            if (userId != null && !userId.isBlank()) {
+                requestSpec = requestSpec.header("X-User-Id", userId);
+            }
+
+            return requestSpec
                 .retrieve()
                 .toEntity(byte[].class);
         } catch (RestClientResponseException ex) {
@@ -808,6 +813,14 @@ public class GatewayProxyController {
             return id;
         }
         throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing user context");
+    }
+
+    private String currentUserIdOrNull(HttpServletRequest request) {
+        Object userId = request.getAttribute("X_USER_ID");
+        if (userId instanceof String id && !id.isBlank()) {
+            return id;
+        }
+        return null;
     }
 
     private void emitFriendshipSync(ApiResponse<Object> response, String eventType) {

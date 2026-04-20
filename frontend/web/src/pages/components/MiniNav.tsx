@@ -44,7 +44,7 @@ function navButtonClass(isActive: boolean) {
         }`;
 }
 
-export function MiniNav({ active, onChange, messageBadge = 0 }: MiniNavProps) {
+export function MiniNav({ active, onChange, messageBadge = 0, contactsBadge = 0 }: MiniNavProps) {
     return (
         <aside className="flex h-screen w-16 shrink-0 flex-col bg-[#0d1521]">
             <div className="flex h-16 items-center justify-center border-b border-slate-800">
@@ -69,6 +69,11 @@ export function MiniNav({ active, onChange, messageBadge = 0 }: MiniNavProps) {
                             {item.key === "messages" && messageBadge > 0 && (
                                 <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
                                     {messageBadge > 9 ? "9+" : messageBadge}
+                                </span>
+                            )}
+                            {item.key === "contacts" && contactsBadge > 0 && (
+                                <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                                    {contactsBadge > 9 ? "9+" : contactsBadge}
                                 </span>
                             )}
                         </button>
