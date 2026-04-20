@@ -195,6 +195,7 @@ services:
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:8082}
     depends_on:
       mongo-bootstrap:
         condition: service_completed_successfully

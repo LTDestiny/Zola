@@ -463,6 +463,47 @@ public class GatewayProxyController {
         );
     }
 
+    @GetMapping("/chat/groups/invite-link/validate")
+    public ApiResponse<Object> validateGroupInviteLink(
+        @RequestParam("code") String code,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return getMap(
+            chatServiceUrl + "/api/v1/chat/groups/invite-link/validate?code={code}",
+            null,
+            Map.of("code", code),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/invite-link")
+    public ApiResponse<Object> createGroupInviteLink(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/invite-link",
+            Map.of(),
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @DeleteMapping("/chat/conversations/{conversationId}/invite-link")
+    public ApiResponse<Object> revokeGroupInviteLink(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/invite-link",
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @GetMapping("/chat/conversations/{conversationId}/settings")
     public ApiResponse<Object> getGroupSettings(
         @PathVariable("conversationId") String conversationId,

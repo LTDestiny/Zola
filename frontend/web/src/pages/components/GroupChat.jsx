@@ -81,6 +81,7 @@ export function GroupChat({
   conversation,
   isPanelOpen = true,
   members,
+  friendCandidates,
   userProfileMap,
   messages,
   currentUserId,
@@ -89,6 +90,7 @@ export function GroupChat({
   onRefreshSettings,
   onUpdateSettings,
   onAddMember,
+  onCreateInviteLink,
   onRemoveMember,
   onToggleAdmin,
   onMentionMember,
@@ -99,11 +101,12 @@ export function GroupChat({
   children,
 }) {
   const safeMembers = members ?? [];
+  const safeFriendCandidates = friendCandidates ?? [];
   const safeMessages = messages ?? [];
 
   const [nameDraft, setNameDraft] = useState(conversation?.name ?? "");
   const [avatarDraft, setAvatarDraft] = useState(conversation?.avatar ?? "");
-  const [memberIdDraft, setMemberIdDraft] = useState("");
+  const [selectedFriendId, setSelectedFriendId] = useState("");
   const [searchText, setSearchText] = useState("");
   const [manageMode, setManageMode] = useState(false);
   const [openSections, setOpenSections] = useState({
@@ -127,6 +130,7 @@ export function GroupChat({
   useEffect(() => {
     setNameDraft(conversation?.name ?? "");
     setAvatarDraft(conversation?.avatar ?? "");
+    setSelectedFriendId("");
     setManageMode(false);
   }, [conversation?.id, conversation?.name, conversation?.avatar]);
 
@@ -171,6 +175,11 @@ export function GroupChat({
       return name.includes(normalized) || memberId.toLowerCase().includes(normalized);
     });
   }, [safeMembers, searchText, userProfileMap]);
+
+  const addableFriends = useMemo(() => {
+    const memberSet = new Set(safeMembers);
+    return safeFriendCandidates.filter((candidate) => !memberSet.has(candidate.userId));
+  }, [safeFriendCandidates, safeMembers]);
 
   const mediaItems = useMemo(() => {
     return parsedMessages
@@ -315,16 +324,7 @@ export function GroupChat({
             <button
               type="button"
               disabled={!canInviteMembers}
-              onClick={() => {
-                const targetUserId = window.prompt(
-                  language === "vi"
-                    ? "Nhap userId thanh vien can them"
-                    : "Enter member userId",
-                );
-                if (targetUserId && targetUserId.trim()) {
-                  onAddMember?.(targetUserId.trim());
-                }
-              }}
+              onClick={() => setManageMode(true)}
               className={`${iconActionBase} ${canInviteMembers ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-800/60 text-slate-500"}`}
             >
               <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
@@ -389,6 +389,17 @@ export function GroupChat({
                       >
                         <Copy size={14} />
                       </button>
+                      {canOpenManage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void onCreateInviteLink?.();
+                          }}
+                          className="rounded-lg bg-sky-700 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-600"
+                        >
+                          {language === "vi" ? "Tao moi" : "New"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -691,14 +702,27 @@ export function GroupChat({
                       <p className="truncate text-sm font-semibold text-sky-200">
                         {joinLink || (language === "vi" ? "Dang tao link..." : "Generating link...")}
                       </p>
-                      <button
-                        type="button"
-                        onClick={copyJoinLink}
-                        disabled={!joinLink}
-                        className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
-                      >
-                        <Copy size={14} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={copyJoinLink}
+                          disabled={!joinLink}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700"
+                        >
+                          <Copy size={14} />
+                        </button>
+                        {canEditSecuritySettings && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void onCreateInviteLink?.();
+                            }}
+                            className="rounded-lg bg-sky-700 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-600"
+                          >
+                            {language === "vi" ? "Tao moi" : "New"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -767,23 +791,31 @@ export function GroupChat({
 
                     {canInviteMembers && (
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={memberIdDraft}
-                          onChange={(event) => setMemberIdDraft(event.target.value)}
-                          placeholder={language === "vi" ? "Nhap userId de them" : "Enter userId to add"}
+                        <select
+                          value={selectedFriendId}
+                          onChange={(event) => setSelectedFriendId(event.target.value)}
                           className="h-9 min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100"
-                        />
+                        >
+                          <option value="">
+                            {language === "vi" ? "Chon ban be de them" : "Select a friend to add"}
+                          </option>
+                          {addableFriends.map((candidate) => (
+                            <option key={candidate.userId} value={candidate.userId}>
+                              {candidate.fullName}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           onClick={() => {
-                            const nextUserId = memberIdDraft.trim();
+                            const nextUserId = selectedFriendId.trim();
                             if (!nextUserId) {
                               return;
                             }
                             onAddMember?.(nextUserId);
-                            setMemberIdDraft("");
+                            setSelectedFriendId("");
                           }}
+                          disabled={!selectedFriendId}
                           className="rounded-lg bg-sky-600 px-3 text-sm font-semibold text-white hover:bg-sky-500"
                         >
                           +

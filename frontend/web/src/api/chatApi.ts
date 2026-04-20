@@ -129,8 +129,31 @@ export type GroupSettings = {
   requireApprovalToJoin: boolean;
   allowMemberInvite: boolean;
   inviteCode?: string | null;
+  inviteCodeIssuedAt?: string | null;
+  inviteCodeExpiresAt?: string | null;
+  inviteCodeRevoked?: boolean;
   isOwner: boolean;
   isAdmin: boolean;
+};
+
+export type GroupInviteLinkPayload = {
+  conversationId: string;
+  code: string;
+  issuedAt: string;
+  expiresAt: string;
+  revoked: boolean;
+  allowMemberInvite: boolean;
+};
+
+export type GroupInviteValidationPayload = {
+  code: string;
+  conversationId: string;
+  name: string;
+  avatar: string | null;
+  allowMemberInvite: boolean;
+  requireApprovalToJoin: boolean;
+  expiresAt: string;
+  alreadyMember: boolean;
 };
 
 export type UpdateGroupSettingsInput = {
@@ -342,6 +365,31 @@ export async function joinGroupByInviteCode(code: string) {
     ...response.data,
     data: normalizeConversationItem(response.data.data),
   };
+}
+
+export async function validateGroupInviteCode(code: string) {
+  const response = await httpClient.get<ApiResponse<GroupInviteValidationPayload>>(
+    "/api/v1/chat/groups/invite-link/validate",
+    {
+      params: { code },
+    },
+  );
+  return response.data;
+}
+
+export async function createGroupInviteLink(conversationId: string) {
+  const response = await httpClient.post<ApiResponse<GroupInviteLinkPayload>>(
+    `/api/v1/chat/conversations/${conversationId}/invite-link`,
+    {},
+  );
+  return response.data;
+}
+
+export async function revokeGroupInviteLink(conversationId: string) {
+  const response = await httpClient.delete<ApiResponse<GroupInviteLinkPayload>>(
+    `/api/v1/chat/conversations/${conversationId}/invite-link`,
+  );
+  return response.data;
 }
 
 export async function addGroupMember(conversationId: string, userId: string) {

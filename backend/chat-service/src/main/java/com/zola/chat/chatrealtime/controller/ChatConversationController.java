@@ -153,6 +153,39 @@ public class ChatConversationController {
         return ApiResponse.ok("Joined group", response);
     }
 
+    @GetMapping("/groups/invite-link/validate")
+    public ApiResponse<Map<String, Object>> validateInviteLink(
+        @RequestHeader("X-User-Id") String userId,
+        @RequestParam("code") String code
+    ) {
+        return ApiResponse.ok(
+            "Invite link validated",
+            chatRealtimeService.validateGroupInviteLink(userId, code)
+        );
+    }
+
+    @PostMapping("/conversations/{conversationId}/invite-link")
+    public ApiResponse<Map<String, Object>> createInviteLink(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        return ApiResponse.ok(
+            "Invite link created",
+            chatRealtimeService.createGroupInviteLink(userId, conversationId)
+        );
+    }
+
+    @DeleteMapping("/conversations/{conversationId}/invite-link")
+    public ApiResponse<Map<String, Object>> revokeInviteLink(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        return ApiResponse.ok(
+            "Invite link revoked",
+            chatRealtimeService.revokeGroupInviteLink(userId, conversationId)
+        );
+    }
+
     @PostMapping("/conversations/{conversationId}/set-admin")
     public ApiResponse<ConversationListItemResponse> setAdmin(
         @RequestHeader("X-User-Id") String userId,

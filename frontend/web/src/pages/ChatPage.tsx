@@ -6,6 +6,7 @@ import {
   addReaction,
   addGroupMember,
   addFriend,
+  createGroupInviteLink,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -25,6 +26,7 @@ import {
   getUserSummary,
   leaveGroupConversation,
   joinGroupByInviteCode,
+  validateGroupInviteCode,
   markConversationRead,
   getUsersPresence,
   markPendingFriendRequestsRead,
@@ -707,6 +709,22 @@ export function ChatPage() {
     }
   };
 
+  const onCreateActiveGroupInviteLink = async () => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    try {
+      await createGroupInviteLink(activeConversationId);
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da tao link moi" : "New invite link created",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
   const onLeaveActiveGroup = async () => {
     if (!activeConversationId) {
       return;
@@ -1179,6 +1197,7 @@ export function ChatPage() {
 
     const joinByLink = async () => {
       try {
+        await validateGroupInviteCode(inviteCode);
         const result = await joinGroupByInviteCode(inviteCode);
         const joinedConversationId = result.data.id;
 
@@ -2715,6 +2734,21 @@ export function ChatPage() {
     ? activeConversationForView.participants ?? []
     : [];
 
+  const activeGroupFriendCandidates = useMemo(() => {
+    const memberSet = new Set(activeGroupMembers);
+    return friendContacts
+      .map((friend) => {
+        const profile = userProfileMap[friend.userId];
+        return {
+          userId: friend.userId,
+          fullName: profile?.fullName ?? `User ${friend.userId.slice(0, 8)}`,
+          avatarUrl: profile?.avatarUrl ?? null,
+        };
+      })
+      .filter((item) => !memberSet.has(item.userId))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [activeGroupMembers, friendContacts, userProfileMap]);
+
   const activeGroupSettings =
     activeConversationForView?.type === "group"
       ? groupSettingsMap[activeConversationForView.id] ?? null
@@ -3196,8 +3230,12 @@ export function ChatPage() {
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
                 }}
+                friendCandidates={activeGroupFriendCandidates}
                 onAddMember={(userId: string) => {
                   void onAddGroupMember(userId);
+                }}
+                onCreateInviteLink={() => {
+                  void onCreateActiveGroupInviteLink();
                 }}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);

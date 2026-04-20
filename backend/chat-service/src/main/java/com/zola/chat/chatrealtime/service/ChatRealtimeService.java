@@ -17,6 +17,7 @@ import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.document.ConversationDocument;
+import com.zola.chat.exception.BusinessRuleException;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -28,6 +29,7 @@ import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRep
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
 import com.zola.chat.repository.ConversationRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,8 +64,10 @@ public class ChatRealtimeService {
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
+    private final FriendshipPolicyService friendshipPolicyService;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
+    private final long inviteLinkTtlHours;
 
     public record GroupActionResult(
         ConversationListItemResponse conversation,
@@ -78,8 +82,10 @@ public class ChatRealtimeService {
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
+        FriendshipPolicyService friendshipPolicyService,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
-        @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
+        @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds,
+        @Value("${app.chat.invite-link-ttl-hours:168}") long inviteLinkTtlHours
     ) {
         this.conversationRepository = conversationRepository;
         this.groupConversationRepository = groupConversationRepository;
@@ -87,8 +93,10 @@ public class ChatRealtimeService {
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
+        this.friendshipPolicyService = friendshipPolicyService;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
+        this.inviteLinkTtlHours = inviteLinkTtlHours;
     }
 
     public ConversationResponse createDirectConversation(String requesterId, String targetUserId) {
@@ -115,6 +123,12 @@ public class ChatRealtimeService {
                 .forEach(members::add);
         }
 
+        for (String memberId : members) {
+            if (!requesterId.equals(memberId)) {
+                friendshipPolicyService.assertUsersAreFriends(requesterId, memberId);
+            }
+        }
+
         if (members.size() < 2) {
             throw new IllegalArgumentException("Group must contain at least 2 members");
         }
@@ -133,6 +147,8 @@ public class ChatRealtimeService {
         conversation.setRequireApprovalToJoin(false);
         conversation.setAllowMemberInvite(true);
         conversation.setInviteCode(generateUniqueInviteCode());
+        conversation.setInviteCodeIssuedAt(now);
+        conversation.setInviteCodeRevokedAt(null);
         conversation.setLastMessage("");
         conversation.setLastMessageAt(now.toString());
         conversation.setCreatedAt(now);
@@ -149,6 +165,8 @@ public class ChatRealtimeService {
         if (normalizedUserId.isBlank()) {
             throw new IllegalArgumentException("userId must not be blank");
         }
+
+        friendshipPolicyService.assertUsersAreFriends(actorId, normalizedUserId);
 
         boolean actorIsOwner = actorId.equals(conversation.getOwnerId());
         boolean actorIsAdmin = normalizeAdmins(conversation).contains(actorId);
@@ -286,15 +304,32 @@ public class ChatRealtimeService {
         }
 
         ConversationDocument conversation = groupConversationRepository.findByInviteCode(normalizedCode)
-            .orElseThrow(() -> new ResourceNotFoundException("Invite link is invalid or expired"));
+            .orElseThrow(() -> new BusinessRuleException(
+                HttpStatus.NOT_FOUND,
+                "CHAT_INVITE_LINK_INVALID",
+                "Invite link is invalid or revoked"
+            ));
         if (!CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType()))) {
-            throw new ResourceNotFoundException("Invite link is invalid or expired");
+            throw new BusinessRuleException(
+                HttpStatus.NOT_FOUND,
+                "CHAT_INVITE_LINK_INVALID",
+                "Invite link is invalid or revoked"
+            );
         }
+        ensureInviteLinkActive(conversation, normalizedCode);
         if (conversation.isRequireApprovalToJoin()) {
-            throw new ForbiddenOperationException("This group requires admin approval to join");
+            throw new BusinessRuleException(
+                HttpStatus.FORBIDDEN,
+                "CHAT_INVITE_APPROVAL_REQUIRED",
+                "This group requires admin approval to join"
+            );
         }
         if (!conversation.isAllowMemberInvite()) {
-            throw new ForbiddenOperationException("Invite link is currently disabled for this group");
+            throw new BusinessRuleException(
+                HttpStatus.FORBIDDEN,
+                "CHAT_INVITE_LINK_DISABLED",
+                "Invite link is currently disabled for this group"
+            );
         }
 
         List<String> members = new ArrayList<>(normalizeMembers(conversation));
@@ -316,6 +351,74 @@ public class ChatRealtimeService {
         );
 
         return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
+    }
+
+    @Transactional
+    public Map<String, Object> createGroupInviteLink(String actorId, UUID conversationId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureGroupAdmin(conversation, actorId);
+
+        String code = generateUniqueInviteCode();
+        Instant now = Instant.now();
+        conversation.setInviteCode(code);
+        conversation.setInviteCodeIssuedAt(now);
+        conversation.setInviteCodeRevokedAt(null);
+        conversation.setUpdatedAt(now);
+        groupConversationRepository.save(conversation);
+
+        return toInviteLinkPayload(conversation);
+    }
+
+    @Transactional
+    public Map<String, Object> revokeGroupInviteLink(String actorId, UUID conversationId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+        ensureGroupAdmin(conversation, actorId);
+
+        Instant now = Instant.now();
+        conversation.setInviteCodeRevokedAt(now);
+        conversation.setUpdatedAt(now);
+        groupConversationRepository.save(conversation);
+
+        return toInviteLinkPayload(conversation);
+    }
+
+    public Map<String, Object> validateGroupInviteLink(String actorId, String inviteCode) {
+        String normalizedCode = inviteCode == null ? "" : inviteCode.trim();
+        if (normalizedCode.isBlank()) {
+            throw new IllegalArgumentException("Invite code must not be blank");
+        }
+
+        ConversationDocument conversation = groupConversationRepository.findByInviteCode(normalizedCode)
+            .orElseThrow(() -> new BusinessRuleException(
+                HttpStatus.NOT_FOUND,
+                "CHAT_INVITE_LINK_INVALID",
+                "Invite link is invalid or revoked"
+            ));
+
+        if (!CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType()))) {
+            throw new BusinessRuleException(
+                HttpStatus.NOT_FOUND,
+                "CHAT_INVITE_LINK_INVALID",
+                "Invite link is invalid or revoked"
+            );
+        }
+
+        ensureInviteLinkActive(conversation, normalizedCode);
+        Instant expiresAt = resolveInviteCodeIssuedAt(conversation).plusSeconds(Math.max(1L, inviteLinkTtlHours) * 3600);
+        List<String> members = normalizeMembers(conversation);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("code", normalizedCode);
+        payload.put("conversationId", conversation.getId());
+        payload.put("name", Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"));
+        payload.put("avatar", conversation.getAvatar());
+        payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
+        payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
+        payload.put("expiresAt", expiresAt.toString());
+        payload.put("alreadyMember", members.contains(actorId));
+        return payload;
     }
 
     @Transactional
@@ -1450,6 +1553,9 @@ public class ChatRealtimeService {
 
     private Map<String, Object> toGroupSettingsPayload(ConversationDocument conversation, String requesterId) {
         Map<String, Object> payload = new LinkedHashMap<>();
+        String inviteCode = ensureInviteCode(conversation);
+        Instant inviteIssuedAt = resolveInviteCodeIssuedAt(conversation);
+        Instant inviteExpiresAt = inviteIssuedAt.plusSeconds(Math.max(1L, inviteLinkTtlHours) * 3600);
         payload.put("conversationId", conversation.getId());
         payload.put("name", Optional.ofNullable(conversation.getName()).filter(value -> !value.isBlank()).orElse("Group"));
         payload.put("avatar", conversation.getAvatar());
@@ -1459,7 +1565,10 @@ public class ChatRealtimeService {
         payload.put("onlyAdminsCanMessage", conversation.isOnlyAdminsCanMessage());
         payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
         payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
-        payload.put("inviteCode", Optional.ofNullable(conversation.getInviteCode()).orElse(""));
+        payload.put("inviteCode", inviteCode);
+        payload.put("inviteCodeIssuedAt", inviteIssuedAt.toString());
+        payload.put("inviteCodeExpiresAt", inviteExpiresAt.toString());
+        payload.put("inviteCodeRevoked", isInviteCodeRevoked(conversation));
         payload.put("isOwner", requesterId.equals(conversation.getOwnerId()));
         payload.put("isAdmin", normalizeAdmins(conversation).contains(requesterId));
         return payload;
@@ -1472,10 +1581,76 @@ public class ChatRealtimeService {
         }
 
         String generated = generateUniqueInviteCode();
+        Instant now = Instant.now();
         conversation.setInviteCode(generated);
-        conversation.setUpdatedAt(Instant.now());
+        conversation.setInviteCodeIssuedAt(now);
+        conversation.setInviteCodeRevokedAt(null);
+        conversation.setUpdatedAt(now);
         groupConversationRepository.save(conversation);
         return generated;
+    }
+
+    private Instant resolveInviteCodeIssuedAt(ConversationDocument conversation) {
+        if (conversation.getInviteCodeIssuedAt() != null) {
+            return conversation.getInviteCodeIssuedAt();
+        }
+        if (conversation.getUpdatedAt() != null) {
+            return conversation.getUpdatedAt();
+        }
+        if (conversation.getCreatedAt() != null) {
+            return conversation.getCreatedAt();
+        }
+        return Instant.now();
+    }
+
+    private boolean isInviteCodeRevoked(ConversationDocument conversation) {
+        if (conversation.getInviteCodeRevokedAt() == null) {
+            return false;
+        }
+        return !conversation.getInviteCodeRevokedAt().isBefore(resolveInviteCodeIssuedAt(conversation));
+    }
+
+    private void ensureInviteLinkActive(ConversationDocument conversation, String inviteCode) {
+        String currentCode = Optional.ofNullable(conversation.getInviteCode()).orElse("");
+        if (!currentCode.equals(inviteCode)) {
+            throw new BusinessRuleException(
+                HttpStatus.NOT_FOUND,
+                "CHAT_INVITE_LINK_INVALID",
+                "Invite link is invalid or revoked"
+            );
+        }
+
+        if (isInviteCodeRevoked(conversation)) {
+            throw new BusinessRuleException(
+                HttpStatus.BAD_REQUEST,
+                "CHAT_INVITE_LINK_REVOKED",
+                "Invite link was revoked by group admin"
+            );
+        }
+
+        Instant expiresAt = resolveInviteCodeIssuedAt(conversation).plusSeconds(Math.max(1L, inviteLinkTtlHours) * 3600);
+        if (Instant.now().isAfter(expiresAt)) {
+            throw new BusinessRuleException(
+                HttpStatus.BAD_REQUEST,
+                "CHAT_INVITE_LINK_EXPIRED",
+                "Invite link has expired"
+            );
+        }
+    }
+
+    private Map<String, Object> toInviteLinkPayload(ConversationDocument conversation) {
+        String inviteCode = ensureInviteCode(conversation);
+        Instant issuedAt = resolveInviteCodeIssuedAt(conversation);
+        Instant expiresAt = issuedAt.plusSeconds(Math.max(1L, inviteLinkTtlHours) * 3600);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("conversationId", conversation.getId());
+        payload.put("code", inviteCode);
+        payload.put("issuedAt", issuedAt.toString());
+        payload.put("expiresAt", expiresAt.toString());
+        payload.put("revoked", isInviteCodeRevoked(conversation));
+        payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
+        return payload;
     }
 
     private String generateUniqueInviteCode() {

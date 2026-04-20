@@ -41,6 +41,12 @@ public class ConversationDocument {
     @Field("invite_code")
     private String inviteCode;
 
+    @Field("invite_code_issued_at")
+    private Instant inviteCodeIssuedAt;
+
+    @Field("invite_code_revoked_at")
+    private Instant inviteCodeRevokedAt;
+
     @Field("last_message")
     private String lastMessage;
 
@@ -159,6 +165,22 @@ public class ConversationDocument {
 
     public void setInviteCode(String inviteCode) {
         this.inviteCode = inviteCode;
+    }
+
+    public Instant getInviteCodeIssuedAt() {
+        return inviteCodeIssuedAt;
+    }
+
+    public void setInviteCodeIssuedAt(Instant inviteCodeIssuedAt) {
+        this.inviteCodeIssuedAt = inviteCodeIssuedAt;
+    }
+
+    public Instant getInviteCodeRevokedAt() {
+        return inviteCodeRevokedAt;
+    }
+
+    public void setInviteCodeRevokedAt(Instant inviteCodeRevokedAt) {
+        this.inviteCodeRevokedAt = inviteCodeRevokedAt;
     }
 
     public String getLastMessage() {
