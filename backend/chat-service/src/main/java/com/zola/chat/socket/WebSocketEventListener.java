@@ -42,14 +42,13 @@ public class WebSocketEventListener {
     public void handleSessionConnected(SessionConnectedEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = accessor.getSessionId();
-        Principal user = accessor.getUser();
+        String userId = resolveUserId(accessor);
 
-        if (user == null) {
-            LOGGER.warn("[ws-presence] SessionConnected but no user principal, sessionId={}", sessionId);
+        if (userId == null) {
+            LOGGER.debug("[ws-presence] SessionConnected without user context, sessionId={}", sessionId);
             return;
         }
 
-        String userId = user.getName();
         LOGGER.info("[ws-presence] Session CONNECTED: userId={}, sessionId={}", userId, sessionId);
 
         try {
@@ -70,14 +69,13 @@ public class WebSocketEventListener {
     public void handleSessionDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = accessor.getSessionId();
-        Principal user = accessor.getUser();
+        String userId = resolveUserId(accessor);
 
-        if (user == null) {
-            LOGGER.warn("[ws-presence] SessionDisconnect but no user principal, sessionId={}", sessionId);
+        if (userId == null) {
+            LOGGER.debug("[ws-presence] SessionDisconnect without user context, sessionId={}", sessionId);
             return;
         }
 
-        String userId = user.getName();
         LOGGER.info("[ws-presence] Session DISCONNECTED: userId={}, sessionId={}", userId, sessionId);
 
         try {
@@ -86,5 +84,21 @@ public class WebSocketEventListener {
         } catch (Exception e) {
             LOGGER.error("[ws-presence] Failed to process disconnect for user {}: {}", userId, e.getMessage(), e);
         }
+    }
+
+    private String resolveUserId(StompHeaderAccessor accessor) {
+        Principal user = accessor.getUser();
+        if (user != null && user.getName() != null && !user.getName().isBlank()) {
+            return user.getName();
+        }
+
+        Object sessionUserId = accessor.getSessionAttributes() == null
+            ? null
+            : accessor.getSessionAttributes().get("ws_user_id");
+        if (sessionUserId instanceof String userId && !userId.isBlank()) {
+            return userId;
+        }
+
+        return null;
     }
 }

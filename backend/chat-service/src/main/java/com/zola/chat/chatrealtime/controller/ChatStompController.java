@@ -13,6 +13,7 @@ import com.zola.chat.chatrealtime.dto.CallSignalEvent;
 import com.zola.chat.chatrealtime.service.ChatRealtimeService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import org.slf4j.Logger;
@@ -49,18 +50,67 @@ public class ChatStompController {
     }
 
     @MessageMapping({"/call.signal", "/signal/call"})
-    public void callSignal(@Payload CallSignalPayload payload, Principal principal) {
-        if (principal == null || principal.getName() == null || payload == null) {
+    public void callSignal(
+        @Payload CallSignalPayload payload,
+        Principal principal,
+        SimpMessageHeaderAccessor headerAccessor
+    ) {
+        if (payload == null) {
+            LOGGER.warn("[call-signal] drop reason=empty_payload");
+            return;
+        }
+
+        String actorId = principal == null ? null : principal.getName();
+        if ((actorId == null || actorId.isBlank()) && headerAccessor != null) {
+            var sessionAttributes = headerAccessor.getSessionAttributes();
+            Object sessionUserId = sessionAttributes == null ? null : sessionAttributes.get("ws_user_id");
+            if (sessionUserId instanceof String userId && !userId.isBlank()) {
+                actorId = userId;
+            }
+        }
+
+        if (actorId == null || actorId.isBlank()) {
+            LOGGER.warn(
+                "[call-signal] drop reason=missing_actor sessionId={}",
+                headerAccessor == null ? "n/a" : headerAccessor.getSessionId()
+            );
+            return;
+        }
+        final String resolvedActorId = actorId;
+
+        String rawConversationId = payload.conversationId() == null
+            ? null
+            : payload.conversationId().trim();
+        if (rawConversationId == null || rawConversationId.isBlank()) {
+            LOGGER.warn("[call-signal] drop reason=missing_conversation actor={}", resolvedActorId);
+            return;
+        }
+
+        UUID conversationId;
+        try {
+            conversationId = UUID.fromString(rawConversationId);
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn(
+                "[call-signal] drop reason=invalid_conversation_id actor={} conversation={}",
+                resolvedActorId,
+                rawConversationId
+            );
             return;
         }
 
         if (
-            payload.conversationId() == null ||
             payload.callId() == null ||
             payload.callId().isBlank() ||
             payload.signalType() == null ||
             payload.signalType().isBlank()
         ) {
+            LOGGER.warn(
+                "[call-signal] drop reason=missing_fields actor={} conversation={} signal={} callId={}",
+                resolvedActorId,
+                conversationId,
+                payload.signalType(),
+                payload.callId()
+            );
             return;
         }
 
@@ -77,12 +127,33 @@ public class ChatStompController {
         );
         String signalType = payload.signalType().trim().toUpperCase();
         if (!supportedSignals.contains(signalType)) {
+            LOGGER.warn(
+                "[call-signal] drop reason=unsupported_signal actor={} conversation={} signal={}",
+                resolvedActorId,
+                conversationId,
+                signalType
+            );
             return;
         }
 
-        String actorId = principal.getName();
-        Set<String> members = new LinkedHashSet<>(chatRealtimeService.listConversationMembers(payload.conversationId()));
-        if (!members.contains(actorId)) {
+        LOGGER.info(
+            "[call-signal-in] actor={} conversation={} signal={} target={} mode={} sessionId={}",
+            resolvedActorId,
+            conversationId,
+            signalType,
+            payload.targetUserId(),
+            payload.mode(),
+            headerAccessor == null ? "n/a" : headerAccessor.getSessionId()
+        );
+
+        Set<String> members = new LinkedHashSet<>(chatRealtimeService.listConversationMembers(conversationId));
+        if (!members.contains(resolvedActorId)) {
+            LOGGER.warn(
+                "[call-signal] drop reason=actor_not_member actor={} conversation={} members={}",
+                resolvedActorId,
+                conversationId,
+                members.size()
+            );
             return;
         }
 
@@ -93,18 +164,18 @@ public class ChatStompController {
         if (isOneToOneConversation) {
             // For 1-1 chats, always resolve target as the other member for maximum reliability.
             normalizedTargetUserId = members.stream()
-                .filter(memberId -> !actorId.equals(memberId))
+                .filter(memberId -> !resolvedActorId.equals(memberId))
                 .findFirst()
                 .orElse(null);
             hasDirectTarget = normalizedTargetUserId != null && !normalizedTargetUserId.isBlank();
         }
 
         if (hasDirectTarget) {
-            if (actorId.equals(normalizedTargetUserId) || !members.contains(normalizedTargetUserId)) {
+            if (resolvedActorId.equals(normalizedTargetUserId) || !members.contains(normalizedTargetUserId)) {
                 // Fallback for 1-1 conversations when client resolves peer id incorrectly.
                 if (members.size() == 2) {
                     normalizedTargetUserId = members.stream()
-                        .filter(memberId -> !actorId.equals(memberId))
+                        .filter(memberId -> !resolvedActorId.equals(memberId))
                         .findFirst()
                         .orElse(null);
                     hasDirectTarget = normalizedTargetUserId != null && !normalizedTargetUserId.isBlank();
@@ -113,8 +184,8 @@ public class ChatStompController {
         }
 
         CallSignalEvent event = new CallSignalEvent(
-            actorId,
-            payload.conversationId().toString(),
+            resolvedActorId,
+            conversationId.toString(),
             hasDirectTarget ? normalizedTargetUserId : null,
             payload.callId(),
             payload.mode() == null || payload.mode().isBlank() ? "voice" : payload.mode(),
@@ -125,8 +196,8 @@ public class ChatStompController {
 
         LOGGER.info(
             "[call-signal] actor={} conversation={} signal={} target={} members={}",
-            actorId,
-            payload.conversationId(),
+            resolvedActorId,
+            conversationId,
             signalType,
             hasDirectTarget ? normalizedTargetUserId : "broadcast",
             members.size()
@@ -138,7 +209,7 @@ public class ChatStompController {
         } else {
             // Group signaling fan-out to all members except sender.
             for (String memberId : members) {
-                if (memberId.equals(actorId)) {
+                if (memberId.equals(resolvedActorId)) {
                     continue;
                 }
                 messagingTemplate.convertAndSendToUser(memberId, "/queue/call", event);
@@ -146,11 +217,11 @@ public class ChatStompController {
         }
 
         // Echo back to caller so all active tabs stay in sync.
-        messagingTemplate.convertAndSendToUser(actorId, "/queue/call", event);
+        messagingTemplate.convertAndSendToUser(resolvedActorId, "/queue/call", event);
 
         // Fallback channel: deliver call signals to conversation topic so peers still receive
         // events when user-queue routing is impacted by broker/user destination issues.
-        messagingTemplate.convertAndSend("/topic/call/" + payload.conversationId(), event);
+        messagingTemplate.convertAndSend("/topic/call/" + conversationId, event);
         // Global fallback for clients that are not yet subscribed to per-conversation call topics.
         messagingTemplate.convertAndSend("/topic/call", event);
     }
@@ -553,7 +624,7 @@ public class ChatStompController {
     }
 
     public record CallSignalPayload(
-        UUID conversationId,
+        String conversationId,
         String targetUserId,
         String callId,
         String mode,

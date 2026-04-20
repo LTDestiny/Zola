@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, X } from "lucide-react";
 
 export type InAppCallMode = "voice" | "video";
@@ -9,6 +9,8 @@ export type ActiveCallView = {
   peerDisplayName: string;
   mode: InAppCallMode;
   status: InAppCallStatus;
+  startedAt: string;
+  connectedAt: string | null;
 };
 
 export type IncomingCallView = {
@@ -59,6 +61,19 @@ function getStatusText(status: InAppCallStatus, language: "vi" | "en") {
   return language === "vi" ? "Da ket noi" : "Connected";
 }
 
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Number.isFinite(totalSeconds) ? Math.max(0, totalSeconds) : 0;
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function RemoteVideoTile({ stream }: { stream: MediaStream }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -93,12 +108,42 @@ export function InAppCallOverlay({
   onToggleCamera,
 }: InAppCallOverlayProps) {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [tick, setTick] = useState(Date.now());
+
+  useEffect(() => {
+    if (!activeCall) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      setTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [activeCall?.callId]);
 
   useEffect(() => {
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream]);
+
+  const callDurationLabel = useMemo(() => {
+    if (!activeCall) {
+      return "00:00";
+    }
+
+    const baseTime = activeCall.connectedAt ?? activeCall.startedAt;
+    const baseTimeMs = Date.parse(baseTime);
+    if (Number.isNaN(baseTimeMs)) {
+      return "00:00";
+    }
+
+    const elapsedSeconds = Math.floor((tick - baseTimeMs) / 1000);
+    return formatDuration(elapsedSeconds);
+  }, [activeCall, tick]);
 
   return (
     <>
@@ -170,6 +215,11 @@ export function InAppCallOverlay({
                     <p className="mt-1 text-sm text-slate-300">
                       {getStatusText(activeCall.status, language)}
                     </p>
+                    {activeCall.status === "connected" && (
+                      <p className="mt-1 text-sm font-semibold text-emerald-200">
+                        {callDurationLabel}
+                      </p>
+                    )}
                   </div>
                 </div>
               )
@@ -185,6 +235,11 @@ export function InAppCallOverlay({
                   <p className="mt-1 text-sm text-slate-300">
                     {getStatusText(activeCall.status, language)}
                   </p>
+                  {activeCall.status === "connected" && (
+                    <p className="mt-1 text-sm font-semibold text-emerald-200">
+                      {callDurationLabel}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -202,6 +257,7 @@ export function InAppCallOverlay({
             <div className="pointer-events-none absolute left-0 right-0 top-0 bg-gradient-to-b from-slate-950/70 to-transparent p-5">
               <div className="pointer-events-auto inline-flex rounded-lg bg-slate-900/70 px-3 py-1 text-sm text-slate-100 backdrop-blur">
                 {activeCall.peerDisplayName} · {getStatusText(activeCall.status, language)}
+                {activeCall.status === "connected" ? ` · ${callDurationLabel}` : ""}
               </div>
             </div>
 

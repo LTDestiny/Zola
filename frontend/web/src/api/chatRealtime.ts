@@ -9,12 +9,39 @@ import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
 // 3. Proper subscription management
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const CALL_DEBUG =
+  String(import.meta.env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
+
+const CALL_LOG_PATTERN =
+  /\/app\/(call\.signal|signal\/call)|\/topic\/call|\/user\/queue\/call|\/queue\/call|CALL_|WEBRTC_|\bERROR\b/i;
+
+function toLogString(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function shouldEmitCallLog(tag: string, args: unknown[]): boolean {
+  if (tag === "error") {
+    return true;
+  }
+
+  const snapshot = [tag, ...args.map(toLogString)].join(" ");
+  return CALL_LOG_PATTERN.test(snapshot);
+}
 
 function log(tag: string, ...args: unknown[]) {
-  if (DEBUG) {
-    console.log(`[chatRealtime][${tag}]`, ...args);
+  if (!CALL_DEBUG || !shouldEmitCallLog(tag, args)) {
+    return;
   }
+
+  console.log(`[chatRealtime][${tag}]`, ...args);
 }
 
 export type ChatRealtimeEvent = {
@@ -137,9 +164,8 @@ export class ChatRealtimeClient {
         Authorization: `Bearer ${accessToken}`,
       },
       debug: (str) => {
-        // Log STOMP frames for debugging
-        if (DEBUG && (str.includes(">>>") || str.includes("<<<"))) {
-          log("stomp", str.slice(0, 100));
+        if (CALL_DEBUG && CALL_LOG_PATTERN.test(str)) {
+          log("stomp", str.slice(0, 260));
         }
       },
       onConnect: () => {
@@ -647,7 +673,15 @@ export class ChatRealtimeClient {
           ? payload
           : JSON.stringify(payload);
 
-    return this.safePublish("/app/call.signal", {
+    const destination = "/app/signal/call";
+    log("call-publish", `${signalType} -> ${destination}`, {
+      conversationId: conversationId.slice(0, 8),
+      targetUserId: targetUserId?.slice(0, 8) ?? null,
+      callId,
+      payloadLength: normalizedPayload?.length ?? 0,
+    });
+
+    return this.safePublish(destination, {
       conversationId,
       targetUserId,
       callId,

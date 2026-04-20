@@ -161,7 +161,17 @@ type DirectCallSession = {
   direction: "incoming" | "outgoing";
   status: InAppCallStatus;
   startedAt: string;
+  connectedAt: string | null;
   participantIds: string[];
+};
+
+type GroupCallNotice = {
+  callId: string;
+  conversationId: string;
+  initiatorUserId: string;
+  initiatorDisplayName: string;
+  mode: InAppCallMode;
+  createdAt: string;
 };
 
 type IncomingCallState = {
@@ -347,6 +357,20 @@ const WEBRTC_ICE_POLICY: RTCIceTransportPolicy = WEBRTC_FORCE_RELAY
   : "all";
 const CALL_CONNECT_TIMEOUT_MS = 30000;
 const CALL_INVITE_RETRY_MS = 1800;
+const GROUP_CALL_SOLO_TIMEOUT_MS = 30000;
+const CALL_DEBUG =
+  String(import.meta.env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
+
+function logCallDebug(stage: string, payload?: unknown) {
+  if (!CALL_DEBUG) {
+    return;
+  }
+  if (payload === undefined) {
+    console.log(`[call-debug][${stage}]`);
+    return;
+  }
+  console.log(`[call-debug][${stage}]`, payload);
+}
 
 type UserPresenceState = {
   online: boolean;
@@ -475,6 +499,7 @@ export function ChatPage() {
   const [callHistory, setCallHistory] = useState<QuickCallHistoryItem[]>([]);
   const [activeCall, setActiveCall] = useState<DirectCallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null);
+  const [groupCallNoticeMap, setGroupCallNoticeMap] = useState<Record<string, GroupCallNotice>>({});
   const [localCallStream, setLocalCallStream] = useState<MediaStream | null>(null);
   const [remoteCallStreams, setRemoteCallStreams] = useState<Record<string, MediaStream>>({});
   const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(true);
@@ -532,9 +557,11 @@ export function ChatPage() {
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const pendingOffersRef = useRef<Record<string, RTCSessionDescriptionInit>>({});
   const pendingIceCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const pendingCallEventsRef = useRef<CallRealtimeEvent[]>([]);
   const peerIceRestartAttemptsRef = useRef<Record<string, number>>({});
   const inviteRetryTimerRef = useRef<number | null>(null);
   const unansweredCallTimerRef = useRef<number | null>(null);
+  const groupCallSoloTimerRef = useRef<number | null>(null);
   const callManagerRef = useRef(new CallManager());
 
   const transitionCallState = useCallback(
@@ -555,6 +582,59 @@ export function ChatPage() {
     }
     callManagerRef.current.stopOutgoingGuards();
   }, []);
+
+  const clearGroupCallSoloGuard = useCallback(() => {
+    if (groupCallSoloTimerRef.current) {
+      window.clearTimeout(groupCallSoloTimerRef.current);
+      groupCallSoloTimerRef.current = null;
+    }
+  }, []);
+
+  const upsertGroupCallNotice = useCallback((notice: GroupCallNotice) => {
+    setGroupCallNoticeMap((prev) => {
+      const existing = prev[notice.conversationId];
+      if (
+        existing &&
+        existing.callId === notice.callId &&
+        existing.initiatorUserId === notice.initiatorUserId &&
+        existing.mode === notice.mode
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [notice.conversationId]: existing
+          ? {
+              ...existing,
+              callId: notice.callId,
+              initiatorUserId: notice.initiatorUserId,
+              initiatorDisplayName: notice.initiatorDisplayName,
+              mode: notice.mode,
+            }
+          : notice,
+      };
+    });
+  }, []);
+
+  const clearGroupCallNotice = useCallback(
+    (conversationId: string, callId?: string) => {
+      setGroupCallNoticeMap((prev) => {
+        const existing = prev[conversationId];
+        if (!existing) {
+          return prev;
+        }
+        if (callId && existing.callId !== callId) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        delete next[conversationId];
+        return next;
+      });
+    },
+    [],
+  );
 
   // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
@@ -1234,6 +1314,7 @@ export function ChatPage() {
 
   const resetCallRuntime = useCallback(() => {
     clearOutgoingCallGuards();
+    clearGroupCallSoloGuard();
 
     Object.values(peerConnectionsRef.current).forEach((connection) => {
       connection.onicecandidate = null;
@@ -1262,7 +1343,7 @@ export function ChatPage() {
     setIsMicrophoneEnabled(true);
     setIsCameraEnabled(true);
     transitionCallState("RESET");
-  }, [clearOutgoingCallGuards, transitionCallState]);
+  }, [clearGroupCallSoloGuard, clearOutgoingCallGuards, transitionCallState]);
 
   const publishCallSignal = useCallback(
     (
@@ -1498,7 +1579,11 @@ export function ChatPage() {
 
         setActiveCall((prev) =>
           prev && prev.callId === session.callId
-            ? { ...prev, status: "connected" }
+            ? {
+                ...prev,
+                status: "connected",
+                connectedAt: prev.connectedAt ?? new Date().toISOString(),
+              }
             : prev,
         );
         updateCallHistoryStatus(session.callId, "connected");
@@ -1511,7 +1596,11 @@ export function ChatPage() {
           transitionCallState("PEER_CONNECTED", session.callId);
           setActiveCall((prev) =>
             prev && prev.callId === session.callId
-              ? { ...prev, status: "connected" }
+              ? {
+                  ...prev,
+                  status: "connected",
+                  connectedAt: prev.connectedAt ?? new Date().toISOString(),
+                }
               : prev,
           );
           updateCallHistoryStatus(session.callId, "connected");
@@ -1637,14 +1726,14 @@ export function ChatPage() {
   );
 
   const onEndDirectCall = useCallback(
-    (reason = "ended", notifyPeer = true) => {
+    (reason = "ended", notifyPeer = true, forceGroupEnd = false) => {
       const currentCall = activeCallRef.current;
       if (currentCall && notifyPeer) {
         const myUserId = myUserIdRef.current;
 
         if (currentCall.conversationType === "group") {
           const signalType: CallSignalType =
-            myUserId && currentCall.initiatorUserId === myUserId
+            forceGroupEnd || (myUserId && currentCall.initiatorUserId === myUserId)
               ? "CALL_END"
               : "CALL_LEAVE";
 
@@ -1674,6 +1763,13 @@ export function ChatPage() {
             },
           );
         }
+
+        if (
+          currentCall.conversationType === "group" &&
+          (forceGroupEnd || (myUserId && currentCall.initiatorUserId === myUserId))
+        ) {
+          clearGroupCallNotice(currentCall.conversationId, currentCall.callId);
+        }
       }
 
       if (currentCall) {
@@ -1685,6 +1781,7 @@ export function ChatPage() {
       resetCallRuntime();
     },
     [
+      clearGroupCallNotice,
       clearOutgoingCallGuards,
       publishCallSignal,
       resetCallRuntime,
@@ -1692,6 +1789,44 @@ export function ChatPage() {
       updateCallHistoryStatus,
     ],
   );
+
+  useEffect(() => {
+    const currentCall = activeCall;
+    if (!currentCall || currentCall.conversationType !== "group") {
+      clearGroupCallSoloGuard();
+      return;
+    }
+
+    if (currentCall.participantIds.length > 0) {
+      clearGroupCallSoloGuard();
+      return;
+    }
+
+    if (groupCallSoloTimerRef.current) {
+      return;
+    }
+
+    groupCallSoloTimerRef.current = window.setTimeout(() => {
+      const latestCall = activeCallRef.current;
+      if (!latestCall || latestCall.conversationType !== "group") {
+        return;
+      }
+      if (latestCall.participantIds.length > 0) {
+        return;
+      }
+
+      setBannerMessage(
+        language === "vi"
+          ? "Khong con ai trong cuoc goi nhom, cuoc goi da duoc ket thuc"
+          : "No one else is in the group call, call has been ended",
+      );
+      onEndDirectCall("group_single_participant_timeout", true, true);
+    }, GROUP_CALL_SOLO_TIMEOUT_MS);
+
+    return () => {
+      clearGroupCallSoloGuard();
+    };
+  }, [activeCall, clearGroupCallSoloGuard, language, onEndDirectCall]);
 
   const onRejectIncomingCall = useCallback(() => {
     const pendingCall = incomingCallRef.current;
@@ -1755,6 +1890,7 @@ export function ChatPage() {
       direction: "incoming",
       status: "connecting",
       startedAt: new Date().toISOString(),
+      connectedAt: null,
       participantIds: [],
     };
 
@@ -1956,16 +2092,65 @@ export function ChatPage() {
   const handleCallEvent = useCallback(
     (event: CallRealtimeEvent) => {
       const myUserId = myUserIdRef.current;
-      if (!myUserId || !event.callId || !event.conversationId) {
+      logCallDebug("event-received", {
+        signalType: event.signalType,
+        callId: event.callId,
+        actorId: event.actorId,
+        targetUserId: event.targetUserId,
+        conversationId: event.conversationId,
+      });
+
+      if (!event.callId || !event.conversationId) {
+        logCallDebug("drop-missing-context", {
+          hasMyUserId: Boolean(myUserId),
+          hasCallId: Boolean(event.callId),
+          hasConversationId: Boolean(event.conversationId),
+        });
+        return;
+      }
+
+      const knownConversationIds = conversationIdsRef.current;
+      if (
+        knownConversationIds.length > 0 &&
+        !knownConversationIds.includes(event.conversationId)
+      ) {
+        logCallDebug("drop-unknown-conversation", {
+          callId: event.callId,
+          conversationId: event.conversationId,
+        });
+        return;
+      }
+
+      if (!myUserId) {
+        pendingCallEventsRef.current.push(event);
+        if (pendingCallEventsRef.current.length > 40) {
+          pendingCallEventsRef.current.shift();
+        }
+        logCallDebug("queue-no-user-context", {
+          callId: event.callId,
+          conversationId: event.conversationId,
+          signalType: event.signalType,
+          queued: pendingCallEventsRef.current.length,
+        });
         return;
       }
 
       // Ignore the server echo for the sender tab.
       if (event.actorId === myUserId) {
+        logCallDebug("drop-self-echo", {
+          signalType: event.signalType,
+          callId: event.callId,
+        });
         return;
       }
 
       if (event.targetUserId && event.targetUserId !== myUserId) {
+        logCallDebug("drop-target-mismatch", {
+          signalType: event.signalType,
+          callId: event.callId,
+          expectedUserId: myUserId,
+          actualTargetUserId: event.targetUserId,
+        });
         return;
       }
 
@@ -1979,6 +2164,17 @@ export function ChatPage() {
           ? "group"
           : "private";
       const initiatorUserId = payload.initiatorUserId ?? event.actorId;
+
+      if (conversationType === "group" && event.signalType === "CALL_INVITE") {
+        upsertGroupCallNotice({
+          callId: event.callId,
+          conversationId: event.conversationId,
+          initiatorUserId,
+          initiatorDisplayName: peerDisplayName,
+          mode,
+          createdAt: event.createdAt,
+        });
+      }
 
       const currentCall = activeCallRef.current;
       if (currentCall && currentCall.callId !== event.callId && event.signalType === "CALL_INVITE") {
@@ -1996,6 +2192,12 @@ export function ChatPage() {
 
       if (event.signalType === "CALL_INVITE") {
         if (!activeCallRef.current) {
+          logCallDebug("incoming-invite", {
+            callId: event.callId,
+            actorId: event.actorId,
+            conversationId: event.conversationId,
+            conversationType,
+          });
           transitionCallState("INCOMING_INVITE", event.callId);
           setIncomingCall({
             callId: event.callId,
@@ -2068,6 +2270,17 @@ export function ChatPage() {
       }
 
       if (event.signalType === "CALL_JOINED") {
+        if (conversationType === "group") {
+          upsertGroupCallNotice({
+            callId: event.callId,
+            conversationId: event.conversationId,
+            initiatorUserId,
+            initiatorDisplayName: peerDisplayName,
+            mode,
+            createdAt: event.createdAt,
+          });
+        }
+
         if (!currentCall || currentCall.callId !== event.callId) {
           return;
         }
@@ -2106,6 +2319,10 @@ export function ChatPage() {
       }
 
       if (event.signalType === "CALL_END") {
+        if (conversationType === "group") {
+          clearGroupCallNotice(event.conversationId, event.callId);
+        }
+
         if (currentCall && currentCall.callId === event.callId) {
           clearOutgoingCallGuards();
           transitionCallState("END", event.callId);
@@ -2213,6 +2430,7 @@ export function ChatPage() {
     },
     [
       addParticipantToActiveCall,
+      clearGroupCallNotice,
       clearOutgoingCallGuards,
       closePeerConnection,
       createOfferForPeer,
@@ -2222,9 +2440,25 @@ export function ChatPage() {
       publishCallSignal,
       resetCallRuntime,
       transitionCallState,
+      upsertGroupCallNotice,
       updateCallHistoryStatus,
     ],
   );
+
+  useEffect(() => {
+    if (!myUserIdRef.current || pendingCallEventsRef.current.length === 0) {
+      return;
+    }
+
+    const pendingEvents = [...pendingCallEventsRef.current];
+    pendingCallEventsRef.current = [];
+    logCallDebug("replay-pending-events", {
+      count: pendingEvents.length,
+    });
+    pendingEvents.forEach((pendingEvent) => {
+      handleCallEvent(pendingEvent);
+    });
+  }, [handleCallEvent, myProfile?.id]);
 
   const onStartQuickCall = async (mode: QuickCallMode) => {
     if (activeCallRef.current) {
@@ -2286,8 +2520,20 @@ export function ChatPage() {
       direction: "outgoing",
       status: "calling",
       startedAt,
+      connectedAt: null,
       participantIds: [],
     };
+
+    if (conversationType === "group") {
+      upsertGroupCallNotice({
+        callId,
+        conversationId: activeConversationId,
+        initiatorUserId,
+        initiatorDisplayName: session.peerDisplayName,
+        mode,
+        createdAt: startedAt,
+      });
+    }
 
     setIncomingCall(null);
     setActiveCall(session);
@@ -2372,15 +2618,156 @@ export function ChatPage() {
       clearOutgoingCallGuards();
       transitionCallState("END", callId);
       updateCallHistoryStatus(callId, "missed");
+      if (conversationType === "group") {
+        clearGroupCallNotice(activeConversationId, callId);
+      }
       resetCallRuntime();
       const detail = (error as { message?: string })?.message;
       setBannerMessage(detail || toApiErrorMessage(error));
     }
   };
 
+  const onJoinGroupCallFromNotice = useCallback(
+    async (notice: GroupCallNotice) => {
+      if (activeCallRef.current) {
+        setBannerMessage(
+          language === "vi"
+            ? "Hay ket thuc cuoc goi hien tai truoc khi tham gia"
+            : "Please end current call before joining",
+        );
+        return;
+      }
+
+      const currentUserId = myUserIdRef.current;
+      if (!currentUserId) {
+        setBannerMessage(
+          language === "vi"
+            ? "Thong tin tai khoan chua san sang, vui long thu lai"
+            : "Account context is not ready yet, please try again",
+        );
+        return;
+      }
+
+      const session: DirectCallSession = {
+        callId: notice.callId,
+        conversationId: notice.conversationId,
+        conversationType: "group",
+        initiatorUserId: notice.initiatorUserId,
+        peerDisplayName: notice.initiatorDisplayName,
+        mode: notice.mode,
+        direction: "incoming",
+        status: "connecting",
+        startedAt: notice.createdAt,
+        connectedAt: null,
+        participantIds: [],
+      };
+
+      hasUserOpenedConversationRef.current = true;
+      manuallyOpenedConversationIdRef.current = notice.conversationId;
+      setActiveConversationId(notice.conversationId);
+      setActiveTab("messages");
+      setIncomingCall(null);
+
+      transitionCallState("LOCAL_ACCEPTED", notice.callId);
+      setActiveCall(session);
+
+      appendCallHistory({
+        id: session.callId,
+        conversationId: session.conversationId,
+        conversationName: session.peerDisplayName,
+        mode: session.mode,
+        direction: "incoming",
+        status: "started",
+        createdAt: new Date().toISOString(),
+      });
+
+      try {
+        await acquireLocalStream(session.mode);
+
+        const acceptSent = publishCallSignal(
+          session.conversationId,
+          session.initiatorUserId,
+          session.callId,
+          session.mode,
+          "CALL_ACCEPT",
+          {
+            acceptedAt: new Date().toISOString(),
+            initiatorUserId: session.initiatorUserId,
+            conversationType: "group",
+            joinedFromBanner: true,
+          },
+        );
+
+        if (!acceptSent) {
+          throw new Error(
+            language === "vi"
+              ? "Khong the tham gia cuoc goi khi realtime dang ngat"
+              : "Cannot join call while realtime is disconnected",
+          );
+        }
+
+        const joinedSent = publishCallSignal(
+          session.conversationId,
+          null,
+          session.callId,
+          session.mode,
+          "CALL_JOINED",
+          {
+            initiatorUserId: session.initiatorUserId,
+            conversationType: "group",
+          },
+        );
+
+        if (!joinedSent) {
+          throw new Error(
+            language === "vi"
+              ? "Khong the thong bao tham gia cuoc goi"
+              : "Cannot announce joining the call",
+          );
+        }
+
+        const offerSources = Object.keys(pendingOffersRef.current);
+        for (const peerUserId of offerSources) {
+          await processPendingOffer(session, peerUserId);
+        }
+      } catch (error) {
+        publishCallSignal(
+          session.conversationId,
+          null,
+          session.callId,
+          session.mode,
+          "CALL_LEAVE",
+          {
+            reason: "join_from_banner_failed",
+            initiatorUserId: session.initiatorUserId,
+            conversationType: "group",
+          },
+        );
+
+        updateCallHistoryStatus(session.callId, "missed");
+        resetCallRuntime();
+
+        const detail = (error as { message?: string })?.message;
+        setBannerMessage(detail || toApiErrorMessage(error));
+      }
+    },
+    [
+      acquireLocalStream,
+      appendCallHistory,
+      language,
+      processPendingOffer,
+      publishCallSignal,
+      resetCallRuntime,
+      setActiveConversationId,
+      transitionCallState,
+      updateCallHistoryStatus,
+    ],
+  );
+
   useEffect(() => {
     return () => {
       clearOutgoingCallGuards();
+      clearGroupCallSoloGuard();
       callManagerRef.current.dispose();
 
       stopMediaStream(localCallStreamRef.current);
@@ -2396,7 +2783,7 @@ export function ChatPage() {
         connection.close();
       });
     };
-  }, [clearOutgoingCallGuards]);
+  }, [clearGroupCallSoloGuard, clearOutgoingCallGuards]);
 
   const filteredConversations = useMemo(() => {
     const rawSearch = searchText.trim();
@@ -2878,7 +3265,6 @@ export function ChatPage() {
           // This catches duplicates across MESSAGE_SENT and NEW_MESSAGE
           const dedupKey = `msg:${payload.messageId}`;
           if (processedRealtimeSendIdsRef.current.has(dedupKey)) {
-            console.log(`[ChatPage] Duplicate message ignored: ${dedupKey}`);
             return;
           }
           processedRealtimeSendIdsRef.current.add(dedupKey);
@@ -4370,8 +4756,20 @@ export function ChatPage() {
       peerDisplayName: activeCall.peerDisplayName,
       mode: activeCall.mode,
       status: activeCall.status,
+      startedAt: activeCall.startedAt,
+      connectedAt: activeCall.connectedAt,
     }
     : null;
+
+  const activeGroupCallNotice =
+    activeConversationForView?.type === "group"
+      ? groupCallNoticeMap[activeConversationForView.id] ?? null
+      : null;
+
+  const showJoinGroupCallNotice = Boolean(
+    activeGroupCallNotice &&
+      (!activeCall || activeCall.callId !== activeGroupCallNotice.callId),
+  );
 
   const incomingCallView: IncomingCallView | null = incomingCall
     ? {
@@ -4889,6 +5287,31 @@ export function ChatPage() {
       <main className="min-w-0 flex-1 bg-[#0f1724]">
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
+            {showJoinGroupCallNotice && activeGroupCallNotice && (
+              <div className="z-20 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 sm:px-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-emerald-100">
+                    {language === "vi"
+                      ? `${activeGroupCallNotice.initiatorDisplayName} dang trong cuoc goi ${
+                          activeGroupCallNotice.mode === "video" ? "video" : "thoai"
+                        } nhom`
+                      : `${activeGroupCallNotice.initiatorDisplayName} is in an active ${
+                          activeGroupCallNotice.mode === "video" ? "video" : "voice"
+                        } group call`}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onJoinGroupCallFromNotice(activeGroupCallNotice);
+                    }}
+                    className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-400"
+                  >
+                    {language === "vi" ? "Tham gia cuoc goi" : "Join call"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {activeConversationForView?.type === "group" ? (
               <GroupChat
                 language={language}

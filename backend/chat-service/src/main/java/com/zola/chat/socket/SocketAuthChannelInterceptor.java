@@ -6,11 +6,13 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +20,7 @@ import java.util.Map;
 public class SocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SocketAuthChannelInterceptor.class);
+    private static final String SESSION_USER_ID_KEY = "ws_user_id";
 
     private final SocketJwtService socketJwtService;
 
@@ -29,16 +32,16 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
         StompCommand command = accessor.getCommand();
-        
-        LOGGER.info("[ws-auth] Received STOMP command: {}", command);
+
+        if (command == null) {
+            return message;
+        }
         
         if (StompCommand.CONNECT.equals(command)) {
             String authorization = accessor.getFirstNativeHeader("Authorization");
             if (authorization == null || authorization.isBlank()) {
                 authorization = accessor.getFirstNativeHeader("authorization");
             }
-            
-            LOGGER.info("[ws-auth] CONNECT frame received, hasAuth={}", authorization != null);
 
             if (authorization == null || !authorization.startsWith("Bearer ")) {
                 LOGGER.warn("[ws-auth] Reject websocket CONNECT without bearer token");
@@ -57,14 +60,15 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
                 accessor.setUser(authenticationToken);
                 Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
                 if (sessionAttributes != null) {
-                    sessionAttributes.put("ws_user_id", userId);
+                    sessionAttributes.put(SESSION_USER_ID_KEY, userId);
                 }
                 LOGGER.info("[ws-auth] CONNECT authenticated successfully, userId={}", userId);
             } catch (Exception ex) {
                 LOGGER.warn("[ws-auth] Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
                 return null;
             }
-            return message;
+
+            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         }
 
         if (
@@ -73,16 +77,42 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
             StompCommand.UNSUBSCRIBE.equals(command) ||
             StompCommand.DISCONNECT.equals(command)
         ) {
+            String restoredUserId = null;
             if (accessor.getUser() == null) {
                 Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
                 Object sessionUserId = sessionAttributes == null
                     ? null
-                    : sessionAttributes.get("ws_user_id");
+                    : sessionAttributes.get(SESSION_USER_ID_KEY);
                 if (sessionUserId instanceof String userId && !userId.isBlank()) {
                     accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                    restoredUserId = userId;
                 }
             }
+
+            String destination = accessor.getDestination();
+            if (isCallDestination(destination)) {
+                Principal principal = accessor.getUser();
+                String principalName = principal == null ? "unknown" : principal.getName();
+                LOGGER.info(
+                    "[call-frame] command={} destination={} sessionId={} user={} restoredUser={}",
+                    command,
+                    destination,
+                    accessor.getSessionId(),
+                    principalName,
+                    restoredUserId != null
+                );
+            }
+
+            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         }
+
         return message;
+    }
+
+    private boolean isCallDestination(String destination) {
+        if (destination == null || destination.isBlank()) {
+            return false;
+        }
+        return destination.contains("/call") || destination.contains("/signal/call");
     }
 }
