@@ -7,7 +7,10 @@ import com.zola.chat.repository.MessageRepository;
 import com.zola.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.servlet.http.HttpServletResponse;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +29,15 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/chat-legacy")
+@Deprecated(forRemoval = true, since = "2026-04")
 public class ChatQueryController {
+
+    private static final String TOPIC_CHAT_PREFIX = "/topic/chat/";
+    private static final String USER_QUEUE_CHAT = "/queue/chat";
+    private static final String LEGACY_WARNING = "299 - chat-legacy API is deprecated; migrate to /api/v1/chat + STOMP contract in CHAT_1_1_FRONTEND_API.md";
+    private static final String LEGACY_SUNSET = "Wed, 01 Oct 2026 00:00:00 GMT";
+
+    private static final Logger log = LoggerFactory.getLogger(ChatQueryController.class);
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
@@ -43,7 +54,11 @@ public class ChatQueryController {
     }
 
     @GetMapping("/conversations")
-    public ApiResponse<List<ConversationSummaryResponse>> conversations(@RequestHeader("X-User-Id") String userId) {
+    public ApiResponse<List<ConversationSummaryResponse>> conversations(
+        @RequestHeader("X-User-Id") String userId,
+        HttpServletResponse response
+    ) {
+        markLegacyDeprecated(response, "GET /api/v1/chat-legacy/conversations", userId);
         List<ConversationSummaryResponse> items = conversationRepository.findByParticipantsContains(userId)
             .stream()
             .map(conversation -> toSummary(userId, conversation))
@@ -56,8 +71,10 @@ public class ChatQueryController {
     @GetMapping("/conversations/{conversationId}/messages")
     public ApiResponse<List<MessageResponse>> messages(
         @RequestHeader("X-User-Id") String userId,
-        @PathVariable("conversationId") String conversationId
+        @PathVariable("conversationId") String conversationId,
+        HttpServletResponse response
     ) {
+        markLegacyDeprecated(response, "GET /api/v1/chat-legacy/conversations/{conversationId}/messages", userId);
         ConversationDocument conversation = ensureConversationMember(userId, conversationId);
         ObjectId objectId = parseObjectId(conversation.getId());
         List<MessageResponse> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(objectId)
@@ -78,8 +95,10 @@ public class ChatQueryController {
     public ApiResponse<MessageResponse> sendMessage(
         @RequestHeader("X-User-Id") String userId,
         @PathVariable("conversationId") String conversationId,
-        @Valid @RequestBody SendMessageRequest request
+        @Valid @RequestBody SendMessageRequest request,
+        HttpServletResponse response
     ) {
+        markLegacyDeprecated(response, "POST /api/v1/chat-legacy/conversations/{conversationId}/messages", userId);
         ConversationDocument conversation = ensureConversationMember(userId, conversationId);
         Instant now = Instant.now();
         MessageDocument message = new MessageDocument();
@@ -103,8 +122,8 @@ public class ChatQueryController {
             saved.getCreatedAt()
         );
 
-        ChatRealtimeEvent event = new ChatRealtimeEvent(
-            "NEW_MESSAGE",
+        ChatRealtimeEvent messageEvent = new ChatRealtimeEvent(
+            "MESSAGE_SENT",
             conversationId,
             userId,
             null,
@@ -113,12 +132,21 @@ public class ChatQueryController {
             realtimeMessage
         );
 
-        messagingTemplate.convertAndSend("/topic/chat." + conversationId, event);
-        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+        ChatRealtimeEvent conversationUpdatedEvent = new ChatRealtimeEvent(
+            "CONVERSATION_UPDATED",
+            conversationId,
+            userId,
+            null,
+            saved.getContent(),
+            saved.getCreatedAt(),
+            realtimeMessage
+        );
+
+        // Keep one canonical destination to prevent duplicate timeline events.
+        messagingTemplate.convertAndSend(TOPIC_CHAT_PREFIX + conversationId, messageEvent);
         if (conversation.getParticipants() != null) {
             for (String participantId : conversation.getParticipants()) {
-                messagingTemplate.convertAndSendToUser(participantId, "/queue/chat", event);
-                messagingTemplate.convertAndSendToUser(participantId, "/queue/notifications", event);
+                messagingTemplate.convertAndSendToUser(participantId, USER_QUEUE_CHAT, conversationUpdatedEvent);
             }
         }
 
@@ -178,6 +206,14 @@ public class ChatQueryController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid conversation id");
         }
         return new ObjectId(value);
+    }
+
+    private void markLegacyDeprecated(HttpServletResponse response, String endpoint, String userId) {
+        response.setHeader("Deprecation", "true");
+        response.setHeader("Sunset", LEGACY_SUNSET);
+        response.setHeader("Warning", LEGACY_WARNING);
+        response.setHeader("X-API-Deprecated", "true");
+        log.warn("Deprecated legacy chat endpoint called: endpoint={}, userId={}", endpoint, userId);
     }
 
     public record ConversationSummaryResponse(

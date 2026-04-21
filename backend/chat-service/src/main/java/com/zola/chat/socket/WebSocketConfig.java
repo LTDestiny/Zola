@@ -11,29 +11,38 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    private final SocketAuthChannelInterceptor socketAuthChannelInterceptor;
+    private final SocketAuthChannelInterceptor auth;
 
-    public WebSocketConfig(SocketAuthChannelInterceptor socketAuthChannelInterceptor) {
-        this.socketAuthChannelInterceptor = socketAuthChannelInterceptor;
+    public WebSocketConfig(SocketAuthChannelInterceptor auth) {
+        this.auth = auth;
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // /topic/chat/{conversationId} is used by clients to receive realtime events.
-        registry.enableSimpleBroker("/topic", "/queue");
-        // All client sends should start with /app (ex: /app/chat.send).
+
+        registry.enableSimpleBroker(
+                "/topic",
+                "/queue"
+        );
+
         registry.setApplicationDestinationPrefixes("/app");
+
         registry.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+
         registry.addEndpoint("/ws")
-            .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns("*");
+
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();   // CRITICAL
     }
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(socketAuthChannelInterceptor);
+        registration.interceptors(auth);
     }
 }

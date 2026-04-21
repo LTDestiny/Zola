@@ -31,7 +31,8 @@ public class ChatStompController {
         this.messagingTemplate = messagingTemplate;
     }
 
-    @MessageMapping("/chat.send")
+    // Support both legacy dot notation and slash notation for client compatibility.
+    @MessageMapping({ "/chat.send"})
     public void send(@Payload ChatSendRequest request, Principal principal) {
         if (principal == null || principal.getName() == null) {
             return;
@@ -109,12 +110,28 @@ public class ChatStompController {
     }
 
     private void broadcast(String conversationId, ChatEventResponse event) {
-        // CRITICAL FIX: Publish to BOTH topic formats for compatibility
-        // Some clients subscribe to /topic/chat.{id} (dot), others to /topic/chat/{id} (slash)
-        messagingTemplate.convertAndSend("/topic/chat." + conversationId, event);
+        // PRODUCTION FIX: Use ONLY slash format /topic/chat/{id}
+        // Dot format removed to prevent duplicate events when clients subscribe to both
+        // All clients must subscribe to /topic/chat/{conversationId}
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
     }
 
+    /**
+     * PRODUCTION FIX: Emit ONLY CONVERSATION_UPDATED to /user/queue/chat
+     * 
+     * Previous issues:
+     * 1. Emitting NEW_MESSAGE here caused duplicates (MESSAGE_SENT already sent via topic)
+     * 2. Emitting UNREAD_COUNT_UPDATED + TOTAL_UNREAD_UPDATED caused frontend to increment multiple times
+     * 
+     * Solution:
+     * - Single CONVERSATION_UPDATED event contains all metadata (unreadCount, totalUnreadCount, lastMessage)
+     * - MESSAGE_SENT goes to /topic/chat/{id} for message content
+     * - CONVERSATION_UPDATED goes to /user/queue/chat for sidebar/unread sync
+     * 
+     * Channel separation:
+     * - /topic/chat/{id}: MESSAGE_SENT, MESSAGE_UPDATED, MESSAGE_RECALLED, READ_RECEIPT, TYPING
+     * - /user/queue/chat: CONVERSATION_UPDATED only (metadata sync)
+     */
     private void emitUnreadSyncEvents(UUID conversationId, com.zola.chat.chatrealtime.dto.MessagePayload messagePayload, String... userIds) {
         Set<String> uniqueUserIds = new LinkedHashSet<>();
         for (String userId : userIds) {
@@ -125,70 +142,16 @@ public class ChatStompController {
         }
 
         for (String userId : uniqueUserIds) {
-            ChatEventResponse base = chatRealtimeService.buildConversationUpdatedEvent(
+            // ✅ FIX Bug #2: Don't send message payload in CONVERSATION_UPDATED
+            // Message already sent via /topic/chat/{id} as MESSAGE_SENT
+            // This event is for metadata only (unreadCount, totalUnreadCount, lastMessage)
+            ChatEventResponse event = chatRealtimeService.buildConversationUpdatedEvent(
                 userId,
                 conversationId,
                 "CONVERSATION_UPDATED",
-                messagePayload
+                null  // ✅ FIXED: Removed duplicate message payload
             );
-
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", base);
-
-            messagingTemplate.convertAndSendToUser(
-                userId,
-                "/queue/chat",
-                new ChatEventResponse(
-                    "UNREAD_COUNT_UPDATED",
-                    base.actorId(),
-                    base.conversationId(),
-                    false,
-                    false,
-                    null,
-                    null,
-                    base.unreadCount(),
-                    base.totalUnreadCount(),
-                    base.lastMessage(),
-                    base.lastMessageAt()
-                )
-            );
-
-            messagingTemplate.convertAndSendToUser(
-                userId,
-                "/queue/chat",
-                new ChatEventResponse(
-                    "TOTAL_UNREAD_UPDATED",
-                    base.actorId(),
-                    base.conversationId(),
-                    false,
-                    false,
-                    null,
-                    null,
-                    base.unreadCount(),
-                    base.totalUnreadCount(),
-                    base.lastMessage(),
-                    base.lastMessageAt()
-                )
-            );
-
-            if (messagePayload != null) {
-                messagingTemplate.convertAndSendToUser(
-                    userId,
-                    "/queue/chat",
-                    new ChatEventResponse(
-                        "NEW_MESSAGE",
-                        messagePayload.senderId(),
-                        messagePayload.conversationId(),
-                        false,
-                        false,
-                        null,
-                        messagePayload,
-                        base.unreadCount(),
-                        base.totalUnreadCount(),
-                        base.lastMessage(),
-                        base.lastMessageAt()
-                    )
-                );
-            }
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
         }
     }
 }

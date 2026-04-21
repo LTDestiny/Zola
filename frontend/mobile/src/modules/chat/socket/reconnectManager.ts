@@ -1,12 +1,6 @@
-// Try to import NetInfo, but make it optional for development
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let NetInfo: any = null;
-try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    NetInfo = require("@react-native-community/netinfo").default;
-} catch {
-    console.warn("[reconnectManager] @react-native-community/netinfo not installed, network monitoring disabled");
-}
+// ✅ FIX Bug #5: Make NetInfo required for network change detection
+// This prevents app from staying disconnected after WiFi ↔ Mobile data switch
+import NetInfo from "@react-native-community/netinfo";
 
 import { AppState, type AppStateStatus } from "react-native";
 import { socketService } from "./socketService";

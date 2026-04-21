@@ -87,7 +87,8 @@ public class ChatConversationController {
             request.type(),
             request.content(),
             request.fileUrl(),
-            request.fileName()
+            request.fileName(),
+            request.clientMessageId()
         );
 
         // Keep realtime behavior even for HTTP fallback path.
@@ -160,7 +161,8 @@ public class ChatConversationController {
         String type,
         @NotBlank String content,
         String fileUrl,
-        String fileName
+        String fileName,
+        String clientMessageId // Optional: client idempotency key
     ) {
     }
 
@@ -226,10 +228,12 @@ public class ChatConversationController {
     ) {
         ChatEventResponse event = chatRealtimeService.markConversationAsRead(userId, conversationId, messageId);
         String readMessageId = messageId == null ? "" : messageId;
-        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
-        messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
-        String peerId = event.message() == null ? null : event.message().senderId();
-        emitUnreadSyncEvents(conversationId, null, userId, peerId);
+        if (!"READ_RECEIPT_NOOP".equals(event.eventType())) {
+            messagingTemplate.convertAndSend("/topic/chat/" + conversationId, event);
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
+            String peerId = event.message() == null ? null : event.message().senderId();
+            emitUnreadSyncEvents(conversationId, null, userId, peerId);
+        }
         return ApiResponse.ok("Conversation marked as read", Map.of("conversationId", conversationId, "messageId", readMessageId));
     }
 
@@ -269,6 +273,22 @@ public class ChatConversationController {
     public record ReactionRequest(@NotBlank String emoji) {
     }
 
+    /**
+     * PRODUCTION FIX: Emit ONLY CONVERSATION_UPDATED to /user/queue/chat
+     * 
+     * Previous issues:
+     * 1. Emitting NEW_MESSAGE here caused duplicates (MESSAGE_SENT already sent via topic)
+     * 2. Emitting UNREAD_COUNT_UPDATED + TOTAL_UNREAD_UPDATED caused frontend to increment multiple times
+     * 
+     * Solution:
+     * - Single CONVERSATION_UPDATED event contains all metadata (unreadCount, totalUnreadCount, lastMessage)
+     * - MESSAGE_SENT goes to /topic/chat/{id} for message content
+     * - CONVERSATION_UPDATED goes to /user/queue/chat for sidebar/unread sync
+     * 
+     * Channel separation:
+     * - /topic/chat/{id}: MESSAGE_SENT, MESSAGE_UPDATED, MESSAGE_RECALLED, READ_RECEIPT, TYPING, reactions
+     * - /user/queue/chat: CONVERSATION_UPDATED only (metadata sync)
+     */
     private void emitUnreadSyncEvents(UUID conversationId, MessagePayload messagePayload, String... userIds) {
         Set<String> uniqueUserIds = new LinkedHashSet<>();
         for (String userId : userIds) {
@@ -279,61 +299,14 @@ public class ChatConversationController {
         }
 
         for (String userId : uniqueUserIds) {
-            ChatEventResponse base = chatRealtimeService.buildConversationUpdatedEvent(
+            // Single consolidated event with all metadata
+            ChatEventResponse event = chatRealtimeService.buildConversationUpdatedEvent(
                 userId,
                 conversationId,
                 "CONVERSATION_UPDATED",
                 messagePayload
             );
-
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", base);
-
-            ChatEventResponse unreadEvent = new ChatEventResponse(
-                "UNREAD_COUNT_UPDATED",
-                base.actorId(),
-                base.conversationId(),
-                false,
-                false,
-                null,
-                null,
-                base.unreadCount(),
-                base.totalUnreadCount(),
-                base.lastMessage(),
-                base.lastMessageAt()
-            );
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", unreadEvent);
-
-            ChatEventResponse totalUnreadEvent = new ChatEventResponse(
-                "TOTAL_UNREAD_UPDATED",
-                base.actorId(),
-                base.conversationId(),
-                false,
-                false,
-                null,
-                null,
-                base.unreadCount(),
-                base.totalUnreadCount(),
-                base.lastMessage(),
-                base.lastMessageAt()
-            );
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", totalUnreadEvent);
-
-            if (messagePayload != null) {
-                ChatEventResponse newMessageEvent = new ChatEventResponse(
-                    "NEW_MESSAGE",
-                    messagePayload.senderId(),
-                    messagePayload.conversationId(),
-                    false,
-                    false,
-                    null,
-                    messagePayload,
-                    base.unreadCount(),
-                    base.totalUnreadCount(),
-                    base.lastMessage(),
-                    base.lastMessageAt()
-                );
-                messagingTemplate.convertAndSendToUser(userId, "/queue/chat", newMessageEvent);
-            }
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", event);
         }
     }
 }

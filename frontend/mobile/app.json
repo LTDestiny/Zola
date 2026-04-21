@@ -16,8 +16,8 @@
       "package": "com.zola.mobile"
     },
     "extra": {
-      "apiBaseUrl": "http://172.20.10.2:8080",
-      "socketUrl": "ws://172.20.10.2:8083/ws"
+      "apiBaseUrl": "http://192.168.11.151:8080",
+      "socketUrl": "ws://192.168.11.151:8083/ws"
     }
   }
 }

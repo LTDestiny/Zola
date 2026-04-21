@@ -75,4 +75,14 @@ export type MessageItem = {
   recalled?: boolean;
   seenBy?: string[];
   createdAt: string | null;
+  // ✅ Added missing fields for feature parity with web
+  deletedForUsers?: string[];
+  deliveredTo?: string[];
+  updatedAt?: string | null;
+  edited?: boolean;
+  // ✅ Added missing fields for feature parity with web
+  deletedForUsers?: string[];
+  deliveredTo?: string[];
+  updatedAt?: string | null;
+  edited?: boolean;
 };

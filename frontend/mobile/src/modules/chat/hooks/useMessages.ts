@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getMessages, markConversationRead, readMessage, sendMessage } from "@/modules/chat/api/chatApi";
 import { useChatStore } from "@/modules/chat/store/chatStore";
+import { useAuthStore } from "@/modules/auth/authStore";
+import { useSocketStore } from "@/modules/chat/store/socketStore";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PRODUCTION-READY MESSAGES HOOK - FIXES INTERMITTENT REALTIME BUGS
+// PRODUCTION-READY MESSAGES HOOK - STOMP FIRST, REST FALLBACK
 //
-// KEY FIXES:
-// 1. Uses atomic selector for messages (re-renders on store change)
-// 2. Proper debug logging
-// 3. Returns store data directly (no local state duplication)
+// Following API spec: CHAT_1_1_FRONTEND_API.md
+// Send priority: STOMP /app/chat.send, fallback to REST
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DEBUG = true;
@@ -22,6 +22,8 @@ function log(tag: string, ...args: unknown[]) {
 export function useMessages(conversationId: string) {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const lastSyncedReadMessageIdRef = useRef<string | null>(null);
+  const readSyncInFlightRef = useRef(false);
 
   // CRITICAL: Use atomic selector with conversationId
   // This creates a subscription that triggers re-render when messages change
@@ -46,6 +48,28 @@ export function useMessages(conversationId: string) {
   const markReadLocal = useChatStore((s) => s.markReadLocal);
   const upsertConversation = useChatStore((s) => s.upsertConversation);
 
+  const syncReadOnce = useCallback(async (messageId: string | null | undefined) => {
+    if (!messageId) {
+      return;
+    }
+    if (readSyncInFlightRef.current) {
+      return;
+    }
+    if (lastSyncedReadMessageIdRef.current === messageId) {
+      return;
+    }
+
+    readSyncInFlightRef.current = true;
+    try {
+      await readMessage(conversationId, messageId).catch(() => { });
+      markReadLocal(conversationId);
+      await markConversationRead(conversationId, messageId).catch(() => { });
+      lastSyncedReadMessageIdRef.current = messageId;
+    } finally {
+      readSyncInFlightRef.current = false;
+    }
+  }, [conversationId, markReadLocal]);
+
   const loadInitial = useCallback(async () => {
     log("loadInitial", `Loading messages for: ${conversationId.slice(0, 8)}`);
     setLoading(true);
@@ -55,19 +79,17 @@ export function useMessages(conversationId: string) {
       setMessages(conversationId, response.data.items, response.data.nextCursor);
 
       // Mark latest message as read
-      const latest = response.data.items.at(-1);
+      const latest = response.data.items[0];
       if (latest?.id) {
         log("loadInitial", `Marking message as read: ${latest.id.slice(0, 8)}`);
-        await readMessage(conversationId, latest.id).catch(() => { });
-        markReadLocal(conversationId);
-        await markConversationRead(conversationId, latest.id).catch(() => { });
+        await syncReadOnce(latest.id);
       }
     } catch (error) {
       log("loadInitial", "Error:", error);
     } finally {
       setLoading(false);
     }
-  }, [conversationId, markReadLocal, setMessages]);
+  }, [conversationId, setMessages, syncReadOnce]);
 
   const loadMore = useCallback(async () => {
     if (!data?.nextCursor || loadingMore) {
@@ -95,25 +117,88 @@ export function useMessages(conversationId: string) {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      log("sendText", `Sending: "${trimmed.slice(0, 30)}..."`);
+      // Generate idempotency key for dedup on server + optimistic UI
+      const clientMessageId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const myId = useAuthStore.getState().me?.id ?? "";
+      const optimisticId = `optimistic:${clientMessageId}`;
+
+      // Optimistic append: show message immediately before REST call completes
+      const optimisticMsg = {
+        id: optimisticId,
+        conversationId,
+        senderId: myId,
+        type: "TEXT" as const,
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+        seenBy: [],
+      };
+      appendMessageRealtime(conversationId, optimisticMsg);
+      upsertConversation({
+        id: conversationId,
+        lastMessage: trimmed,
+        lastMessageAt: optimisticMsg.createdAt,
+        unreadCount: 0,
+      });
+      markReadLocal(conversationId);
+
+      log("sendText", `Sending: "${trimmed.slice(0, 30)}..." [${clientMessageId}]`);
+
       try {
-        const response = await sendMessage(conversationId, trimmed, { type: "TEXT" });
-        log("sendText", `Sent, id: ${response.data.id.slice(0, 8)}`);
+        // ═══════════════════════════════════════════════════════════════════════
+        // STOMP FIRST, REST FALLBACK - Per API Spec
+        // Priority: STOMP /app/chat.send, fallback to REST
+        // ═══════════════════════════════════════════════════════════════════════
+        let sendSucceeded = false;
+        let serverMessage = null;
 
-        // Append to store immediately
-        appendMessageRealtime(conversationId, response.data);
+        // Try STOMP first if connected
+        const { connected, publishSend } = useSocketStore.getState();
+        if (connected) {
+          try {
+            await publishSend(conversationId, trimmed, "TEXT", null, null, clientMessageId);
+            sendSucceeded = true;
+            log("sendText", `Sent via STOMP [${clientMessageId}]`);
+            // Server message will arrive via MESSAGE_SENT event
+          } catch (stompError) {
+            log("sendText", "STOMP send failed, fallback to REST:", stompError);
+          }
+        }
 
-        // Update conversation metadata
-        upsertConversation({
-          id: conversationId,
-          lastMessage: response.data.content,
-          lastMessageAt: response.data.createdAt,
-          unreadCount: 0,
-        });
+        // Fallback to REST if STOMP not available or failed
+        if (!sendSucceeded) {
+          const response = await sendMessage(conversationId, trimmed, { type: "TEXT", clientMessageId });
+          serverMessage = response.data;
+          log("sendText", `Sent via REST, id: ${serverMessage.id.slice(0, 8)}`);
+        }
 
-        markReadLocal(conversationId);
+        // Replace optimistic message with server message (if REST was used)
+        if (serverMessage) {
+          const { replaceMessage } = useChatStore.getState();
+          if (replaceMessage) {
+            replaceMessage(conversationId, optimisticId, serverMessage);
+          } else {
+            // Fallback if replaceMessage not implemented: just append (dedup handles it)
+            appendMessageRealtime(conversationId, serverMessage);
+          }
+
+          upsertConversation({
+            id: conversationId,
+            lastMessage: serverMessage.content,
+            lastMessageAt: serverMessage.createdAt,
+            unreadCount: 0,
+          });
+        }
+
+        // Note: When using STOMP, MESSAGE_SENT event will replace optimistic message
+        // When using REST, we replace it immediately above
+
       } catch (error) {
-        log("sendText", "Error:", error);
+        log("sendText", "Error, removing optimistic message:", error);
+        // Remove optimistic message on failure so the user sees it failed
+        const { removeMessage } = useChatStore.getState();
+        if (removeMessage) {
+          removeMessage(conversationId, optimisticId);
+        }
         throw error;
       }
     },

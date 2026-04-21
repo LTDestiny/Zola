@@ -5,6 +5,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
@@ -39,6 +41,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1")
 public class GatewayProxyController {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayProxyController.class);
 
     private static final ParameterizedTypeReference<ApiResponse<Object>> API_RESPONSE =
         new ParameterizedTypeReference<>() {
@@ -776,8 +780,9 @@ public class GatewayProxyController {
                 Map.of("userId", userId),
                 Map.of()
             );
-        } catch (Exception ignored) {
-            // Ignore realtime notification failure to keep friendship API reliable.
+        } catch (Exception ex) {
+            // Keep API flow resilient, but surface realtime delivery failures for troubleshooting.
+            log.warn("Failed to emit sync event userId={} eventType={}: {}", userId, eventType, ex.getMessage());
         }
     }
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { httpClient } from "@/modules/chat/api/httpClient";
 import { formatPresence, getPresenceLabel, type PresenceInfo } from "@/modules/chat/utils/timeFormatter";
-import { useChatStore } from "@/modules/chat/store/chatStore";
 import type { ApiResponse } from "@/shared/types/api";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -117,9 +116,10 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUserIdsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
-
-  // Get store's updatePresence for syncing
-  const updateStorePresence = useChatStore((s) => s.updatePresence);
+  const loadedUserIdsRef = useRef<Set<string>>(new Set());
+  const loadingUserIdsRef = useRef<Set<string>>(new Set());
+  const loadedAtByUserRef = useRef<Record<string, number>>({});
+  const PRESENCE_TTL_MS = 60000;
 
   // ─── BATCH FETCH PRESENCE ─────────────────────────────────────────────────────
 
@@ -129,16 +129,30 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
     const uniqueIds = [...new Set(ids.filter(id => id && id.trim()))];
     if (uniqueIds.length === 0) return;
 
-    log('fetch', `Fetching presence for ${uniqueIds.length} users`);
+    const now = Date.now();
+    const targetIds = uniqueIds.filter((id) => {
+      if (loadingUserIdsRef.current.has(id)) {
+        return false;
+      }
+      const loadedAt = loadedAtByUserRef.current[id] ?? 0;
+      return !loadedUserIdsRef.current.has(id) || now - loadedAt > PRESENCE_TTL_MS;
+    });
+
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    log('fetch', `Fetching presence for ${targetIds.length} users`);
+    targetIds.forEach((id) => loadingUserIdsRef.current.add(id));
 
     try {
       setLoading(true);
-      const response = await getUsersPresence(uniqueIds);
+      const response = await getUsersPresence(targetIds);
 
       if (!mountedRef.current) return;
 
       const entries = response.data ?? [];
-      const now = Date.now();
+      const fetchedAt = Date.now();
 
       setPresenceMap(prev => {
         const next = { ...prev };
@@ -146,10 +160,10 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
           next[item.userId] = {
             online: item.online,
             lastSeenAt: item.lastChangedAt,
-            lastUpdated: now,
+            lastUpdated: fetchedAt,
           };
-          // Also sync to store
-          updateStorePresence(item.userId, item.online);
+          loadedUserIdsRef.current.add(item.userId);
+          loadedAtByUserRef.current[item.userId] = fetchedAt;
         });
         return next;
       });
@@ -158,11 +172,12 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
     } catch (error) {
       log('fetch', 'Error fetching presence:', error);
     } finally {
+      targetIds.forEach((id) => loadingUserIdsRef.current.delete(id));
       if (mountedRef.current) {
         setLoading(false);
       }
     }
-  }, [updateStorePresence]);
+  }, []);
 
   // ─── DEBOUNCED FETCH ──────────────────────────────────────────────────────────
 
@@ -216,9 +231,9 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
       },
     }));
 
-    // Also sync to store
-    updateStorePresence(event.userId, event.online);
-  }, [updateStorePresence]);
+    loadedUserIdsRef.current.add(event.userId);
+    loadedAtByUserRef.current[event.userId] = Date.now();
+  }, []);
 
   // ─── PUBLIC: CHECK IF ONLINE ──────────────────────────────────────────────────
 

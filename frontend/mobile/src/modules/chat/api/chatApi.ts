@@ -27,12 +27,10 @@ function normalizeMessage(raw: RawMessageItem): MessageItem {
   };
 }
 
-function normalizeMessagesInAscendingOrder(items: RawMessageItem[]): MessageItem[] {
-  // Backend paginates newest-first; mobile store expects oldest-first.
+function normalizeMessagesNewestFirst(items: RawMessageItem[]): MessageItem[] {
   return items
     .map(normalizeMessage)
-    .filter((item) => Boolean(item.id))
-    .reverse();
+    .filter((item) => Boolean(item.id));
 }
 
 export async function getMyProfile() {
@@ -73,7 +71,7 @@ export async function getMessages(conversationId: string, options?: { cursor?: s
     return {
       ...response.data,
       data: {
-        items: normalizeMessagesInAscendingOrder(response.data.data),
+        items: normalizeMessagesNewestFirst(response.data.data),
         nextCursor: null,
       },
     };
@@ -82,7 +80,7 @@ export async function getMessages(conversationId: string, options?: { cursor?: s
   return {
     ...response.data,
     data: {
-      items: normalizeMessagesInAscendingOrder(
+      items: normalizeMessagesNewestFirst(
         (response.data.data?.items ?? []) as RawMessageItem[],
       ),
       nextCursor: response.data.data?.nextCursor ?? null,
@@ -93,13 +91,14 @@ export async function getMessages(conversationId: string, options?: { cursor?: s
 export async function sendMessage(
   conversationId: string,
   content: string,
-  options?: { type?: MessageType; fileUrl?: string | null; fileName?: string | null },
+  options?: { type?: MessageType; fileUrl?: string | null; fileName?: string | null; clientMessageId?: string | null },
 ) {
   const response = await httpClient.post<ApiResponse<RawMessageItem>>(`/api/v1/chat/conversations/${conversationId}/messages`, {
     type: options?.type ?? "TEXT",
     content,
     fileUrl: options?.fileUrl ?? null,
     fileName: options?.fileName ?? null,
+    clientMessageId: options?.clientMessageId ?? null,
   });
   return {
     ...response.data,

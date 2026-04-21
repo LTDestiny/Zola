@@ -59,10 +59,24 @@ export class ChatSocketClient {
   private userQueueSubs = new Map<string, StompSubscription>();
   private handlers: Handlers;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SUBSCRIPTION DESTINATIONS - Per Backend Spec
+  // 
+  // 1. Inside conversation: /topic/chat/{conversationId}
+  //    - Receives: MESSAGE_SENT event when new message arrives
+  //    - Source: ChatRealtimeService.java:162, ChatStompController.java:115
+  //    
+  // 2. Outside conversation: /user/queue/chat
+  //    - Receives: CONVERSATION_UPDATED event for chat list updates
+  //    - Contains: unreadCount, totalUnreadCount, lastMessage, lastMessageAt
+  //    - Source: ChatStompController.java:148, ChatStompController.java:151
+  //    
+  // ⚠️  CRITICAL: Use slash format /topic/chat/{id}, NOT dot format /topic/chat.{id}
+  // ⚠️  CRITICAL: Use /user/queue/chat, NOT /queue/chat
+  // ═══════════════════════════════════════════════════════════════════════════
   private conversationDestinations(conversationId: string) {
     return [
-      `/topic/chat.${conversationId}`,
-      `/topic/chat/${conversationId}`,
+      `/topic/chat/${conversationId}`, // ✅ Slash format - matches backend
     ];
   }
 
@@ -113,10 +127,12 @@ export class ChatSocketClient {
 
   subscribeUserQueue() {
     if (!this.client.connected) return;
+    // Personal queues for updates when user is NOT in specific conversation
+    // /user/queue/chat receives CONVERSATION_UPDATED events for chat list
     const userQueueDestinations = [
-      "/user/queue/chat",
-      "/user/queue/notifications",
-      "/user/queue/sync",
+      "/user/queue/chat",           // ✅ Chat list updates, unread counts
+      "/user/queue/notifications",  // Notifications
+      "/user/queue/sync",           // Sync events
     ];
 
     this.userQueueSubs.forEach((sub) => sub.unsubscribe());

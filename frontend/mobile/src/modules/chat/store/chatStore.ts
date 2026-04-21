@@ -40,12 +40,15 @@ type ChatState = {
   setConversations: (items: ConversationItem[]) => void;
   setActiveConversation: (conversationId: string | null) => void;
   upsertConversation: (patch: Partial<ConversationItem> & { id: string }) => void;
+  syncTotalUnread: (value: number) => void;
   addUnreadForConversation: (conversationId: string) => void;
   markReadLocal: (conversationId: string) => void;
 
   setMessages: (conversationId: string, items: MessageItem[], nextCursor: string | null) => void;
   prependMessages: (conversationId: string, olderItems: MessageItem[], nextCursor: string | null) => void;
   appendMessageRealtime: (conversationId: string, message: MessageItem) => void;
+  replaceMessage: (conversationId: string, oldId: string, newMessage: MessageItem) => void;
+  removeMessage: (conversationId: string, messageId: string) => void;
 
   setTyping: (conversationId: string, isTyping: boolean) => void;
 };
@@ -96,9 +99,9 @@ function mergeMessages(existing: MessageItem[], incoming: MessageItem[]): Messag
     map.set(item.id, prev ? { ...prev, ...item } : { ...item });
   }
 
-  // Sort by createdAt ascending (oldest first)
+  // Keep newest-first to avoid reverse() in FlatList render path.
   return [...map.values()].sort(
-    (a, b) => toMillis(a.createdAt) - toMillis(b.createdAt)
+    (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt)
   );
 }
 
@@ -186,6 +189,10 @@ export const useChatStore = create<ChatState>()(
         conversations: sorted,
         totalUnreadCount: calcTotalUnread(sorted),
       });
+    },
+
+    syncTotalUnread: (value) => {
+      set({ totalUnreadCount: Math.max(0, value) });
     },
 
     addUnreadForConversation: (conversationId) => {
@@ -325,8 +332,8 @@ export const useChatStore = create<ChatState>()(
         return;
       }
 
-      // Append new message - CRITICAL: Create new array reference
-      const nextItems = [...current, { ...message }];
+      // Keep newest-first. Incoming realtime messages are usually newest.
+      const nextItems = [{ ...message }, ...current];
 
       set({
         messagesByConversation: {
@@ -342,6 +349,51 @@ export const useChatStore = create<ChatState>()(
       const newState = get();
       const newCount = newState.messagesByConversation[conversationId]?.items.length ?? 0;
       log("appendMessageRealtime", `AFTER SET: ${conversationId} now has ${newCount} messages`);
+    },
+
+    replaceMessage: (conversationId, oldId, newMessage) => {
+      const state = get();
+      const current = state.messagesByConversation[conversationId]?.items ?? [];
+      const idx = current.findIndex((item) => item.id === oldId);
+      if (idx < 0) {
+        // Optimistic message was already removed or replaced, just append
+        const nextItems = [{ ...newMessage }, ...current.filter((m) => m.id !== newMessage.id)];
+        set({
+          messagesByConversation: {
+            ...state.messagesByConversation,
+            [conversationId]: {
+              items: nextItems,
+              nextCursor: state.messagesByConversation[conversationId]?.nextCursor ?? null,
+            },
+          },
+        });
+        return;
+      }
+      const nextItems = current.map((item, i) => (i === idx ? { ...newMessage } : item));
+      set({
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: {
+            items: nextItems,
+            nextCursor: state.messagesByConversation[conversationId]?.nextCursor ?? null,
+          },
+        },
+      });
+    },
+
+    removeMessage: (conversationId, messageId) => {
+      const state = get();
+      const current = state.messagesByConversation[conversationId]?.items ?? [];
+      const nextItems = current.filter((item) => item.id !== messageId);
+      set({
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: {
+            items: nextItems,
+            nextCursor: state.messagesByConversation[conversationId]?.nextCursor ?? null,
+          },
+        },
+      });
     },
 
     setTyping: (conversationId, isTyping) => {

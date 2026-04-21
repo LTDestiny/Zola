@@ -40,7 +40,6 @@ import { uploadMedia } from "../api/mediaApi";
 import {
   ChatRealtimeClient,
   type ChatRealtimeEvent,
-  type PresenceRealtimeEvent,
 } from "../api/chatRealtime";
 import { clearAuthTokens, getAccessToken, getSessionId } from "../auth/token";
 import { useLanguage } from "../i18n/language";
@@ -188,13 +187,28 @@ export function ChatPage() {
     conversationId: string,
     messageId: string,
   ) => {
-    // Prefer realtime read receipt first so sender sees "seen" immediately.
-    await markMessageAsRead(conversationId, messageId);
+    const guardKey = `${conversationId}:${messageId}`;
+    if (lastReadSyncKeyRef.current[conversationId] === guardKey) {
+      return;
+    }
+    if (readSyncInFlightRef.current[conversationId]) {
+      return;
+    }
 
-    // Persist read cursor when endpoint is available; safely degrade on older deployments.
-    await markConversationRead(conversationId, messageId).catch(() => {
-      // Keep UI responsive even if API gateway lags behind deployment.
-    });
+    readSyncInFlightRef.current[conversationId] = true;
+    try {
+      // Prefer realtime read receipt first so sender sees "seen" immediately.
+      await markMessageAsRead(conversationId, messageId);
+
+      // Persist read cursor when endpoint is available; safely degrade on older deployments.
+      await markConversationRead(conversationId, messageId).catch(() => {
+        // Keep UI responsive even if API gateway lags behind deployment.
+      });
+
+      lastReadSyncKeyRef.current[conversationId] = guardKey;
+    } finally {
+      delete readSyncInFlightRef.current[conversationId];
+    }
   };
 
   const [draftMessage, setDraftMessage] = useState("");
@@ -258,11 +272,19 @@ export function ChatPage() {
   const pendingReadSyncOnOpenRef = useRef(false);
   const userProfileMapRef = useRef<Record<string, UserProfile>>({});
   const myUserIdRef = useRef<string | null>(null);
-  const processedRealtimeMessageIdsRef = useRef<Set<string>>(new Set());
+  // PRODUCTION FIX: Single dedup buffer for MESSAGE_SENT events (backend no longer sends NEW_MESSAGE)
   const processedRealtimeSendIdsRef = useRef<Set<string>>(new Set());
+  const pendingOptimisticByClientMessageIdRef = useRef<Map<string, string>>(new Map());
   const messageLoadRequestIdRef = useRef(0);
   const uploadAbortControllersRef = useRef<Record<string, AbortController>>({});
   const uploadFileRegistryRef = useRef<Record<string, { file: File; caption: string; conversationId: string }>>({});
+  const readSyncInFlightRef = useRef<Record<string, true>>({});
+  const lastReadSyncKeyRef = useRef<Record<string, string>>({});
+  // ─── PRESENCE TTL CACHE ───────────────────────────────────────────────────────
+  // Prevents calling getUsersPresence() for users whose data is fresh (< 60 s).
+  const presenceLoadedAtRef = useRef<Record<string, number>>({});
+  const presenceLoadingRef = useRef<Set<string>>(new Set());
+  const PRESENCE_TTL_MS = 60_000;
 
   // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
@@ -341,11 +363,33 @@ export function ChatPage() {
       return;
     }
 
+    // ─── TTL FILTER ─────────────────────────────────────────────────────────
+    // Only fetch users whose presence data is missing or stale (> 60 s old).
+    // This prevents spamming getUsersPresence on every 8-second poll.
+    const now = Date.now();
+    const staleIds = normalizedUserIds.filter((id) => {
+      if (presenceLoadingRef.current.has(id)) return false;
+      const loadedAt = presenceLoadedAtRef.current[id] ?? 0;
+      return now - loadedAt > PRESENCE_TTL_MS;
+    });
+
+    if (staleIds.length === 0) {
+      return;
+    }
+
+    staleIds.forEach((id) => presenceLoadingRef.current.add(id));
+
     try {
-      const result = await getUsersPresence(normalizedUserIds);
+      const result = await getUsersPresence(staleIds);
+      const fetchedAt = Date.now();
+      staleIds.forEach((id) => {
+        presenceLoadedAtRef.current[id] = fetchedAt;
+      });
       mergePresence(result.data ?? []);
     } catch {
       // Keep the current presence snapshot if transient request fails.
+    } finally {
+      staleIds.forEach((id) => presenceLoadingRef.current.delete(id));
     }
   };
 
@@ -732,9 +776,10 @@ export function ChatPage() {
     }
 
     const client = new ChatRealtimeClient(accessToken, {
+      // FIXED: Pass token refresh callback so reconnects use fresh JWT
+      getAccessToken: () => getAccessToken(),
       onConnect: () => {
         setIsRealtimeConnected(true);
-        client.subscribeUserQueue();
         client.syncConversationSubscriptions(conversationIdsRef.current);
       },
       onDisconnect: () => {
@@ -791,11 +836,17 @@ export function ChatPage() {
           return;
         }
 
-        if (
-          event.eventType === "CONVERSATION_UPDATED" ||
-          event.eventType === "UNREAD_COUNT_UPDATED" ||
-          event.eventType === "TOTAL_UNREAD_UPDATED"
-        ) {
+        // ═══════════════════════════════════════════════════════════════════════
+        // PRODUCTION FIX: CONVERSATION_UPDATED is now the single source of truth
+        // for unread counts. Backend sends this to /user/queue/chat with:
+        // - unreadCount (per-conversation)
+        // - totalUnreadCount (sum of all conversations)
+        // - lastMessage, lastMessageAt (for sidebar display)
+        //
+        // REMOVED: UNREAD_COUNT_UPDATED, TOTAL_UNREAD_UPDATED handling
+        // These events are no longer sent by backend.
+        // ═══════════════════════════════════════════════════════════════════════
+        if (event.eventType === "CONVERSATION_UPDATED") {
           if (event.conversationId) {
             upsertConversation({
               id: event.conversationId,
@@ -807,9 +858,22 @@ export function ChatPage() {
           if (typeof event.totalUnreadCount === "number") {
             syncTotalUnread(event.totalUnreadCount);
           }
-
-          // Keep sidebar and unread counters accurate even when realtime payload is partial.
-          scheduleConversationsRefresh();
+          // ═══════════════════════════════════════════════════════════════════
+          // ROOT CAUSE FIX: Return here - do NOT fall through to message
+          // payload processing.
+          //
+          // Bug: CONVERSATION_UPDATED events include the same message payload
+          // that MESSAGE_SENT already delivered via /topic/chat/{id}. Without
+          // this return, the message gets appended to setMessages() TWICE
+          // (once from MESSAGE_SENT, once from CONVERSATION_UPDATED), causing
+          // duplicate messages in the chat view.
+          //
+          // Web subscribes to ALL conversation topics, so every MESSAGE_SENT
+          // is always delivered via the topic. The CONVERSATION_UPDATED from
+          // /user/queue/chat is for sidebar metadata only (unreadCount,
+          // lastMessage, totalUnreadCount) and must not re-process the payload.
+          // ═══════════════════════════════════════════════════════════════════
+          return;
         }
 
         const payload = event.message;
@@ -819,20 +883,35 @@ export function ChatPage() {
 
         // Clear typing indicator when message arrives from this conversation
         if (
-          (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") &&
+          event.eventType === "MESSAGE_SENT" &&
           event.conversationId === activeConversationIdRef.current
         ) {
           setTypingUserId(null);
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // CRITICAL FIX: Deduplicate by messageId ONLY (not by eventType)
-        // Backend sends same message to BOTH topic and user queue
-        // MESSAGE_SENT and NEW_MESSAGE for same messageId = duplicate!
+        // HANDLE MESSAGE_DELETED_FOR_ME - Per API Spec
+        // Remove message from local view when user deletes it for themselves
         // ═══════════════════════════════════════════════════════════════════════
-        if (event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT") {
-          // Use just messageId - NOT including eventType
-          // This catches duplicates across MESSAGE_SENT and NEW_MESSAGE
+        if (event.eventType === "MESSAGE_DELETED_FOR_ME") {
+          if (event.conversationId === selectedConversationId && payload?.messageId) {
+            setMessages((prev) =>
+              prev.filter((item) => item.id !== payload.messageId),
+            );
+          }
+          return;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // PRODUCTION FIX: Simple deduplication by messageId
+        //
+        // Backend now sends MESSAGE_SENT only to /topic/chat/{id}
+        // No NEW_MESSAGE events anymore (removed from backend)
+        // Single dedup by messageId is sufficient to handle:
+        // - HTTP response race with WebSocket event
+        // - Multiple tabs receiving same event
+        // ═══════════════════════════════════════════════════════════════════════
+        if (event.eventType === "MESSAGE_SENT") {
           const dedupKey = `msg:${payload.messageId}`;
           if (processedRealtimeSendIdsRef.current.has(dedupKey)) {
             console.log(`[ChatPage] Duplicate message ignored: ${dedupKey}`);
@@ -843,21 +922,6 @@ export function ChatPage() {
             const first = processedRealtimeSendIdsRef.current.values().next().value;
             if (first) {
               processedRealtimeSendIdsRef.current.delete(first);
-            }
-          }
-        }
-
-        // Secondary dedup check (legacy, now unified above)
-        const messageKey = `msg:${payload.messageId}`;
-        if (event.eventType === "NEW_MESSAGE") {
-          if (processedRealtimeMessageIdsRef.current.has(messageKey)) {
-            return;
-          }
-          processedRealtimeMessageIdsRef.current.add(messageKey);
-          if (processedRealtimeMessageIdsRef.current.size > 500) {
-            const first = processedRealtimeMessageIdsRef.current.values().next().value;
-            if (first) {
-              processedRealtimeMessageIdsRef.current.delete(first);
             }
           }
         }
@@ -895,9 +959,66 @@ export function ChatPage() {
 
         if (event.conversationId === selectedConversationId) {
           setMessages((prev) => {
+            if (
+              event.eventType === "MESSAGE_SENT" &&
+              normalizedMessage.senderId === myUserIdRef.current
+            ) {
+              const payloadClientMessageId = (
+                payload as { clientMessageId?: string | null }
+              ).clientMessageId;
+              const trackedOptimisticId = payloadClientMessageId
+                ? pendingOptimisticByClientMessageIdRef.current.get(payloadClientMessageId) ?? null
+                : null;
+
+              if (payloadClientMessageId) {
+                pendingOptimisticByClientMessageIdRef.current.delete(payloadClientMessageId);
+              }
+
+              const optimisticIndex = prev.findIndex((item) => {
+                if (trackedOptimisticId) {
+                  return item.id === trackedOptimisticId;
+                }
+
+                // Fallback matching in case backend event does not echo clientMessageId.
+                return (
+                  item.id.startsWith("optimistic:") &&
+                  item.conversationId === normalizedMessage.conversationId &&
+                  item.senderId === normalizedMessage.senderId &&
+                  item.type === normalizedMessage.type &&
+                  item.content === normalizedMessage.content
+                );
+              });
+
+              const withoutServerDuplicate = prev.filter(
+                (item) => item.id !== normalizedMessage.id,
+              );
+
+              if (optimisticIndex >= 0) {
+                const next = [...withoutServerDuplicate];
+                next[optimisticIndex] = normalizedMessage;
+                return next;
+              }
+
+              return [...withoutServerDuplicate, normalizedMessage];
+            }
+
             const existingIndex = prev.findIndex(
               (item) => item.id === normalizedMessage.id,
             );
+
+            // ═══════════════════════════════════════════════════════════════════
+            // HANDLE MESSAGE_RECALLED, MESSAGE_UPDATED - Per API Spec
+            // Update existing message or add new one
+            // ═══════════════════════════════════════════════════════════════════
+            if (event.eventType === "MESSAGE_RECALLED" || event.eventType === "MESSAGE_UPDATED") {
+              if (existingIndex >= 0) {
+                return prev.map((item) =>
+                  item.id === normalizedMessage.id ? normalizedMessage : item,
+                );
+              }
+              return prev; // Message not in view, ignore
+            }
+
             let next =
               existingIndex >= 0
                 ? prev.map((item) =>
@@ -937,8 +1058,9 @@ export function ChatPage() {
             return next;
           });
 
+          // Auto-mark as read when user is actively viewing the conversation
           if (
-            (event.eventType === "MESSAGE_SENT" || event.eventType === "NEW_MESSAGE") &&
+            event.eventType === "MESSAGE_SENT" &&
             normalizedMessage.senderId !== myUserIdRef.current
           ) {
             const isManualOpenForCurrentConversation =
@@ -957,34 +1079,17 @@ export function ChatPage() {
           }
         }
 
-        let unreadPatch = event.unreadCount ?? undefined;
-        const isIncomingFromOtherUser =
-          normalizedMessage.senderId !== myUserIdRef.current;
-        const isActiveConversation =
-          event.conversationId === selectedConversationId;
-        const isManualOpenForActiveConversation =
-          selectedConversationId === manuallyOpenedConversationIdRef.current;
-        const isViewingActiveConversation =
-          hasUserOpenedConversationRef.current &&
-          isActiveConversation &&
-          isManualOpenForActiveConversation &&
-          activeTabRef.current === "messages" &&
-          isChatViewportAtBottomRef.current &&
-          document.visibilityState === "visible" &&
-          document.hasFocus();
-        const isIncomingMessageEvent =
-          event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT";
-
-        if (isIncomingFromOtherUser && !isViewingActiveConversation && isIncomingMessageEvent) {
-          const currentConversation = useChatStore
-            .getState()
-            .conversations.find((item) => item.id === event.conversationId);
-          const currentUnread = Math.max(0, currentConversation?.unreadCount ?? 0);
-          const nextUnread = currentUnread + 1;
-          if (typeof unreadPatch !== "number" || unreadPatch <= currentUnread) {
-            unreadPatch = nextUnread;
-          }
-        }
+        // ═══════════════════════════════════════════════════════════════════════
+        // PRODUCTION FIX: Server-authoritative unread count
+        //
+        // Backend sends unreadCount in CONVERSATION_UPDATED event which is
+        // already handled above. Use server-provided value for MESSAGE_SENT.
+        //
+        // REMOVED: Local unread increment logic that caused count drift
+        // Previous issue: Frontend incremented +1 AND received server update
+        //                 resulting in double-counting
+        // ═══════════════════════════════════════════════════════════════════════
+        const unreadPatch = event.unreadCount ?? undefined;
 
         upsertConversation({
           id: event.conversationId,
@@ -992,80 +1097,6 @@ export function ChatPage() {
           lastMessageAt: normalizedMessage.createdAt,
           unreadCount: unreadPatch,
         });
-      },
-      onSyncEvent: (event) => {
-        if (event.eventType.startsWith("FRIENDSHIP_")) {
-          void fetchFriendshipData();
-          if (
-            event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED" ||
-            event.eventType === "FRIENDSHIP_CHAT_READY"
-          ) {
-            void fetchConversations();
-          }
-          return;
-        }
-
-        if (event.eventType === "PROFILE_UPDATED") {
-          void fetchFriendshipData();
-          try {
-            const payload = event.payload ? JSON.parse(event.payload) : null;
-            const updatedUserId = payload?.userId as string | undefined;
-            if (!updatedUserId || updatedUserId === myUserIdRef.current) {
-              void (async () => {
-                try {
-                  const result = await getMyProfile();
-                  setMyProfile(result.data);
-                } catch {
-                  // Ignore transient profile refresh errors.
-                }
-              })();
-            }
-          } catch {
-            // Ignore malformed payload.
-          }
-          return;
-        }
-
-        if (event.eventType === "PROFILE_DELETED") {
-          clearAuthTokens();
-          window.location.replace("/login");
-          return;
-        }
-
-        if (event.eventType === "SESSION_REVOKED") {
-          const currentSessionId = getSessionId();
-          try {
-            const payload = event.payload ? JSON.parse(event.payload) : null;
-            const revokedSessionId = payload?.sessionId as string | undefined;
-            if (
-              currentSessionId &&
-              revokedSessionId &&
-              currentSessionId === revokedSessionId
-            ) {
-              const forcedLogoutMessage =
-                language === "vi"
-                  ? "Tai khoan da dang nhap o thiet bi khac. Vui long dang nhap lai."
-                  : "Your account signed in on another device. Please sign in again.";
-              sessionStorage.setItem(
-                "zola_forced_logout_message",
-                forcedLogoutMessage,
-              );
-              clearAuthTokens();
-              window.location.replace("/login");
-            }
-          } catch {
-            // Ignore malformed payload and keep current session.
-          }
-        }
-      },
-      onPresenceEvent: (event: PresenceRealtimeEvent) => {
-        mergePresence([
-          {
-            userId: event.userId,
-            online: event.online,
-            lastChangedAt: event.lastSeenAt ?? event.lastChangedAt ?? null,
-          },
-        ]);
       },
     });
 
@@ -1283,21 +1314,93 @@ export function ChatPage() {
     // Stop typing indicator immediately when sending
     onTypingSendMessage();
 
+    // ── OPTIMISTIC UI ────────────────────────────────────────────────────────
+    // Generate client-side idempotency key. Prevents duplicate messages when:
+    // - User double-clicks Send button
+    // - Network drops and request retries
+    // - WebSocket reconnects and resends
+    const clientMessageId = crypto.randomUUID();
+    const optimisticId = `optimistic:${clientMessageId}`;
+    const optimisticMessage: MessageItem = {
+      id: optimisticId,
+      conversationId: activeConversationId,
+      senderId: myUserIdRef.current ?? "",
+      type: "TEXT",
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      recalled: false,
+      edited: false,
+      reactions: [],
+      deletedForUsers: [],
+      deliveredTo: [],
+      seenBy: [],
+    };
+
+    // Immediately show the message (optimistic)
+    setMessages((prev) => [...prev, optimisticMessage]);
+    pendingOptimisticByClientMessageIdRef.current.set(clientMessageId, optimisticId);
+    setDraftMessage("");
+    // ────────────────────────────────────────────────────────────────────────
+
     try {
       setIsSending(true);
-      const result = await sendMessage(activeConversationId, content, {
-        type: "TEXT",
-      });
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // STOMP FIRST, REST FALLBACK - Per API Spec
+      // Priority: STOMP /app/chat.send, fallback to REST
+      // ═══════════════════════════════════════════════════════════════════════
+      let sendSucceeded = false;
+      let serverMessage: MessageItem | null = null;
+
+      // Try STOMP first if connected
+      if (realtimeClientRef.current?.isConnected()) {
+        try {
+          const stompSent = realtimeClientRef.current.publishSend(
+            activeConversationId,
+            content,
+            "TEXT",
+            null,
+            null,
+            clientMessageId,
+          );
+          if (stompSent) {
+            sendSucceeded = true;
+            // Note: Server message will arrive via realtime event
+            // We keep optimistic message until MESSAGE_SENT event arrives
+          }
+        } catch {
+          // STOMP failed, fallback to REST
         }
-        return [...prev, result.data];
-      });
-      setDraftMessage("");
-      await fetchConversations();
+      }
+
+      // Fallback to REST if STOMP not available or failed
+      if (!sendSucceeded) {
+        const result = await sendMessage(activeConversationId, content, {
+          type: "TEXT",
+          clientMessageId, // Backend deduplicates using this key
+        });
+        serverMessage = result.data;
+      }
+
+      // Replace optimistic message with server message (if REST was used)
+      if (serverMessage) {
+        pendingOptimisticByClientMessageIdRef.current.delete(clientMessageId);
+        setMessages((prev) => {
+          const withoutOptimistic = prev.filter((item) => item.id !== optimisticId);
+          const alreadyExists = withoutOptimistic.some((item) => item.id === serverMessage!.id);
+          if (alreadyExists) return withoutOptimistic; // Already received via realtime
+          return [...withoutOptimistic, serverMessage];
+        });
+      }
+
+      // Note: When using STOMP, the MESSAGE_SENT event will replace optimistic message
+      // When using REST, we replace it immediately above
+
     } catch (error) {
+      // Remove optimistic message on failure and show error
+      pendingOptimisticByClientMessageIdRef.current.delete(clientMessageId);
+      setMessages((prev) => prev.filter((item) => item.id !== optimisticId));
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsSending(false);

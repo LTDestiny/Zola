@@ -1,507 +1,377 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Alert } from "react-native";
-import { socketService, type ChatRealtimeEvent } from "@/modules/chat/socket/socketService";
+import { socketService } from "@/modules/chat/socket/socketService";
+import type { ChatRealtimeEvent } from "@/modules/chat/socket/socketTypes";
 import { reconnectManager } from "@/modules/chat/socket/reconnectManager";
-import { getConversations, getMessages, markConversationRead } from "@/modules/chat/api/chatApi";
+import { getConversations } from "@/modules/chat/api/chatApi";
 import { useChatStore } from "@/modules/chat/store/chatStore";
 import { usePresenceStore } from "@/modules/chat/store/presenceStore";
 import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { useSocketStore } from "@/modules/chat/store/socketStore";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PRODUCTION-READY SOCKET HOOK - FIXES ALL REALTIME BUGS
-// 
-// ROOT CAUSES FIXED:
-// 1. Stale closure - uses refs + getState() for always-fresh values
-// 2. Duplicate socket - uses singleton socketService only
-// 3. Race condition - proper subscribe order on reconnect
-// 4. WiFi reconnect - uses reconnectManager with NetInfo
-// 5. Typing stuck - auto-clear stale typing in chatStore
-// 6. DUPLICATE EVENTS - Backend sends to BOTH topic + user queue
-//    → We deduplicate by messageId to prevent double processing
-// 7. PRESENCE - Updates presenceStore on PRESENCE_UPDATED events
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const DEBUG = true;
+const log = (t: string, ...a: any[]) =>
+  DEBUG && console.log(`[useSocket][${t}]`, ...a);
 
-function log(tag: string, ...args: unknown[]) {
-  if (DEBUG) {
-    console.log(`[useSocket][${tag}]`, ...args);
-  }
+function normalizeId(v: string | null | undefined) {
+  return String(v ?? "").trim().toLowerCase();
 }
 
-// Normalize conversation ID for comparison (handles case sensitivity, whitespace)
-function normalizeId(value: string | null | undefined): string {
-  return String(value ?? "").trim().toLowerCase();
-}
+const DEDUP = new Map<string, number>();
+const WINDOW = 60000;
 
-// ─── MESSAGE DEDUPLICATION ───────────────────────────────────────────────────
-// Backend sends same message to BOTH /topic/chat/{id} AND /user/queue/chat
-// We need to deduplicate to prevent processing twice
-const DEDUP_WINDOW_MS = 5000; // 5 second window
-const processedEvents = new Map<string, number>(); // eventKey → timestamp
+function isDuplicate(e: ChatRealtimeEvent) {
+  const key =
+    e?.eventType === "MESSAGE_SENT"
+      ? `msg:${(e?.message as any)?.messageId || e?.message?.id}`
+      : null;
 
-function getEventKey(event: ChatRealtimeEvent): string | null {
-  // Only deduplicate message-creation events (backend sends to BOTH topic AND user queue).
-  // Update events (RECALLED, UPDATED, READ_RECEIPT) must NEVER be deduplicated —
-  // they need to overwrite the same messageId in the store.
-  const isCreateEvent =
-    event.eventType === "NEW_MESSAGE" || event.eventType === "MESSAGE_SENT";
-  if (isCreateEvent) {
-    const messageId = event.message?.id ?? event.message?.messageId;
-    if (messageId) {
-      return `msg:${messageId}`;
-    }
-  }
-  if (event.eventType === "TYPING") {
-    return `typing:${event.conversationId}:${event.typing}`;
-  }
-  return null;
-}
-
-function isDuplicateEvent(event: ChatRealtimeEvent): boolean {
-  const key = getEventKey(event);
   if (!key) return false;
 
   const now = Date.now();
-  const lastSeen = processedEvents.get(key);
+  const last = DEDUP.get(key);
 
-  // Cleanup old entries
-  for (const [k, ts] of processedEvents) {
-    if (now - ts > DEDUP_WINDOW_MS) {
-      processedEvents.delete(k);
-    }
+  for (const [k, t] of DEDUP) {
+    if (now - t > WINDOW) DEDUP.delete(k);
   }
 
-  if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) {
-    log("dedup", `Duplicate event ignored: ${key}`);
-    return true;
-  }
+  if (last && now - last < WINDOW) return true;
 
-  processedEvents.set(key, now);
+  DEDUP.set(key, now);
   return false;
 }
 
 export function useSocket() {
-  // ─── AUTH STATE ────────────────────────────────────────────────────────────
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const token = useAuthStore((s) => s.accessToken);
   const meId = useAuthStore((s) => s.me?.id);
-
-  // ─── SOCKET STATE ──────────────────────────────────────────────────────────
   const connected = useSocketStore((s) => s.connected);
 
-  // ─── REFS FOR STABLE VALUES (prevents stale closures) ──────────────────────
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
 
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const eventListenerCleanupRef = useRef<(() => void) | null>(null);
-  const stateListenerCleanupRef = useRef<(() => void) | null>(null);
-  const mountedRef = useRef(true);
+  const mounted = useRef(true);
 
-  // ─── HELPER: Get latest state (ALWAYS fresh, no stale closure) ─────────────
-  const getLatestState = useCallback(() => {
-    const state = useChatStore.getState();
+  const getState = useCallback(() => {
+    const s = useChatStore.getState();
     return {
-      activeConversationId: state.activeConversationId,
-      conversations: state.conversations,
-      appendMessageRealtime: state.appendMessageRealtime,
-      upsertConversation: state.upsertConversation,
-      addUnreadForConversation: state.addUnreadForConversation,
-      markReadLocal: state.markReadLocal,
-      setMessages: state.setMessages,
-      setTyping: state.setTyping,
-      setConversations: state.setConversations,
+      activeConversationId: s.activeConversationId,
+      conversations: s.conversations,
+      appendMessageRealtime: s.appendMessageRealtime,
+      upsertConversation: s.upsertConversation,
+      markReadLocal: s.markReadLocal,
+      setTyping: s.setTyping,
+      addUnreadForConversation: s.addUnreadForConversation,
+      setConversations: s.setConversations,
     };
   }, []);
 
-  // ─── DEBOUNCED REFRESH ─────────────────────────────────────────────────────
-  const scheduleRefresh = useCallback(() => {
-    if (refreshTimeoutRef.current) {
-      clearTimeout(refreshTimeoutRef.current);
-    }
-    refreshTimeoutRef.current = setTimeout(async () => {
-      if (!mountedRef.current) return;
-      try {
-        log("refresh", "Fetching conversations from server...");
-        const response = await getConversations();
-        if (mountedRef.current) {
-          const { setConversations } = getLatestState();
-          setConversations(response.data);
-          log("refresh", "Conversations updated:", response.data.length);
+  const handle = useCallback(async (rawEvent: any) => {
+    if (!mounted.current) return;
 
-          // Sync subscriptions with new conversation list
-          const ids = response.data.map((c) => c.id).filter(Boolean);
-          socketService.syncConversationSubscriptions(ids);
-        }
-      } catch (error) {
-        log("refresh", "Failed to refresh conversations:", error);
-      }
-    }, 300);
-  }, [getLatestState]);
-
-  // ─── NORMALIZE MESSAGE FROM EVENT ──────────────────────────────────────────
-  const normalizeMessage = useCallback((
-    fallbackConversationId: string,
-    message: ChatRealtimeEvent["message"]
-  ) => {
-    if (!message) return null;
-
-    const m = message as Record<string, unknown>;
-    const id = (m.id as string) ?? (m.messageId as string) ?? "";
-    if (!id) return null;
-
-    return {
-      ...message,
-      id,
-      conversationId: (m.conversationId as string) ?? fallbackConversationId,
-      content: (m.content as string) ?? "",
-      senderId: String(m.senderId ?? ""), // Handle number vs string
-      createdAt: (m.createdAt as string) ?? new Date().toISOString(),
-    };
-  }, []);
-
-  // ─── MAIN EVENT HANDLER (NO useMemo - uses refs for fresh values) ──────────
-  const handleEvent = useCallback(async (event: ChatRealtimeEvent) => {
-    if (!mountedRef.current) return;
-
-    // ─── PRESENCE EVENTS (no conversationId) ─────────────────────────────────
-    if (
-      event.eventType === "PRESENCE_UPDATED" ||
-      event.eventType === "USER_LAST_SEEN_UPDATE" ||
-      event.eventType === "presence:update"
-    ) {
-      if (event.userId) {
-        log("presence", `📡 ${event.userId} → ${event.online ? "online" : "offline"}`);
-        usePresenceStore.getState().updateFromRealtime({
-          userId: event.userId,
-          online: event.online,
-          lastSeenAt: event.lastSeenAt,
-        });
-      }
+    // ✅ 1. ignore system event from SocketService
+    if (rawEvent?.type === "SOCKET_CONNECTED") {
+      log("connected");
       return;
     }
 
-    // ─── FRIENDSHIP EVENTS (no conversationId) ───────────────────────────────
-    if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
-      log("friend", "👥 Friend request received");
+    // ✅ 2. normalize backend event
+    const e = rawEvent as ChatRealtimeEvent;
+
+    if (isDuplicate(e)) return;
+
+    // =====================
+    // PRESENCE
+    // =====================
+    if (e.eventType === "PRESENCE_UPDATED") {
+      usePresenceStore.getState().updateFromRealtime({
+        userId: e.userId,
+        online: e.online,
+        lastSeenAt: e.lastSeenAt,
+      });
+      return;
+    }
+
+    // =====================
+    // FRIEND REQUEST
+    // =====================
+    if (e.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
       useFriendRequestStore.getState().increment();
-      Alert.alert("Lời mời kết bạn", "Bạn có lời mời kết bạn mới!");
+      Alert.alert("Friend", "New request");
       return;
     }
 
-    if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED") {
-      log("friend", "✅ Friend request accepted");
-      Alert.alert("Kết bạn thành công", "Lời mời kết bạn của bạn đã được chấp nhận!");
-      return;
-    }
+    const raw =
+      e.eventType === "MESSAGE_SENT" || e.eventType === "NEW_MESSAGE"
+        ? e.conversationId ?? e.message?.conversationId
+        : e.conversationId;
 
-    if (event.eventType === "FRIENDSHIP_REQUEST_DECLINED") {
-      log("friend", "❌ Friend request declined");
-      return;
-    }
+    const convId = normalizeId(raw);
+    if (!convId) return;
 
-    // ─── DEDUPLICATION CHECK ───────────────────────────────────────────────
-    // Backend sends same message to BOTH /topic/chat/{id} AND /user/queue/chat
-    // Skip duplicate events to prevent double processing
-    if (isDuplicateEvent(event)) {
-      return;
-    }
-
-    // Extract conversation ID (may come from different places)
-    const rawId = event.conversationId
-      ?? (event.message as { conversationId?: string } | null)?.conversationId
-      ?? "";
-    const normalizedId = normalizeId(rawId);
-
-    if (!normalizedId) {
-      log("event", "⚠️ No conversationId in event, ignoring:", event.eventType);
-      return;
-    }
-
-    // CRITICAL: Always get fresh state (no stale closures!)
-    const state = getLatestState();
+    const state = getState();
     const {
       activeConversationId,
       conversations,
       appendMessageRealtime,
       upsertConversation,
-      addUnreadForConversation,
       markReadLocal,
-      setMessages,
       setTyping,
+      addUnreadForConversation,
     } = state;
 
-    // Find actual conversation ID (may have different casing)
-    const matched = conversations.find((c) => normalizeId(c.id) === normalizedId);
-    const conversationId = matched?.id ?? rawId;
+    const matched = conversations.find(
+      (c) => normalizeId(c.id) === convId
+    );
 
-    const isActive = normalizeId(activeConversationId) === normalizedId;
-    const eventType = String(event.eventType ?? "").toUpperCase();
+    const id = matched?.id ?? raw ?? convId;
 
-    log("event", `📨 ${event.eventType}`, {
-      conversationId: conversationId.slice(0, 8),
-      isActive,
-      hasMessage: !!event.message,
-    });
+    const isActive =
+      normalizeId(activeConversationId) === convId;
 
-    // ─── TYPING EVENT ──────────────────────────────────────────────────────
-    if (eventType === "TYPING" || event.eventType === "message:typing") {
-      log("event", `⌨️ Typing event: ${conversationId.slice(0, 8)} → ${event.typing}`);
-      setTyping(conversationId, Boolean(event.typing));
+    // =====================
+    // CONVERSATION UPDATED (from /user/queue/chat)
+    // =====================
+    // This event arrives when user is NOT in the conversation screen
+    // Contains: unreadCount, totalUnreadCount, lastMessage, lastMessageAt
+    if (e.eventType === "CONVERSATION_UPDATED") {
+      log("CONVERSATION_UPDATED", { convId: id, event: e });
+
+      upsertConversation({
+        id,
+        lastMessage: e.lastMessage ?? undefined,
+        lastMessageAt: e.lastMessageAt ?? undefined,
+        unreadCount: e.unreadCount ?? undefined,
+      });
+
+      // If user is NOT in this conversation, increment unread
+      if (!isActive && e.unreadCount != null && e.unreadCount > 0) {
+        // unreadCount already includes the new message
+        // No need to call addUnreadForConversation
+      }
+
       return;
     }
 
-    // ─── NEW MESSAGE EVENT ─────────────────────────────────────────────────
-    if (
-      eventType === "NEW_MESSAGE" ||
-      eventType === "MESSAGE_SENT" ||
-      event.eventType === "message:new"
-    ) {
-      const message = normalizeMessage(conversationId, event.message);
-      if (!message) {
-        log("event", "⚠️ Invalid message payload, ignoring");
-        return;
-      }
+    // =====================
+    // TYPING
+    // =====================
+    if (e.eventType === "TYPING") {
+      setTyping(id, Boolean(e.typing));
+      return;
+    }
 
-      log("event", `💬 New message:`, {
-        id: message.id.slice(0, 8),
-        senderId: message.senderId.slice(0, 8),
-        content: message.content.slice(0, 20),
-      });
+    // =====================
+    // READ RECEIPT (from /topic/chat/{conversationId})
+    // =====================
+    // ✅ FIX Bug #6: Handle READ_RECEIPT events to update seenBy status
+    if (e.eventType === "READ_RECEIPT") {
+      const msg = e.message;
 
-      // CRITICAL: Update lastReceived for reconnect sync (Test 2 fix)
-      if (message.createdAt) {
-        reconnectManager.updateLastReceived(conversationId, message.createdAt);
-      }
+      if (msg && e.actorId) {
+        // Update seenBy for all messages up to this one
+        const conversationMessages = useChatStore.getState()
+          .messagesByConversation[id]?.items ?? [];
 
-      // CRITICAL: Clear typing indicator when user sends a message (Test 4 fix)
-      // If we receive a message from user X, they're no longer typing
-      if (message.senderId) {
-        setTyping(conversationId, false);
-      }
+        const readIndex = conversationMessages.findIndex(m => m.id === msg.id);
 
-      // 1. Append message to store
-      appendMessageRealtime(conversationId, message);
-
-      // 2. Update conversation metadata
-      upsertConversation({
-        id: conversationId,
-        lastMessage: message.content,
-        lastMessageAt: message.createdAt,
-      });
-
-      // 3. Handle unread count
-      const isFromOther = message.senderId && message.senderId !== meIdRef.current;
-
-      if (!isActive && isFromOther) {
-        // User not viewing this conversation - increment unread
-        log("event", "📬 Incrementing unread for:", conversationId.slice(0, 8));
-
-        if (typeof event.unreadCount === "number") {
-          // Server sent unread count
-          const currentUnread = conversations.find((c) => c.id === conversationId)?.unreadCount ?? 0;
-          upsertConversation({
-            id: conversationId,
-            unreadCount: Math.max(currentUnread + 1, event.unreadCount),
+        if (readIndex >= 0) {
+          // Mark all older messages as seen by this actor
+          const updatedMessages = conversationMessages.map((m, idx) => {
+            if (idx >= readIndex && m.senderId === meIdRef.current) {
+              const seenBy = new Set(m.seenBy ?? []);
+              seenBy.add(e.actorId);
+              return { ...m, seenBy: Array.from(seenBy) };
+            }
+            return m;
           });
-        } else {
-          addUnreadForConversation(conversationId);
+
+          // Update store
+          useChatStore.getState().setMessages(
+            id,
+            updatedMessages,
+            null
+          );
         }
       }
+
+      return;
+    }
+
+    // =====================
+    // MESSAGE (from /topic/chat/{conversationId})
+    // =====================
+    // This event arrives when user IS in the conversation screen
+    if (
+      e.eventType === "MESSAGE_SENT" ||
+      e.eventType === "NEW_MESSAGE"
+    ) {
+      const rawMsg = e.message;
+      if (!rawMsg) return;
+
+      // 🔥 FIX: Backend sends messageId, but mobile expects id
+      // Transform backend payload to match MessageItem type
+      const msg: any = {
+        ...rawMsg,
+        id: (rawMsg as any).messageId || (rawMsg as any).id,
+      };
+
+      appendMessageRealtime(id, msg);
+
+      upsertConversation({
+        id,
+        lastMessage: (msg as any).content,
+        lastMessageAt: (msg as any).createdAt,
+      });
+
+      const isFromOther =
+        msg.senderId && msg.senderId !== meIdRef.current;
 
       if (isActive && isFromOther) {
-        // User is viewing this conversation - mark as read
-        log("event", "📖 Auto-marking as read (user viewing)");
-        markReadLocal(conversationId);
-        socketService.publish("/app/chat.read", {
-          conversationId,
-          messageId: message.id
-        });
-        markConversationRead(conversationId, message.id).catch(() => { });
+        markReadLocal(id);
+      } else if (!isActive && isFromOther) {
+        addUnreadForConversation(id);
       }
 
-      // 4. Schedule background refresh
-      scheduleRefresh();
       return;
     }
 
-    // ─── MESSAGE UPDATE/RECALL/DELETE ──────────────────────────────────────
-    if (
-      eventType === "READ_RECEIPT" ||
-      eventType === "MESSAGE_UPDATED" ||
-      eventType === "MESSAGE_RECALLED" ||
-      eventType === "MESSAGE_DELETED_FOR_ME"
-    ) {
-      const message = normalizeMessage(conversationId, event.message);
-      if (message) {
-        appendMessageRealtime(conversationId, message);
+    // =====================
+    // MESSAGE RECALLED (from /topic/chat/{conversationId})
+    // =====================
+    // ✅ Handle recalled messages
+    if (e.eventType === "MESSAGE_RECALLED") {
+      const rawMsg = e.message;
+      if (!rawMsg) return;
 
-        if (eventType === "MESSAGE_RECALLED" || eventType === "MESSAGE_UPDATED") {
-          upsertConversation({
-            id: conversationId,
-            lastMessage: message.content,
-            lastMessageAt: message.createdAt,
-          });
-        }
-      }
-      scheduleRefresh();
+      const msg: any = {
+        ...rawMsg,
+        id: (rawMsg as any).messageId || (rawMsg as any).id,
+        recalled: true,
+      };
+
+      appendMessageRealtime(id, msg);
       return;
     }
 
-    // ─── CONVERSATION UPDATE EVENT ─────────────────────────────────────────
-    if (
-      event.eventType === "conversation:update" ||
-      eventType === "CONVERSATION_UPDATED" ||
-      eventType === "UNREAD_COUNT_UPDATED" ||
-      eventType === "TOTAL_UNREAD_UPDATED"
-    ) {
-      log("event", "🔄 Conversation update:", {
-        unreadCount: event.unreadCount,
-        lastMessage: event.lastMessage?.slice(0, 20),
+    // =====================
+    // MESSAGE UPDATED (from /topic/chat/{conversationId})
+    // =====================
+    // ✅ Handle edited messages
+    if (e.eventType === "MESSAGE_UPDATED") {
+      const rawMsg = e.message;
+      if (!rawMsg) return;
+
+      const msg: any = {
+        ...rawMsg,
+        id: (rawMsg as any).messageId || (rawMsg as any).id,
+        edited: true,
+      };
+
+      appendMessageRealtime(id, msg);
+
+      // Update conversation last message if edited
+      upsertConversation({
+        id,
+        lastMessage: (msg as any).content,
+        lastMessageAt: (msg as any).updatedAt || (msg as any).createdAt,
       });
 
-      const patch: Parameters<typeof upsertConversation>[0] = { id: conversationId };
-
-      if (typeof event.unreadCount === "number") {
-        patch.unreadCount = Math.max(0, event.unreadCount);
-      }
-      if (event.lastMessage !== undefined) {
-        patch.lastMessage = event.lastMessage ?? "";
-      }
-      if (event.lastMessageAt !== undefined) {
-        patch.lastMessageAt = event.lastMessageAt;
-      }
-
-      upsertConversation(patch);
-
-      // If active, refresh messages and mark read
-      if (isActive) {
-        markReadLocal(conversationId);
-        getMessages(conversationId, { limit: 40 })
-          .then((res) => {
-            if (mountedRef.current) {
-              setMessages(conversationId, res.data.items, res.data.nextCursor);
-            }
-          })
-          .catch(() => { });
-      }
-
-      scheduleRefresh();
       return;
     }
 
-    // ─── READ RECEIPT (mark conversation as read if active) ────────────────
-    if (event.eventType === "message:seen" || eventType === "READ_RECEIPT") {
-      if (isActive) {
-        markReadLocal(conversationId);
-      }
+    // =====================
+    // MESSAGE REACTION UPDATED (from /topic/chat/{conversationId})
+    // =====================
+    // ✅ Handle reaction updates
+    if (e.eventType === "MESSAGE_REACTION_UPDATED") {
+      const rawMsg = e.message;
+      if (!rawMsg) return;
+
+      const msg: any = {
+        ...rawMsg,
+        id: (rawMsg as any).messageId || (rawMsg as any).id,
+      };
+
+      appendMessageRealtime(id, msg);
       return;
     }
+  }, [getState]);
 
-    log("event", "⚠️ Unhandled event type:", event.eventType);
-  }, [getLatestState, normalizeMessage, scheduleRefresh]);
-
-  // ─── SETUP: Connect socket and register event listener ─────────────────────
   useEffect(() => {
-    if (!accessToken) {
-      log("setup", "No access token, skipping socket setup");
-      return;
-    }
+    if (!token) return;
 
-    log("setup", "🔌 Setting up socket connection...");
-    mountedRef.current = true;
+    mounted.current = true;
 
-    // Register event listener (BEFORE connecting to avoid missing events)
-    eventListenerCleanupRef.current = socketService.addEventListener(handleEvent);
-    log("setup", "Event listener registered");
+    const unsub = socketService.addListener(handle);
 
-    // Register state listener for logging
-    stateListenerCleanupRef.current = socketService.addStateListener((state) => {
-      log("state", `Socket state: ${state}`);
+    socketService.connect(token);
+    reconnectManager.start();
 
-      // CRITICAL: When socket reconnects, sync subscriptions again
-      if (state === "CONNECTED") {
-        const conversationIds = useChatStore.getState().conversations.map((c) => c.id).filter(Boolean);
-        if (conversationIds.length > 0) {
-          log("state", `Socket connected - syncing ${conversationIds.length} subscriptions`);
-          socketService.syncConversationSubscriptions(conversationIds);
+    getConversations().then((res) => {
+      const { setConversations } = getState();
+      const currentConversations = useChatStore.getState().conversations;
+
+      // ✅ FIX Bug #4: Merge server data with local state, preserve higher unread counts
+      // This prevents unread count flicker during reconnect
+      const merged = res.data.map(serverConv => {
+        const local = currentConversations.find(c => c.id === serverConv.id);
+
+        if (!local) {
+          return serverConv; // New conversation
         }
-      }
+
+        // Preserve higher unread count (in case realtime events arrived during fetch)
+        return {
+          ...serverConv,
+          unreadCount: Math.max(
+            serverConv.unreadCount ?? 0,
+            local.unreadCount ?? 0
+          ),
+        };
+      });
+
+      setConversations(merged);
+
+      socketService.syncConversationSubscriptions(
+        merged.map((c) => c.id)
+      );
     });
 
-    // Connect socket
-    socketService.connect(accessToken);
-
-    // CRITICAL: Start reconnect manager for WiFi/network handling (Test 2 fix)
-    reconnectManager.start();
-    log("setup", "ReconnectManager started");
-
-    // Fetch conversations and sync subscriptions
-    // This ensures we have conversations to subscribe to
-    getConversations()
-      .then((response) => {
-        if (!mountedRef.current) return;
-        const { setConversations } = getLatestState();
-        setConversations(response.data);
-        const ids = response.data.map((c) => c.id).filter(Boolean);
-        log("setup", `Loaded ${ids.length} conversations, syncing subscriptions...`);
-        socketService.syncConversationSubscriptions(ids);
-      })
-      .catch((error) => {
-        log("setup", "Failed to load conversations:", error);
-      });
-
-    // Cleanup on unmount
     return () => {
-      log("cleanup", "🔌 Cleaning up socket...");
-      mountedRef.current = false;
-
-      if (eventListenerCleanupRef.current) {
-        eventListenerCleanupRef.current();
-        eventListenerCleanupRef.current = null;
-      }
-
-      if (stateListenerCleanupRef.current) {
-        stateListenerCleanupRef.current();
-        stateListenerCleanupRef.current = null;
-      }
-
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-        refreshTimeoutRef.current = null;
-      }
-
-      // Stop reconnect manager
+      mounted.current = false;
+      unsub();
       reconnectManager.stop();
-
-      // Don't disconnect socket here - let socketService manage lifecycle
-      // socketService.disconnect() should be called when user logs out
     };
-  }, [accessToken, handleEvent, getLatestState]);
+  }, [token, handle, getState]);
 
-  // ─── SYNC: Update subscriptions when conversations change ──────────────────
-  // CRITICAL: This effect subscribes to new conversations when they're loaded
   const conversations = useChatStore((s) => s.conversations);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
 
   useEffect(() => {
-    // Only sync if we have conversations and socket is connected
-    const conversationIds = conversations.map((c) => c.id).filter(Boolean);
-    if (conversationIds.length === 0) {
-      log("sync", "No conversations to sync");
-      return;
+    if (!connected) return;
+
+    socketService.syncConversationSubscriptions(
+      conversations.map((c) => c.id)
+    );
+  }, [connected, conversations]);
+
+  // 🔥 FIX: Immediately subscribe to active conversation when it changes
+  useEffect(() => {
+    if (!connected || !activeConversationId) return;
+
+    // Ensure active conversation is in the subscribed list
+    const conversationIds = conversations.map((c) => c.id);
+    if (!conversationIds.includes(activeConversationId)) {
+      log("activeConversation", `Subscribing to active conversation: ${activeConversationId.slice(0, 8)}`);
+      socketService.syncConversationSubscriptions([...conversationIds, activeConversationId]);
     }
+  }, [connected, activeConversationId, conversations]);
 
-    log("sync", `Conversations changed - syncing ${conversationIds.length} subscriptions`);
-    socketService.syncConversationSubscriptions(conversationIds);
-  }, [conversations]); // React to conversations changes
-
-  // ─── RETURN HOOK API ───────────────────────────────────────────────────────
   return {
     connected,
-    publishTyping: useCallback((conversationId: string, typing: boolean) => {
-      socketService.publishTyping(conversationId, typing);
+    publishTyping: useCallback((id: string, typing: boolean) => {
+      socketService.publish("/app/chat.typing", { id, typing });
     }, []),
   };
 }

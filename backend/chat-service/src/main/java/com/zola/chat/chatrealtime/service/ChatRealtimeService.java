@@ -25,9 +25,15 @@ import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,8 +54,13 @@ public class ChatRealtimeService {
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
+    private final StringRedisTemplate redisTemplate;
+    private final MongoTemplate mongoTemplate;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
+
+    private static final Duration DEDUP_TTL = Duration.ofMinutes(5);
+    private static final String DEDUP_KEY_PREFIX = "msg:idem:";
 
     public ChatRealtimeService(
         PostgresConversationRepository conversationRepository,
@@ -57,6 +68,8 @@ public class ChatRealtimeService {
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
+        StringRedisTemplate redisTemplate,
+        MongoTemplate mongoTemplate,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
         @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
     ) {
@@ -65,6 +78,8 @@ public class ChatRealtimeService {
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
+        this.redisTemplate = redisTemplate;
+        this.mongoTemplate = mongoTemplate;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
     }
@@ -84,6 +99,24 @@ public class ChatRealtimeService {
      */
     @Transactional
     public ChatEventResponse sendMessage(String senderId, ChatSendRequest request) {
+        // ── IDEMPOTENCY CHECK ────────────────────────────────────────────────────
+        // If client sends clientMessageId, use Redis to deduplicate within 5 min.
+        // Protects against: double-click, network reconnect resend, race conditions.
+        if (request.clientMessageId() != null && !request.clientMessageId().isBlank()) {
+            String dedupKey = DEDUP_KEY_PREFIX + senderId + ":" + request.clientMessageId();
+            String existingId = redisTemplate.opsForValue().get(dedupKey);
+            if (existingId != null) {
+                MessageDocument existing = messageRepository.findById(existingId).orElse(null);
+                if (existing != null) {
+                    return new ChatEventResponse(
+                        "MESSAGE_SENT", senderId, request.conversationId().toString(),
+                        false, false, null, toMessagePayload(existing), null, null, null, null
+                    );
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
         ensureMember(conversation, senderId);
         String receiverId = resolvePeerUserId(conversation, senderId);
@@ -110,6 +143,13 @@ public class ChatRealtimeService {
         }
         item.setDeliveredTo(deliveredTo);
         messageRepository.save(item);
+
+        // ── STORE DEDUP KEY ──────────────────────────────────────────────────────
+        if (request.clientMessageId() != null && !request.clientMessageId().isBlank()) {
+            String dedupKey = DEDUP_KEY_PREFIX + senderId + ":" + request.clientMessageId();
+            redisTemplate.opsForValue().set(dedupKey, item.getId(), DEDUP_TTL);
+        }
+        // ────────────────────────────────────────────────────────────────────────
 
         conversation.setLastMessage(item.getContent());
         conversation.setLastMessageAt(now);
@@ -324,6 +364,7 @@ public class ChatRealtimeService {
         );
     }
 
+
     @Transactional
     public ChatEventResponse readReceipt(String userId, ChatReadReceiptRequest request) {
         ConversationEntity conversation = conversationRepository.findById(request.conversationId());
@@ -440,6 +481,23 @@ public class ChatRealtimeService {
         ConversationEntity conversation = conversationRepository.findById(conversationId);
         ensureMember(conversation, userId);
 
+        // Idempotent fast path: avoid repeated writes/events when conversation is already read.
+        if (conversation.unreadCountOf(userId) <= 0) {
+            return new ChatEventResponse(
+                "READ_RECEIPT_NOOP",
+                userId,
+                conversationId.toString(),
+                false,
+                false,
+                null,
+                null,
+                0,
+                conversationRepository.sumUnreadByParticipant(userId),
+                conversation.getLastMessage(),
+                conversation.getLastMessageAt() == null ? null : conversation.getLastMessageAt().toString()
+            );
+        }
+
         String messageId = explicitMessageId;
         MessagePayload readMessagePayload = null;
         if (messageId == null || messageId.isBlank()) {
@@ -502,10 +560,11 @@ public class ChatRealtimeService {
         String type,
         String content,
         String fileUrl,
-        String fileName
+        String fileName,
+        String clientMessageId
     ) {
         String normalizedType = (type == null || type.isBlank()) ? "TEXT" : type.trim().toUpperCase();
-        ChatEventResponse event = sendMessage(senderId, new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName));
+        ChatEventResponse event = sendMessage(senderId, new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName, clientMessageId));
         MessagePayload message = event.message();
         return new MessageItemResponse(
             message.messageId(),
@@ -674,48 +733,48 @@ public class ChatRealtimeService {
         return Optional.ofNullable(items.get(items.size() - 1).getId());
     }
 
+    /**
+     * PERFORMANCE FIX: Use MongoDB updateMany instead of load-all-then-batch-save.
+     *
+     * OLD: loadAll(N docs) + findTargetIndex(O(N)) + saveAll(N docs) → O(N) DB operations
+     * NEW: findOne(target) + updateMany(lte createdAt) → O(1) indexed queries
+     *
+     * Requires index on (conversationId, createdAt) in MongoDB for production performance.
+     */
     private Optional<MessageDocument> markMessagesAsSeenUpTo(String userId, UUID conversationId, String messageId) {
         if (messageId == null || messageId.isBlank()) {
             return Optional.empty();
         }
 
-        List<MessageDocument> items = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId.toString());
-        if (items.isEmpty()) {
+        // 1. Find target message to get its createdAt timestamp
+        Optional<MessageDocument> targetOpt = messageRepository.findByConversationIdAndId(
+            conversationId.toString(), messageId
+        );
+        if (targetOpt.isEmpty()) {
             return Optional.empty();
         }
 
-        int targetIndex = -1;
-        for (int index = 0; index < items.size(); index += 1) {
-            if (messageId.equals(items.get(index).getId())) {
-                targetIndex = index;
-                break;
-            }
-        }
-        if (targetIndex < 0) {
+        MessageDocument target = targetOpt.get();
+        String targetCreatedAt = target.getCreatedAt();
+        if (targetCreatedAt == null) {
             return Optional.empty();
         }
 
-        Instant now = Instant.now();
-        MessageDocument target = null;
+        // 2. Bulk update all messages in this conversation up to and including target
+        //    ISO 8601 strings sort lexicographically = chronologically for UTC timestamps
+        Query query = Query.query(
+            Criteria.where("conversationId").is(conversationId.toString())
+                .and("createdAt").lte(targetCreatedAt)
+        );
+        Update update = new Update()
+            .addToSet("seenBy", userId)
+            .addToSet("deliveredTo", userId)
+            .set("updatedAt", Instant.now().toString());
 
-        for (int index = 0; index <= targetIndex; index += 1) {
-            MessageDocument item = items.get(index);
-            Set<String> deliveredTo = item.getDeliveredTo() == null ? new HashSet<>() : new HashSet<>(item.getDeliveredTo());
-            deliveredTo.add(userId);
-            item.setDeliveredTo(deliveredTo);
+        mongoTemplate.updateMulti(query, update, MessageDocument.class);
 
-            Set<String> readBy = item.getSeenBy() == null ? new HashSet<>() : new HashSet<>(item.getSeenBy());
-            readBy.add(userId);
-            item.setSeenBy(readBy);
-            item.setUpdatedAt(now.toString());
-            messageRepository.save(item);
-
-            if (messageId.equals(item.getId())) {
-                target = item;
-            }
-        }
-
-        return Optional.ofNullable(target);
+        // 3. Re-fetch target to return updated state (seenBy now includes userId)
+        return messageRepository.findByConversationIdAndId(conversationId.toString(), messageId);
     }
 
     private String generateMessageId() {

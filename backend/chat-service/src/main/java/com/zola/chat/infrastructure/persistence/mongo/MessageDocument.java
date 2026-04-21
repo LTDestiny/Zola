@@ -1,6 +1,8 @@
 package com.zola.chat.infrastructure.persistence.mongo;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.HashSet;
@@ -8,6 +10,10 @@ import java.util.List;
 import java.util.Set;
 
 @Document(collection = "messages")
+@CompoundIndexes({
+    @CompoundIndex(name = "conv_created", def = "{'conversationId': 1, 'createdAt': 1}"),
+    @CompoundIndex(name = "conv_id_lookup", def = "{'conversationId': 1, '_id': 1}")
+})
 public class MessageDocument {
 
     @Id

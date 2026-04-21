@@ -306,6 +306,7 @@ export async function sendMessage(
     type?: "TEXT" | "EMOJI" | "FILE" | "FORWARD" | "IMAGE" | "VIDEO" | "AUDIO";
     fileUrl?: string | null;
     fileName?: string | null;
+    clientMessageId?: string | null; // Idempotency key - prevents duplicate sends on retry
   },
 ) {
   const response = await httpClient.post<ApiResponse<MessageItem>>(
@@ -315,6 +316,7 @@ export async function sendMessage(
       content,
       fileUrl: options?.fileUrl ?? null,
       fileName: options?.fileName ?? null,
+      clientMessageId: options?.clientMessageId ?? null,
     },
   );
   return response.data;

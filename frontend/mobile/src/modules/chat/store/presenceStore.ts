@@ -44,6 +44,8 @@ interface PresenceStoreState {
     loading: boolean;
     lastRefresh: number;
     appState: AppStateStatus;
+    loadedUserIds: Record<string, number>;
+    loadingUserIds: Record<string, true>;
 
     // Actions
     setPresence: (userId: string, online: boolean, lastSeenAt?: string | null) => void;
@@ -89,6 +91,8 @@ export const usePresenceStore = create<PresenceStoreState>((set, get) => ({
     loading: false,
     lastRefresh: 0,
     appState: AppState.currentState,
+    loadedUserIds: {},
+    loadingUserIds: {},
 
     // ─── ACTIONS ───────────────────────────────────────────────────────────────
 
@@ -126,30 +130,72 @@ export const usePresenceStore = create<PresenceStoreState>((set, get) => ({
         const uniqueIds = [...new Set(userIds.filter((id) => id && id.trim()))];
         if (uniqueIds.length === 0) return;
 
-        log("fetch", `Fetching presence for ${uniqueIds.length} users`);
-        set({ loading: true });
+        const now = Date.now();
+        const PRESENCE_TTL_MS = 60_000;
+        const state = get();
+        const pendingIds = uniqueIds.filter((userId) => {
+            const loadedAt = state.loadedUserIds[userId] ?? 0;
+            const isLoading = Boolean(state.loadingUserIds[userId]);
+            const isFresh = loadedAt > 0 && now - loadedAt < PRESENCE_TTL_MS;
+            return !isLoading && !isFresh;
+        });
+
+        if (pendingIds.length === 0) {
+            return;
+        }
+
+        log("fetch", `Fetching presence for ${pendingIds.length} users`);
+        set((current) => {
+            const nextLoading = { ...current.loadingUserIds };
+            pendingIds.forEach((id) => {
+                nextLoading[id] = true;
+            });
+            return { loading: true, loadingUserIds: nextLoading };
+        });
 
         try {
-            const items = await fetchUsersPresenceApi(uniqueIds);
-            const now = Date.now();
+            const items = await fetchUsersPresenceApi(pendingIds);
+            const fetchedAt = Date.now();
 
             set((state) => {
                 const nextMap = { ...state.presenceMap };
+                const nextLoaded = { ...state.loadedUserIds };
+                const nextLoading = { ...state.loadingUserIds };
+
+                pendingIds.forEach((id) => {
+                    delete nextLoading[id];
+                });
+
                 items.forEach((item) => {
                     nextMap[item.userId] = {
                         online: item.online,
                         lastSeenAt: item.lastChangedAt,
-                        lastUpdated: now,
+                        lastUpdated: fetchedAt,
                     };
+                    nextLoaded[item.userId] = fetchedAt;
                 });
-                return { presenceMap: nextMap, lastRefresh: now };
+
+                return {
+                    presenceMap: nextMap,
+                    lastRefresh: fetchedAt,
+                    loadedUserIds: nextLoaded,
+                    loadingUserIds: nextLoading,
+                };
             });
 
             log("fetch", `Updated presence for ${items.length} users`);
         } catch (error) {
             log("fetch", "Error:", error);
+            set((state) => {
+                const nextLoading = { ...state.loadingUserIds };
+                pendingIds.forEach((id) => {
+                    delete nextLoading[id];
+                });
+                return { loadingUserIds: nextLoading };
+            });
         } finally {
-            set({ loading: false });
+            const hasLoading = Object.keys(get().loadingUserIds).length > 0;
+            set({ loading: hasLoading });
         }
     },
 
@@ -158,7 +204,7 @@ export const usePresenceStore = create<PresenceStoreState>((set, get) => ({
     },
 
     clearAll: () => {
-        set({ presenceMap: {}, lastRefresh: 0 });
+        set({ presenceMap: {}, lastRefresh: 0, loadedUserIds: {}, loadingUserIds: {} });
     },
 
     // ─── SELECTORS ─────────────────────────────────────────────────────────────

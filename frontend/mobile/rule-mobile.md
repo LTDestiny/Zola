@@ -26,8 +26,8 @@ Chuyển toàn bộ chức năng Chat 1-1 từ Web hiện có sang Mobile App, s
 ## Cấu hình ví dụ
 
 ```env
-API_BASE_URL=http://192.168.1.10:8080/api
-SOCKET_URL=ws://192.168.1.10:8080
+API_BASE_URL=http://192.168.1.11:8080/api
+SOCKET_URL=ws://192.168.1.11:8080
 ```
 
 ## Yêu cầu chuyển UI Web -> Mobile
