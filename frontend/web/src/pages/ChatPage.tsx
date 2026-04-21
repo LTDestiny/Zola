@@ -198,8 +198,81 @@ type GroupPreferenceItem = {
   hidden: boolean;
 };
 
+type PinnedBoardItem = {
+  id: string;
+  itemType: "pin" | "note";
+  title: string;
+  preview: string;
+  sourceMessageId: string;
+  createdAtMs: number;
+};
+
+type PinBoardEvent = {
+  id: string;
+  kind: "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE";
+  itemType: "pin" | "note";
+  pinToTop: boolean;
+  sourceMessageId: string;
+  title: string;
+  preview: string;
+  createdAtMs: number;
+};
+
+type CreateGroupPollInput = {
+  question: string;
+  options: string[];
+  multipleChoice: boolean;
+  allowChangeVote: boolean;
+  deadlineMinutes: number;
+  hideResultsBeforeVote: boolean;
+};
+
 const GROUP_PREFERENCE_STORAGE_KEY = "zola_group_preferences_v1";
 const HIDDEN_CHAT_PIN_STORAGE_KEY = "zola_hidden_chat_pin_v1";
+
+function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
+  const rawType = (message.type ?? "TEXT").toUpperCase();
+  if (rawType !== "NOTE") {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(message.content) as Record<string, unknown>;
+    const kind = String(payload?.kind ?? "").toUpperCase();
+    if (kind !== "PIN_MESSAGE" && kind !== "UNPIN_MESSAGE" && kind !== "BOARD_NOTE") {
+      return null;
+    }
+
+    const sourceMessageId = String(payload?.sourceMessageId ?? message.id ?? "").trim();
+    if (!sourceMessageId || !message.id) {
+      return null;
+    }
+
+    const pinToTop = kind === "UNPIN_MESSAGE"
+      ? false
+      : kind === "PIN_MESSAGE"
+        ? true
+        : Boolean(payload?.pinToTop);
+    const title = String(payload?.title ?? "").trim();
+    const preview = String(payload?.preview ?? payload?.note ?? "").trim();
+    const createdAtRaw = String(payload?.createdAt ?? message.createdAt ?? "");
+    const createdAtMs = Date.parse(createdAtRaw);
+    const itemType = kind === "BOARD_NOTE" ? "note" : "pin";
+
+    return {
+      id: message.id,
+      kind: kind as "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE",
+      itemType,
+      pinToTop,
+      sourceMessageId,
+      title: title || (kind === "UNPIN_MESSAGE" ? "Unpinned message" : kind === "BOARD_NOTE" ? "Group note" : "Pinned message"),
+      preview,
+      createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function loadGroupPreferences(): Record<string, GroupPreferenceItem> {
   try {
@@ -517,6 +590,7 @@ export function ChatPage() {
     () => loadGroupPreferences(),
   );
   const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(true);
+  const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: string; nonce: number } | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
@@ -1364,6 +1438,365 @@ export function ChatPage() {
           ? `Da gui ${prefixByType[type].toLowerCase()}`
           : `${prefixByType[type]} sent`,
       );
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onPinGroupMessage = async (targetMessage: { id: string; text: string }) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
+      setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
+    const authorName = myProfile?.fullName?.trim() || (language === "vi" ? "Ban" : "You");
+    const title =
+      language === "vi"
+        ? `${authorName} da ghim mot tin nhan`
+        : `${authorName} pinned a message`;
+
+    const payload = {
+      kind: "PIN_MESSAGE",
+      sourceMessageId: targetMessage.id,
+      title,
+      preview,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "NOTE",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onUnpinGroupMessage = async (sourceMessageId: string) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const normalizedSourceId = sourceMessageId.trim();
+    if (!normalizedSourceId) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const authorName = myProfile?.fullName?.trim() || (language === "vi" ? "Ban" : "You");
+    const title =
+      language === "vi"
+        ? `${authorName} da bo ghim mot tin nhan`
+        : `${authorName} unpinned a message`;
+
+    const payload = {
+      kind: "UNPIN_MESSAGE",
+      sourceMessageId: normalizedSourceId,
+      title,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "NOTE",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onCreateGroupBoardNote = async (noteText: string, pinToTop: boolean) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const trimmed = noteText.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const payload = {
+      kind: "BOARD_NOTE",
+      title: trimmed,
+      note: trimmed,
+      preview: trimmed.replace(/\s+/g, " ").slice(0, 140),
+      pinToTop,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "NOTE",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(
+        language === "vi"
+          ? pinToTop
+            ? "Da tao ghi chu va ghim len dau"
+            : "Da tao ghi chu"
+          : pinToTop
+            ? "Note created and pinned"
+            : "Note created",
+      );
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onCreateGroupPoll = async (input: CreateGroupPollInput) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return false;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const isCurrentOwner = Boolean(activeSettings?.isOwner);
+    const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
+    if (!isCurrentOwner && !isCurrentAdmin) {
+      setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
+      return false;
+    }
+
+    const question = input.question.trim();
+    const normalizedOptions = input.options
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+    const dedupedOptions: string[] = [];
+    const seen = new Set<string>();
+    for (const option of normalizedOptions) {
+      const key = option.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupedOptions.push(option);
+      }
+    }
+
+    if (!question) {
+      setBannerMessage(language === "vi" ? "Noi dung binh chon khong duoc de trong" : "Poll question cannot be empty");
+      return false;
+    }
+
+    if (question.length > 200) {
+      setBannerMessage(language === "vi" ? "Noi dung binh chon toi da 200 ky tu" : "Poll question cannot exceed 200 characters");
+      return false;
+    }
+
+    if (dedupedOptions.length < 2) {
+      setBannerMessage(language === "vi" ? "Cuoc binh chon phai co it nhat 2 lua chon" : "Poll must have at least 2 options");
+      return false;
+    }
+
+    if (dedupedOptions.length > 10) {
+      setBannerMessage(language === "vi" ? "Toi da 10 lua chon cho moi cuoc binh chon" : "Poll supports up to 10 options");
+      return false;
+    }
+
+    if (dedupedOptions.some((option) => option.length > 80)) {
+      setBannerMessage(language === "vi" ? "Moi lua chon toi da 80 ky tu" : "Each option can contain up to 80 characters");
+      return false;
+    }
+
+    if (!Number.isFinite(input.deadlineMinutes) || input.deadlineMinutes < 5 || input.deadlineMinutes > 10080) {
+      setBannerMessage(language === "vi" ? "Han binh chon tu 5 phut den 7 ngay" : "Poll duration must be between 5 minutes and 7 days");
+      return false;
+    }
+
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + input.deadlineMinutes * 60 * 1000).toISOString();
+    const pollId = `poll-${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`;
+    const payload = {
+      kind: "GROUP_POLL",
+      pollId,
+      question,
+      title: question,
+      options: dedupedOptions.map((option, index) => ({
+        id: `opt-${index + 1}`,
+        text: option,
+      })),
+      multipleChoice: input.multipleChoice,
+      allowChangeVote: input.allowChangeVote,
+      hideResultsBeforeVote: input.hideResultsBeforeVote,
+      expiresAt,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "POLL",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da tao cuoc binh chon" : "Poll created");
+      await fetchConversations({ silent: true });
+      return true;
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+      return false;
+    }
+  };
+
+  const onVoteGroupPoll = async (targetMessage: {
+    poll?: {
+      pollId: string;
+      options: Array<{ id: string; selectedByMe: boolean }>;
+      multipleChoice: boolean;
+      allowChangeVote: boolean;
+      hasVotedByMe: boolean;
+      isClosed: boolean;
+    };
+  }, optionId: string) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const poll = targetMessage.poll;
+    if (!poll?.pollId || !optionId) {
+      return;
+    }
+
+    if (poll.isClosed) {
+      setBannerMessage(language === "vi" ? "Cuoc binh chon da ket thuc" : "Poll is closed");
+      return;
+    }
+
+    if (poll.hasVotedByMe && !poll.allowChangeVote) {
+      setBannerMessage(language === "vi" ? "Cuoc binh chon khong cho phep doi dap an" : "This poll does not allow changing votes");
+      return;
+    }
+
+    const selectedIds = new Set(
+      poll.options.filter((option) => option.selectedByMe).map((option) => option.id),
+    );
+    let nextOptionIds: string[] = [];
+
+    if (poll.multipleChoice) {
+      if (selectedIds.has(optionId)) {
+        selectedIds.delete(optionId);
+      } else {
+        selectedIds.add(optionId);
+      }
+      nextOptionIds = Array.from(selectedIds);
+    } else {
+      nextOptionIds = [optionId];
+    }
+
+    if (nextOptionIds.length === 0) {
+      setBannerMessage(language === "vi" ? "Can chon it nhat 1 lua chon" : "Select at least one option");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const payload = {
+      kind: "POLL_VOTE",
+      pollId: poll.pollId,
+      optionIds: nextOptionIds,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "POLL",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da cap nhat binh chon" : "Vote updated");
+      await fetchConversations({ silent: true });
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onCloseGroupPoll = async (targetMessage: { poll?: { pollId: string; isClosed: boolean } }) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const poll = targetMessage.poll;
+    if (!poll?.pollId || poll.isClosed) {
+      return;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const isCurrentOwner = Boolean(activeSettings?.isOwner);
+    const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
+    if (!isCurrentOwner && !isCurrentAdmin) {
+      setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc ket thuc binh chon" : "Only owner/admin can close polls");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const payload = {
+      kind: "POLL_CLOSE",
+      pollId: poll.pollId,
+      createdAt: nowIso,
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "POLL",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da ket thuc binh chon" : "Poll closed");
       await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -4836,6 +5269,57 @@ export function ChatPage() {
     ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
     : false;
 
+  const activePinnedBoardItems = useMemo(() => {
+    if (activeConversationForView?.type !== "group") {
+      return [] as PinnedBoardItem[];
+    }
+
+    const orderedEvents = messages
+      .map((item) => parsePinBoardEvent(item))
+      .filter((item): item is PinBoardEvent => Boolean(item))
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
+
+    const pinnedBySource = new Map<string, PinnedBoardItem>();
+
+    for (const event of orderedEvents) {
+      if (event.kind === "UNPIN_MESSAGE") {
+        pinnedBySource.delete(event.sourceMessageId);
+        continue;
+      }
+
+      if (!event.pinToTop) {
+        pinnedBySource.delete(event.sourceMessageId);
+        continue;
+      }
+
+      pinnedBySource.set(event.sourceMessageId, {
+        id: event.id,
+        itemType: event.itemType,
+        sourceMessageId: event.sourceMessageId,
+        title: event.title,
+        preview: event.preview,
+        createdAtMs: event.createdAtMs,
+      });
+    }
+
+    return Array.from(pinnedBySource.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
+  }, [messages, activeConversationForView?.id, activeConversationForView?.type]);
+
+  const latestPinnedSummary = useMemo(() => {
+    const latest = activePinnedBoardItems[0];
+    if (!latest) {
+      return null;
+    }
+
+    return {
+      itemType: latest.itemType,
+      title: latest.title,
+      preview: latest.preview,
+      sourceMessageId: latest.sourceMessageId,
+      count: activePinnedBoardItems.length,
+    };
+  }, [activePinnedBoardItems]);
+
   const headerUnreadBadgeCount = activeConversationForView
     ? Math.max(Math.max(0, activeConversationForView.unreadCount ?? 0), globalUnreadCount)
     : globalUnreadCount;
@@ -5456,6 +5940,19 @@ export function ChatPage() {
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
                 friendContacts={friendContacts}
+                pinnedMessages={activePinnedBoardItems}
+                onOpenPinnedMessage={(sourceMessageId: string) => {
+                  setScrollToMessageRequest({ messageId: sourceMessageId, nonce: Date.now() });
+                }}
+                onUnpinPinnedMessage={(sourceMessageId: string) => {
+                  void onUnpinGroupMessage(sourceMessageId);
+                }}
+                onCreateBoardNote={(noteText: string, pinToTop: boolean) => {
+                  void onCreateGroupBoardNote(noteText, pinToTop);
+                }}
+                onCreatePoll={(input: CreateGroupPollInput) => {
+                  return onCreateGroupPoll(input);
+                }}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 currentUserId={myProfile?.id ?? null}
@@ -5554,6 +6051,22 @@ export function ChatPage() {
                   onDeleteForMe={onDeleteForMe}
                   onForwardMessage={onForwardMessage}
                   onReactMessage={onReactMessage}
+                  onPinMessage={(targetMessage) => {
+                    void onPinGroupMessage(targetMessage);
+                  }}
+                  onUnpinMessage={(targetMessage) => {
+                    void onUnpinGroupMessage(targetMessage.id);
+                  }}
+                  onVotePollMessage={(targetMessage, optionId) => {
+                    void onVoteGroupPoll(targetMessage, optionId);
+                  }}
+                  onClosePollMessage={(targetMessage) => {
+                    void onCloseGroupPoll(targetMessage);
+                  }}
+                  canManageGroupPoll={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)}
+                  pinnedMessages={activePinnedBoardItems}
+                  latestPinnedSummary={latestPinnedSummary}
+                  scrollToMessageRequest={scrollToMessageRequest}
                   pendingUploads={pendingUploads}
                   onRetryUpload={onRetryUpload}
                   onCancelUpload={onCancelUpload}
@@ -5600,6 +6113,12 @@ export function ChatPage() {
                 onDeleteForMe={onDeleteForMe}
                 onForwardMessage={onForwardMessage}
                 onReactMessage={onReactMessage}
+                onVotePollMessage={undefined}
+                onClosePollMessage={undefined}
+                canManageGroupPoll={false}
+                pinnedMessages={[]}
+                latestPinnedSummary={null}
+                scrollToMessageRequest={null}
                 pendingUploads={pendingUploads}
                 onRetryUpload={onRetryUpload}
                 onCancelUpload={onCancelUpload}

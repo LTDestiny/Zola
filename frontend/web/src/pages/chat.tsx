@@ -43,6 +43,27 @@ type ChatProps = {
   onDeleteForMe: (messageId: string) => void | Promise<void>;
   onForwardMessage: (messageId: string) => void | Promise<void>;
   onReactMessage: (messageId: string, emoji: string) => void | Promise<void>;
+  onPinMessage?: (message: ChatMessage) => void | Promise<void>;
+  onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
+  onVotePollMessage?: (message: ChatMessage, optionId: string) => void | Promise<void>;
+  onClosePollMessage?: (message: ChatMessage) => void | Promise<void>;
+  canManageGroupPoll?: boolean;
+  pinnedMessages?: Array<{
+    id: string;
+    sourceMessageId: string;
+    itemType: "pin" | "note";
+    title: string;
+    preview: string;
+    createdAtMs: number;
+  }>;
+  latestPinnedSummary?: {
+    itemType: "pin" | "note";
+    title: string;
+    preview?: string;
+    sourceMessageId: string;
+    count: number;
+  } | null;
+  scrollToMessageRequest?: { messageId: string; nonce: number } | null;
   pendingUploads: Array<{
     localId: string;
     fileName: string;
@@ -61,6 +82,317 @@ type ChatProps = {
   onLoadOlderMessages: () => void | Promise<void>;
   onViewportBottomChange?: (atBottom: boolean) => void;
 };
+
+type PollCreateEvent = {
+  messageId: string;
+  pollId: string;
+  question: string;
+  options: Array<{ id: string; text: string }>;
+  multipleChoice: boolean;
+  allowChangeVote: boolean;
+  hideResultsBeforeVote: boolean;
+  expiresAt: string | null;
+  createdAtMs: number;
+};
+
+type PollVoteEvent = {
+  pollId: string;
+  senderId: string;
+  optionIds: string[];
+  createdAtMs: number;
+};
+
+type PollCloseEvent = {
+  pollId: string;
+  senderId: string;
+  createdAtMs: number;
+};
+
+type PollSummary = NonNullable<ChatMessage["poll"]> & {
+  messageId: string;
+};
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function normalizePollOptions(raw: unknown) {
+  const source = Array.isArray(raw) ? raw : [];
+  return source
+    .map((item, index) => {
+      if (typeof item === "string") {
+        const text = item.trim();
+        return { id: `opt-${index + 1}`, text };
+      }
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const maybe = item as Record<string, unknown>;
+      const text = String(maybe.text ?? "").trim();
+      const id = String(maybe.id ?? `opt-${index + 1}`).trim();
+      if (!text || !id) {
+        return null;
+      }
+      return { id, text };
+    })
+    .filter((item): item is { id: string; text: string } => Boolean(item));
+}
+
+function parsePollCreateEvent(item: MessageItem): PollCreateEvent | null {
+  if ((item.type ?? "").toUpperCase() !== "POLL") {
+    return null;
+  }
+
+  const payload = parseJsonObject(item.content);
+  if (!payload) {
+    return null;
+  }
+
+  const kind = String(payload.kind ?? "").toUpperCase();
+  if (kind !== "GROUP_POLL") {
+    return null;
+  }
+
+  const pollId = String(payload.pollId ?? item.id ?? "").trim();
+  const question = String(payload.question ?? payload.title ?? "").trim();
+  const options = normalizePollOptions(payload.options);
+  if (!pollId || !question || options.length < 2 || !item.id) {
+    return null;
+  }
+
+  const createdAtMs = Date.parse(String(payload.createdAt ?? item.createdAt ?? ""));
+  return {
+    messageId: item.id,
+    pollId,
+    question,
+    options,
+    multipleChoice: Boolean(payload.multipleChoice),
+    allowChangeVote: payload.allowChangeVote !== false,
+    hideResultsBeforeVote: Boolean(payload.hideResultsBeforeVote),
+    expiresAt: payload.expiresAt ? String(payload.expiresAt) : null,
+    createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
+  };
+}
+
+function parsePollVoteEvent(item: MessageItem): PollVoteEvent | null {
+  if ((item.type ?? "").toUpperCase() !== "POLL") {
+    return null;
+  }
+
+  const payload = parseJsonObject(item.content);
+  if (!payload) {
+    return null;
+  }
+
+  const kind = String(payload.kind ?? "").toUpperCase();
+  if (kind !== "POLL_VOTE") {
+    return null;
+  }
+
+  const pollId = String(payload.pollId ?? "").trim();
+  const senderId = String(item.senderId ?? "").trim();
+  const rawOptionIds = Array.isArray(payload.optionIds)
+    ? payload.optionIds
+    : payload.optionIds
+      ? [payload.optionIds]
+      : [];
+  const optionIds = rawOptionIds
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  if (!pollId || !senderId || optionIds.length === 0) {
+    return null;
+  }
+
+  const createdAtMs = Date.parse(String(payload.createdAt ?? item.createdAt ?? ""));
+  return {
+    pollId,
+    senderId,
+    optionIds,
+    createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
+  };
+}
+
+function parsePollCloseEvent(item: MessageItem): PollCloseEvent | null {
+  if ((item.type ?? "").toUpperCase() !== "POLL") {
+    return null;
+  }
+
+  const payload = parseJsonObject(item.content);
+  if (!payload) {
+    return null;
+  }
+
+  if (String(payload.kind ?? "").toUpperCase() !== "POLL_CLOSE") {
+    return null;
+  }
+
+  const pollId = String(payload.pollId ?? "").trim();
+  const senderId = String(item.senderId ?? "").trim();
+  if (!pollId || !senderId) {
+    return null;
+  }
+
+  const createdAtMs = Date.parse(String(payload.createdAt ?? item.createdAt ?? ""));
+  return {
+    pollId,
+    senderId,
+    createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
+  };
+}
+
+function isPollVoteEventMessage(item: MessageItem) {
+  if ((item.type ?? "").toUpperCase() !== "POLL") {
+    return false;
+  }
+  const payload = parseJsonObject(item.content);
+  if (!payload) {
+    return false;
+  }
+  const kind = String(payload.kind ?? "").toUpperCase();
+  return kind === "POLL_VOTE" || kind === "POLL_CLOSE";
+}
+
+function buildPollSummaries(
+  messages: MessageItem[],
+  myId: string,
+  userProfileMap: Record<string, UserProfile>,
+) {
+  const creations = messages
+    .map((item) => parsePollCreateEvent(item))
+    .filter((item): item is PollCreateEvent => Boolean(item))
+    .sort((a, b) => a.createdAtMs - b.createdAtMs);
+
+  const votes = messages
+    .map((item) => parsePollVoteEvent(item))
+    .filter((item): item is PollVoteEvent => Boolean(item))
+    .sort((a, b) => a.createdAtMs - b.createdAtMs);
+
+  const closes = messages
+    .map((item) => parsePollCloseEvent(item))
+    .filter((item): item is PollCloseEvent => Boolean(item))
+    .sort((a, b) => a.createdAtMs - b.createdAtMs);
+
+  const polls = new Map<string, {
+    create: PollCreateEvent;
+    votesByUser: Map<string, string[]>;
+  }>();
+
+  for (const createEvent of creations) {
+    polls.set(createEvent.pollId, {
+      create: createEvent,
+      votesByUser: new Map<string, string[]>(),
+    });
+  }
+
+  for (const voteEvent of votes) {
+    const target = polls.get(voteEvent.pollId);
+    if (!target) {
+      continue;
+    }
+
+    const validOptionIds = voteEvent.optionIds.filter((optionId) =>
+      target.create.options.some((option) => option.id === optionId),
+    );
+    if (validOptionIds.length === 0) {
+      continue;
+    }
+
+    const normalizedVote = target.create.multipleChoice
+      ? Array.from(new Set(validOptionIds))
+      : [validOptionIds[0]];
+
+    const alreadyVoted = target.votesByUser.has(voteEvent.senderId);
+    if (alreadyVoted && !target.create.allowChangeVote) {
+      continue;
+    }
+
+    target.votesByUser.set(voteEvent.senderId, normalizedVote);
+  }
+
+  const closeMap = new Map<string, PollCloseEvent>();
+  for (const closeEvent of closes) {
+    closeMap.set(closeEvent.pollId, closeEvent);
+  }
+
+  const byPollId = new Map<string, PollSummary>();
+  const byMessageId = new Map<string, PollSummary>();
+
+  polls.forEach((entry, pollId) => {
+    const voteCountMap = new Map<string, number>();
+    const votersByOption = new Map<string, string[]>();
+    entry.create.options.forEach((option) => voteCountMap.set(option.id, 0));
+    entry.create.options.forEach((option) => votersByOption.set(option.id, []));
+
+    entry.votesByUser.forEach((selectedIds, voterId) => {
+      selectedIds.forEach((optionId) => {
+        voteCountMap.set(optionId, (voteCountMap.get(optionId) ?? 0) + 1);
+        const current = votersByOption.get(optionId) ?? [];
+        votersByOption.set(optionId, [...current, voterId]);
+      });
+    });
+
+    const totalVotes = entry.votesByUser.size;
+    const mySelections = entry.votesByUser.get(myId) ?? [];
+    const expiresAt = entry.create.expiresAt;
+    const expiresMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+    const closeEvent = closeMap.get(pollId);
+    const closedAtIso = closeEvent
+      ? new Date(closeEvent.createdAtMs || Date.now()).toISOString()
+      : null;
+    const closedBy = closeEvent?.senderId ?? null;
+    const isClosedByDeadline = Number.isFinite(expiresMs) ? Date.now() > expiresMs : false;
+    const isClosedByAdmin = Boolean(closeEvent);
+    const isClosed = isClosedByDeadline || isClosedByAdmin;
+    const hasVotedByMe = mySelections.length > 0;
+    const hideResultsBeforeVote = entry.create.hideResultsBeforeVote;
+    const canViewResults = !hideResultsBeforeVote || hasVotedByMe || isClosed;
+
+    const summary: PollSummary = {
+      messageId: entry.create.messageId,
+      pollId,
+      question: entry.create.question,
+      options: entry.create.options.map((option) => {
+        const votesForOption = voteCountMap.get(option.id) ?? 0;
+        const voterIds = votersByOption.get(option.id) ?? [];
+        return {
+          id: option.id,
+          text: option.text,
+          votes: votesForOption,
+          percent: canViewResults && totalVotes > 0 ? (votesForOption * 100) / totalVotes : 0,
+          selectedByMe: mySelections.includes(option.id),
+          voterIds: canViewResults ? voterIds : [],
+          voterNames: canViewResults
+            ? voterIds.map((voterId) => userProfileMap[voterId]?.fullName ?? `User ${voterId.slice(0, 8)}`)
+            : [],
+        };
+      }),
+      totalVotes: canViewResults ? totalVotes : 0,
+      hasVotedByMe,
+      multipleChoice: entry.create.multipleChoice,
+      allowChangeVote: entry.create.allowChangeVote,
+      hideResultsBeforeVote,
+      canViewResults,
+      closedBy,
+      closedAt: closedAtIso,
+      closesAt: expiresAt,
+      expiresAt,
+      isClosed,
+    };
+
+    byPollId.set(pollId, summary);
+    byMessageId.set(entry.create.messageId, summary);
+  });
+
+  return { byPollId, byMessageId };
+}
 
 function buildReactionSummary(reactions: string[] | undefined) {
   const buckets = new Map<string, number>();
@@ -247,6 +579,14 @@ export function Chat({
   onDeleteForMe,
   onForwardMessage,
   onReactMessage,
+  onPinMessage,
+  onUnpinMessage,
+  onVotePollMessage,
+  onClosePollMessage,
+  canManageGroupPoll = false,
+  pinnedMessages = [],
+  latestPinnedSummary = null,
+  scrollToMessageRequest = null,
   pendingUploads,
   onRetryUpload,
   onCancelUpload,
@@ -274,6 +614,8 @@ export function Chat({
   const [policyModalMessage, setPolicyModalMessage] = useState<string | null>(
     null,
   );
+  const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const fileInputId = useId();
   const imageInputId = `${fileInputId}-image`;
@@ -289,12 +631,23 @@ export function Chat({
   const quickEmojis = ["😀", "😂", "😍", "👍", "🔥", "🙏", "🎉", "💬"];
 
   const currentUserId = myProfile?.id ?? currentUserIdFallback;
+  const pollSummaries = useMemo(
+    () => buildPollSummaries(messages, currentUserId, userProfileMap),
+    [messages, currentUserId, userProfileMap],
+  );
 
   const mappedFromServer = useMemo(() => {
-    return messages.map((item) =>
+    return messages
+      .filter((item) => !isPollVoteEventMessage(item))
+      .map((item) =>
       mapToUiMessage(item, language, currentUserId, userProfileMap),
-    );
+      );
   }, [messages, language, currentUserId, userProfileMap]);
+
+  const pinnedSourceMessageIdSet = useMemo(
+    () => new Set((pinnedMessages ?? []).map((item) => item.sourceMessageId)),
+    [pinnedMessages],
+  );
 
   useEffect(() => {
     setLocalMessages(mappedFromServer);
@@ -436,6 +789,34 @@ export function Chat({
     notifyViewportBottom(messageListRef.current);
   }, [localMessages]);
 
+  const jumpToMessageById = (messageId: string) => {
+    if (!messageId) {
+      return;
+    }
+
+    const elementId = `chat-message-${messageId}`;
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(elementId);
+      if (!target) {
+        return;
+      }
+
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(messageId);
+      window.setTimeout(() => {
+        setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
+      }, 1400);
+    });
+  };
+
+  useEffect(() => {
+    if (!scrollToMessageRequest?.messageId) {
+      return;
+    }
+
+    jumpToMessageById(scrollToMessageRequest.messageId);
+  }, [scrollToMessageRequest]);
+
   const inferFileKind = (file: File): "image" | "video" | "file" => {
     const mime = (file.type ?? "").toLowerCase();
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
@@ -572,7 +953,7 @@ export function Chat({
     return (
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#0f1724] p-6 text-center sm:p-12">
         <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(37,99,235,0.20),_rgba(15,23,36,0.92)_55%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.20),rgba(15,23,36,0.92)_55%)]" />
           <div className="absolute left-[-8%] top-[-10%] h-[42%] w-[38%] rounded-full bg-sky-600/20 blur-[130px]" />
           <div className="absolute bottom-[-10%] right-[-10%] h-[44%] w-[40%] rounded-full bg-indigo-700/20 blur-[140px]" />
         </div>
@@ -673,6 +1054,64 @@ export function Chat({
         </div>
       </header>
 
+      {latestPinnedSummary && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setIsPinnedListOpen((prev) => !prev)}
+            className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left hover:bg-amber-500/10"
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                {language === "vi" ? "Ghim/ghi chu gan nhat" : "Latest pinned/note"}
+              </p>
+              <p className="truncate text-sm font-semibold text-amber-100">
+                <span className="mr-1 inline-flex align-middle">
+                  {latestPinnedSummary.itemType === "note" ? <FileText size={14} /> : <Pin size={14} />}
+                </span>
+                <span className="align-middle">{latestPinnedSummary.title}</span>
+              </p>
+              {latestPinnedSummary.preview && (
+                <p className="truncate text-xs text-amber-100/90">{latestPinnedSummary.preview}</p>
+              )}
+            </div>
+            <span className="shrink-0 rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+              {latestPinnedSummary.count}
+            </span>
+          </button>
+
+          {isPinnedListOpen && (
+            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
+              {(pinnedMessages ?? []).length === 0 ? (
+                <p className="px-1 py-1 text-xs text-amber-100/80">
+                  {language === "vi" ? "Chua co tin nhan ghim" : "No pinned messages"}
+                </p>
+              ) : (
+                (pinnedMessages ?? []).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setIsPinnedListOpen(false);
+                      jumpToMessageById(item.sourceMessageId);
+                    }}
+                    className="w-full rounded-md border border-transparent px-2 py-1.5 text-left hover:border-amber-300/40 hover:bg-amber-500/10"
+                  >
+                    <p className="truncate text-xs font-semibold text-amber-100">
+                      <span className="mr-1 inline-flex align-middle">
+                        {item.itemType === "note" ? <FileText size={12} /> : <Pin size={12} />}
+                      </span>
+                      <span className="align-middle">{item.title}</span>
+                    </p>
+                    {item.preview && <p className="truncate text-[11px] text-amber-100/85">{item.preview}</p>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div
         ref={messageListRef}
         className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[#0f1724] px-4 py-6 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
@@ -759,6 +1198,9 @@ export function Chat({
                     : `User ${message.senderId.slice(0, 8)}`);
                 const senderInitial = initials(senderDisplayName);
                 const serverMessage = messages.find((item) => item.id === message.id);
+                const pollSummary = serverMessage
+                  ? pollSummaries.byMessageId.get(serverMessage.id)
+                  : undefined;
                 const replySource = message.parentMessageId
                   ? messages.find((item) => item.id === message.parentMessageId)
                   : undefined;
@@ -767,13 +1209,27 @@ export function Chat({
                 return (
                   <div
                     key={message.id}
+                    id={`chat-message-${message.id}`}
+                    data-message-id={message.id}
                     className={sameAsPrev ? "mt-1.5" : "mt-3"}
                   >
+                    {highlightedMessageId === message.id && (
+                      <div className="mb-1 rounded-lg border border-amber-300/60 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-100">
+                        {language === "vi" ? "Tin nhan dang duoc nhay den" : "Jumped to this message"}
+                      </div>
+                    )}
                     <MessageRenderer
                       message={{
                         ...message,
                         reactions: serverMessage?.reactions,
                         replyPreviewText: replySource?.content,
+                        isPinned: pinnedSourceMessageIdSet.has(message.id),
+                        poll: pollSummary
+                          ? {
+                            ...pollSummary,
+                            canManagePoll: canManageGroupPoll,
+                          }
+                          : undefined,
                       }}
                       isMine={isMine}
                       language={language}
@@ -821,6 +1277,10 @@ export function Chat({
                         return onRecallMessage(messageId);
                       }}
                       onReact={(messageId, emoji) => onReactMessage(messageId, emoji)}
+                      onPin={(targetMessage) => onPinMessage?.(targetMessage)}
+                      onUnpin={(targetMessage) => onUnpinMessage?.(targetMessage)}
+                      onVotePoll={(targetMessage, optionId) => onVotePollMessage?.(targetMessage, optionId)}
+                      onClosePoll={(targetMessage) => onClosePollMessage?.(targetMessage)}
                     />
                   </div>
                 );

@@ -83,6 +83,11 @@ export function GroupChat({
   isPanelOpen = true,
   members,
   friendContacts,
+  pinnedMessages,
+  onOpenPinnedMessage,
+  onUnpinPinnedMessage,
+  onCreateBoardNote,
+  onCreatePoll,
   userProfileMap,
   messages,
   currentUserId,
@@ -107,6 +112,7 @@ export function GroupChat({
 }) {
   const safeMembers = members ?? [];
   const safeFriendContacts = friendContacts ?? [];
+  const safePinnedMessages = pinnedMessages ?? [];
   const safeMessages = messages ?? [];
 
   const [nameDraft, setNameDraft] = useState(conversation?.name ?? "");
@@ -115,6 +121,16 @@ export function GroupChat({
   const [memberPickerSearch, setMemberPickerSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
   const [isMemberPickerOpen, setIsMemberPickerOpen] = useState(false);
+  const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [isNotePinnedToTop, setIsNotePinnedToTop] = useState(true);
+  const [isCreatePollOpen, setIsCreatePollOpen] = useState(false);
+  const [pollQuestionDraft, setPollQuestionDraft] = useState("");
+  const [pollOptionDrafts, setPollOptionDrafts] = useState(["", ""]);
+  const [isPollMultiChoice, setIsPollMultiChoice] = useState(false);
+  const [isPollAllowChangeVote, setIsPollAllowChangeVote] = useState(true);
+  const [pollDeadlineMinutes, setPollDeadlineMinutes] = useState(1440);
+  const [isPollHideResultsBeforeVote, setIsPollHideResultsBeforeVote] = useState(false);
   const [manageMode, setManageMode] = useState(false);
   const [openSections, setOpenSections] = useState({
     members: true,
@@ -321,6 +337,69 @@ export function GroupChat({
     }
   };
 
+  const submitBoardNote = async () => {
+    const trimmed = noteDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    await onCreateBoardNote?.(trimmed, isNotePinnedToTop);
+    setNoteDraft("");
+    setIsNotePinnedToTop(true);
+    setIsCreateNoteOpen(false);
+  };
+
+  const updatePollOption = (index, value) => {
+    setPollOptionDrafts((prev) => prev.map((item, currentIndex) => (currentIndex === index ? value : item)));
+  };
+
+  const addPollOption = () => {
+    setPollOptionDrafts((prev) => {
+      if (prev.length >= 10) {
+        return prev;
+      }
+      return [...prev, ""];
+    });
+  };
+
+  const removePollOption = (index) => {
+    setPollOptionDrafts((prev) => {
+      if (prev.length <= 2) {
+        return prev;
+      }
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+  };
+
+  const resetPollDraft = () => {
+    setPollQuestionDraft("");
+    setPollOptionDrafts(["", ""]);
+    setIsPollMultiChoice(false);
+    setIsPollAllowChangeVote(true);
+    setPollDeadlineMinutes(1440);
+    setIsPollHideResultsBeforeVote(false);
+    setIsCreatePollOpen(false);
+  };
+
+  const submitCreatePoll = async () => {
+    const cleanedOptions = pollOptionDrafts
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+
+    const completed = await onCreatePoll?.({
+      question: pollQuestionDraft.trim(),
+      options: cleanedOptions,
+      multipleChoice: isPollMultiChoice,
+      allowChangeVote: isPollAllowChangeVote,
+      deadlineMinutes: pollDeadlineMinutes,
+      hideResultsBeforeVote: isPollHideResultsBeforeVote,
+    });
+
+    if (completed !== false) {
+      resetPollDraft();
+    }
+  };
+
   const saveHeaderGroupName = async () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) {
@@ -366,7 +445,7 @@ export function GroupChat({
       <div className="min-w-0 flex flex-1 flex-col overflow-hidden">{children}</div>
 
       <aside
-        className={`hidden w-[380px] shrink-0 border-l border-slate-700 bg-[#111b2a] lg:flex lg:flex-col ${isPanelOpen ? "" : "lg:hidden"}`}
+        className={`hidden w-95 shrink-0 border-l border-slate-700 bg-[#111b2a] lg:flex lg:flex-col ${isPanelOpen ? "" : "lg:hidden"}`}
       >
         <div className="border-b border-slate-700 px-4 py-4">
           <p className="text-center text-3xl font-bold text-slate-100">
@@ -619,6 +698,63 @@ export function GroupChat({
                 onToggle={() => toggleSection("board")}
               >
                 <div className="space-y-2 text-sm text-slate-200">
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                        {language === "vi" ? "Danh sach ghim va ghi chu" : "Pinned & notes"}
+                      </p>
+                      <span className="text-[11px] text-amber-100">{safePinnedMessages.length}</span>
+                    </div>
+
+                    {safePinnedMessages.length === 0 ? (
+                      <p className="text-xs text-amber-100/80">
+                        {language === "vi" ? "Chua co tin nhan nao duoc ghim" : "No pinned messages yet"}
+                      </p>
+                    ) : (
+                      <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                        {safePinnedMessages.slice(0, 15).map((item) => (
+                          <div
+                            key={item.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onOpenPinnedMessage?.(item.sourceMessageId)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                onOpenPinnedMessage?.(item.sourceMessageId);
+                              }
+                            }}
+                            className="flex w-full items-center justify-between gap-2 rounded-lg bg-black/15 px-2 py-1.5 text-left hover:bg-black/30"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[11px] font-semibold text-amber-100">
+                                <span className="mr-1 inline-flex align-middle">
+                                  {item.itemType === "note" ? <FileText size={12} /> : <Pin size={12} />}
+                                </span>
+                                <span className="align-middle">{item.title}</span>
+                              </p>
+                              {item.preview && (
+                                <p className="truncate text-[10px] text-amber-100/85">{item.preview}</p>
+                              )}
+                            </div>
+                            <span className="shrink-0">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onUnpinPinnedMessage?.(item.sourceMessageId);
+                                }}
+                                className="rounded-md border border-rose-300/40 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/20"
+                              >
+                                {language === "vi" ? "Bo ghim" : "Unpin"}
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => onSendTemplateMessage?.("REMINDER")}
@@ -635,6 +771,192 @@ export function GroupChat({
                     <FileText size={16} className="text-slate-300" />
                     <span>{language === "vi" ? "Ghi chu, ghim, binh chon" : "Notes, pins, polls"}</span>
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={!canOpenManage}
+                    onClick={() => setIsCreatePollOpen((prev) => !prev)}
+                    className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canOpenManage ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
+                  >
+                    <Newspaper size={16} className="text-sky-200" />
+                    <span>{language === "vi" ? "Tao binh chon" : "Create poll"}</span>
+                  </button>
+
+                  {!canOpenManage && (
+                    <p className="text-[11px] text-amber-300">
+                      {language === "vi"
+                        ? "Chi truong/pho nhom moi duoc tao binh chon"
+                        : "Only owner/admin can create polls"}
+                    </p>
+                  )}
+
+                  {isCreatePollOpen && (
+                    <div className="rounded-xl border border-sky-300/30 bg-[#101b28] p-2.5">
+                      <input
+                        type="text"
+                        value={pollQuestionDraft}
+                        onChange={(event) => setPollQuestionDraft(event.target.value)}
+                        maxLength={200}
+                        placeholder={language === "vi" ? "Nhap cau hoi binh chon" : "Enter poll question"}
+                        className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
+                      />
+
+                      <div className="mt-2 space-y-1.5">
+                        {pollOptionDrafts.map((option, index) => (
+                          <div key={`poll-option-${index}`} className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={option}
+                              onChange={(event) => updatePollOption(index, event.target.value)}
+                              maxLength={80}
+                              placeholder={language === "vi" ? `Lua chon ${index + 1}` : `Option ${index + 1}`}
+                              className="h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2.5 text-xs text-slate-100"
+                            />
+                            <button
+                              type="button"
+                              disabled={pollOptionDrafts.length <= 2}
+                              onClick={() => removePollOption(index)}
+                              className="rounded-md border border-rose-400/40 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {language === "vi" ? "Xoa" : "Remove"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={pollOptionDrafts.length >= 10}
+                        onClick={addPollOption}
+                        className="mt-2 rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {language === "vi" ? "Them lua chon" : "Add option"}
+                      </button>
+
+                      <div className="mt-2 space-y-1">
+                        <label className="block text-xs text-slate-200">
+                          <span>{language === "vi" ? "Han binh chon" : "Poll deadline"}</span>
+                          <select
+                            value={pollDeadlineMinutes}
+                            onChange={(event) => setPollDeadlineMinutes(Number(event.target.value))}
+                            className="mt-1 h-8 w-full rounded-md border border-slate-600 bg-slate-900 px-2 text-xs text-slate-100"
+                          >
+                            <option value={30}>{language === "vi" ? "30 phut" : "30 minutes"}</option>
+                            <option value={60}>{language === "vi" ? "1 gio" : "1 hour"}</option>
+                            <option value={180}>{language === "vi" ? "3 gio" : "3 hours"}</option>
+                            <option value={720}>{language === "vi" ? "12 gio" : "12 hours"}</option>
+                            <option value={1440}>{language === "vi" ? "1 ngay" : "1 day"}</option>
+                            <option value={4320}>{language === "vi" ? "3 ngay" : "3 days"}</option>
+                            <option value={10080}>{language === "vi" ? "7 ngay" : "7 days"}</option>
+                          </select>
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={isPollMultiChoice}
+                            onChange={(event) => setIsPollMultiChoice(event.target.checked)}
+                            className="h-4 w-4 accent-sky-500"
+                          />
+                          <span>{language === "vi" ? "Cho phep chon nhieu dap an" : "Allow multiple choices"}</span>
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={isPollAllowChangeVote}
+                            onChange={(event) => setIsPollAllowChangeVote(event.target.checked)}
+                            className="h-4 w-4 accent-sky-500"
+                          />
+                          <span>{language === "vi" ? "Cho phep doi lua chon" : "Allow changing vote"}</span>
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={isPollHideResultsBeforeVote}
+                            onChange={(event) => setIsPollHideResultsBeforeVote(event.target.checked)}
+                            className="h-4 w-4 accent-sky-500"
+                          />
+                          <span>{language === "vi" ? "An ket qua truoc khi bo phieu" : "Hide results before voting"}</span>
+                        </label>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={resetPollDraft}
+                          className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                        >
+                          {language === "vi" ? "Huy" : "Cancel"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void submitCreatePoll();
+                          }}
+                          disabled={!pollQuestionDraft.trim()}
+                          className="rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {language === "vi" ? "Tao binh chon" : "Create poll"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateNoteOpen((prev) => !prev)}
+                    className="flex w-full items-center gap-2 rounded-xl border border-lime-400/30 bg-lime-500/10 px-3 py-2 text-left hover:bg-lime-500/15"
+                  >
+                    <FileText size={16} className="text-lime-200" />
+                    <span>{language === "vi" ? "Tao ghi chu nhom" : "Create group note"}</span>
+                  </button>
+
+                  {isCreateNoteOpen && (
+                    <div className="rounded-xl border border-lime-300/30 bg-[#101b28] p-2.5">
+                      <textarea
+                        value={noteDraft}
+                        onChange={(event) => setNoteDraft(event.target.value)}
+                        placeholder={language === "vi" ? "Nhap noi dung ghi chu..." : "Enter note content..."}
+                        rows={3}
+                        className="w-full resize-none rounded-lg border border-slate-600 bg-slate-900 px-2.5 py-2 text-sm text-slate-100"
+                      />
+                      <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={isNotePinnedToTop}
+                          onChange={(event) => setIsNotePinnedToTop(event.target.checked)}
+                          className="h-4 w-4 accent-lime-500"
+                        />
+                        <span>
+                          {language === "vi"
+                            ? "Ghim len dau tro chuyen"
+                            : "Pin to top of conversation"}
+                        </span>
+                      </label>
+                      <div className="mt-2 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCreateNoteOpen(false);
+                            setNoteDraft("");
+                            setIsNotePinnedToTop(true);
+                          }}
+                          className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                        >
+                          {language === "vi" ? "Huy" : "Cancel"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void submitBoardNote();
+                          }}
+                          disabled={!noteDraft.trim()}
+                          className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {language === "vi" ? "Tao ghi chu" : "Create note"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </Section>
 

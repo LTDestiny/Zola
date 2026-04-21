@@ -66,6 +66,11 @@ export function ChatMessageRow({
   onForward,
   onRecall,
   onReact,
+  onPin,
+  onUnpin,
+  onVotePoll,
+  onClosePoll,
+  onCompleteSchedule,
 }: ChatMessageProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isMenuPinned, setIsMenuPinned] = useState(false);
@@ -212,10 +217,18 @@ export function ChatMessageRow({
             onForward={onForward}
             onRecall={onRecall}
             onReact={onReact}
+            onPin={onPin}
+            onUnpin={onUnpin}
             onToggleMore={() => setIsMenuPinned((prev) => !prev)}
           />
 
-          <MessageBubble message={message} isMine={isMine} />
+          <MessageBubble
+            message={message}
+            isMine={isMine}
+            onVotePoll={(optionId) => onVotePoll?.(message, optionId)}
+            onClosePoll={() => onClosePoll?.(message)}
+            onCompleteSchedule={() => onCompleteSchedule?.(message)}
+          />
 
           {reactionSummary.length > 0 && (
             <div className={`mt-1 flex flex-wrap gap-1 px-1 ${isMine ? "justify-end" : "justify-start"}`}>

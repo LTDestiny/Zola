@@ -1,4 +1,4 @@
-import { Forward, MoreHorizontal, Reply, Trash2 } from "lucide-react";
+import { Forward, MoreHorizontal, Pin, PinOff, Reply, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "./ChatMessage.types";
 
@@ -14,6 +14,8 @@ type MessageActionsProps = {
   onForward?: (messageId: string) => void | Promise<void>;
   onRecall?: (messageId: string) => void | Promise<void>;
   onReact?: (messageId: string, emoji: string) => void | Promise<void>;
+  onPin?: (message: ChatMessage) => void | Promise<void>;
+  onUnpin?: (message: ChatMessage) => void | Promise<void>;
   onToggleMore: () => void;
 };
 
@@ -31,6 +33,8 @@ export function MessageActions({
   onForward,
   onRecall,
   onReact,
+  onPin,
+  onUnpin,
   onToggleMore,
 }: MessageActionsProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -107,7 +111,31 @@ export function MessageActions({
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-1 text-slate-200">
+      <div className="grid grid-cols-5 gap-1 text-slate-200">
+        <button
+          type="button"
+          disabled={isRecalled}
+          onClick={() => {
+            if (message.isPinned) {
+              void onUnpin?.(message);
+            } else {
+              void onPin?.(message);
+            }
+            onToggleMore();
+          }}
+          className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {message.isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+          <span>
+            {message.isPinned
+              ? language === "vi"
+                ? "Bo ghim"
+                : "Unpin"
+              : language === "vi"
+                ? "Ghim"
+                : "Pin"}
+          </span>
+        </button>
         <button
           type="button"
           disabled={isRecalled}

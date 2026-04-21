@@ -6,6 +6,9 @@ import { resolveMediaCandidates } from "../utils/mediaUrl";
 type MessageBubbleProps = {
     message: ChatMessage;
     isMine: boolean;
+    onVotePoll?: (optionId: string) => void | Promise<void>;
+    onClosePoll?: () => void | Promise<void>;
+    onCompleteSchedule?: () => void | Promise<void>;
 };
 
 function renderTextWithMentions(text: string) {
@@ -29,17 +32,29 @@ function formatDuration(value?: string) {
     return value || "00:30";
 }
 
+function formatPollDeadline(value?: string | null) {
+    if (!value) {
+        return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+    return new Intl.DateTimeFormat("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+    }).format(date);
+}
+
 function parseStructuredPayload(raw: string) {
     try {
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object") {
             return null;
         }
-        return parsed as {
-            title?: string;
-            link?: string;
-            createdAt?: string;
-        };
+        return parsed as Record<string, unknown>;
     } catch {
         return null;
     }
@@ -77,13 +92,16 @@ async function downloadMediaToDevice(url: string, preferredFileName: string) {
     }
 }
 
-export function MessageBubble({ message, isMine }: MessageBubbleProps) {
+export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onCompleteSchedule }: MessageBubbleProps) {
     const [isImageLoading, setIsImageLoading] = useState(message.type === "image");
     const [audioPlaying, setAudioPlaying] = useState(false);
     const [audioProgress, setAudioProgress] = useState(25);
     const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
     const [mediaActionNote, setMediaActionNote] = useState<string | null>(null);
     const [mediaCandidateIndex, setMediaCandidateIndex] = useState(0);
+    const [isPollDetailOpen, setIsPollDetailOpen] = useState(false);
+    const [pollTabOptionId, setPollTabOptionId] = useState<string | null>(null);
+    const [pollVoterSearch, setPollVoterSearch] = useState("");
 
     useEffect(() => {
         setIsImageLoading(message.type === "image");
@@ -289,8 +307,8 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
         case "text":
         default:
             if (["STICKER", "GIF", "CONTACT", "LOCATION", "POLL", "REMINDER", "NOTE", "MEETING"].includes(semanticType)) {
-                const title = structuredPayload?.title ?? message.text;
-                const link = structuredPayload?.link;
+                const title = String(structuredPayload?.["title"] ?? message.text ?? "");
+                const link = typeof structuredPayload?.["link"] === "string" ? structuredPayload["link"] : "";
 
                 if (semanticType === "STICKER") {
                     content = (
@@ -300,8 +318,8 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 }
 
                 if (semanticType === "GIF") {
-                    const gifUrl = link ?? title;
-                    const isHttp = /^https?:\/\//i.test(gifUrl ?? "");
+                    const gifUrl = link || title;
+                    const isHttp = /^https?:\/\//i.test(gifUrl);
                     content = isHttp ? (
                         <img
                             src={gifUrl}
@@ -338,6 +356,135 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 }
 
                 if (semanticType === "POLL") {
+                    const pollData = message.poll;
+                    if (pollData && pollData.options.length > 0) {
+                        const selectedTabId = pollTabOptionId ?? pollData.options[0]?.id ?? null;
+                        const selectedOption = pollData.options.find((item) => item.id === selectedTabId) ?? pollData.options[0];
+                        const filteredVoterNames = (selectedOption?.voterNames ?? []).filter((name) =>
+                            name.toLowerCase().includes(pollVoterSearch.trim().toLowerCase()),
+                        );
+                        content = (
+                            <div className="w-64 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900">
+                                <p className="text-xs font-semibold uppercase tracking-wide">Poll</p>
+                                <p className="mt-1 text-sm font-medium">{pollData.question}</p>
+                                {pollData.hideResultsBeforeVote && !pollData.canViewResults && (
+                                    <p className="mt-1 text-[10px] text-sky-800">Vote first to view results</p>
+                                )}
+                                <div className="mt-2 space-y-1.5">
+                                    {pollData.options.map((option) => (
+                                        <div key={option.id} className="rounded-lg border border-sky-200 bg-white/85 px-2 py-1.5 text-left text-xs text-sky-900">
+                                            <button
+                                                type="button"
+                                                disabled={pollData.isClosed}
+                                                onClick={() => {
+                                                    void onVotePoll?.(option.id);
+                                                }}
+                                                className={`w-full rounded ${option.selectedByMe ? "bg-sky-200/60" : "hover:bg-sky-100"} px-1 py-0.5 disabled:cursor-not-allowed disabled:opacity-70`}
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="truncate">{option.text}</span>
+                                                    <span className="shrink-0 text-[10px] font-semibold">{pollData.canViewResults ? option.votes : "?"}</span>
+                                                </div>
+                                                <div className="mt-1 h-1.5 rounded bg-sky-100">
+                                                    <div className="h-full rounded bg-sky-500" style={{ width: `${Math.max(0, Math.min(100, option.percent))}%` }} />
+                                                </div>
+                                            </button>
+                                            {pollData.canViewResults && option.voterNames && option.voterNames.length > 0 && (
+                                                <p className="mt-1 truncate text-[10px] text-sky-700">
+                                                    {option.voterNames.join(", ")}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="mt-2 text-[10px] text-sky-800">
+                                    {pollData.canViewResults ? pollData.totalVotes : "?"} {pollData.totalVotes === 1 ? "vote" : "votes"}
+                                    {pollData.multipleChoice ? " • Multi-choice" : " • Single choice"}
+                                </p>
+                                {formatPollDeadline(pollData.closesAt ?? pollData.expiresAt) && (
+                                    <p className="mt-1 text-[10px] text-sky-800">
+                                        {pollData.isClosed ? "Closed" : "Closes"}: {formatPollDeadline(pollData.closesAt ?? pollData.expiresAt)}
+                                    </p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsPollDetailOpen(true);
+                                            setPollTabOptionId(selectedOption?.id ?? null);
+                                        }}
+                                        className="rounded-md border border-sky-300 px-2 py-1 text-[10px] font-semibold text-sky-800 hover:bg-sky-100"
+                                    >
+                                        Xem chi tiet
+                                    </button>
+                                    {pollData.canManagePoll && !pollData.isClosed && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                void onClosePoll?.();
+                                            }}
+                                            className="rounded-md border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
+                                        >
+                                            Ket thuc som
+                                        </button>
+                                    )}
+                                </div>
+
+                                {isPollDetailOpen && (
+                                    <div className="fixed inset-0 z-70 grid place-items-center bg-slate-950/75 p-4">
+                                        <div className="w-full max-w-xl rounded-2xl border border-slate-600 bg-[#0f1724] p-3 text-slate-100">
+                                            <div className="mb-2 flex items-center justify-between gap-2">
+                                                <p className="truncate text-sm font-semibold">Chi tiet binh chon</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsPollDetailOpen(false)}
+                                                    className="rounded-md border border-slate-500 px-2 py-1 text-xs hover:bg-slate-700"
+                                                >
+                                                    Dong
+                                                </button>
+                                            </div>
+
+                                            <div className="mb-2 flex flex-wrap gap-1">
+                                                {pollData.options.map((option) => (
+                                                    <button
+                                                        key={option.id}
+                                                        type="button"
+                                                        onClick={() => setPollTabOptionId(option.id)}
+                                                        className={`rounded-full border px-2 py-1 text-[11px] ${pollTabOptionId === option.id ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-600 text-slate-300 hover:bg-slate-800"}`}
+                                                    >
+                                                        {option.text}
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            <input
+                                                type="text"
+                                                value={pollVoterSearch}
+                                                onChange={(event) => setPollVoterSearch(event.target.value)}
+                                                placeholder="Tim nguoi da vote"
+                                                className="mb-2 h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-xs text-slate-100"
+                                            />
+
+                                            {!pollData.canViewResults ? (
+                                                <p className="text-xs text-slate-300">Can bo phieu de xem danh sach nguoi vote</p>
+                                            ) : filteredVoterNames.length === 0 ? (
+                                                <p className="text-xs text-slate-300">Chua co nguoi vote cho lua chon nay</p>
+                                            ) : (
+                                                <div className="max-h-56 space-y-1 overflow-y-auto">
+                                                    {filteredVoterNames.map((name, index) => (
+                                                        <div key={`voter-${selectedOption?.id ?? "none"}-${index}`} className="rounded-lg border border-slate-700 bg-slate-800/60 px-2 py-1.5 text-xs text-slate-100">
+                                                            {name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                        break;
+                    }
                     content = (
                         <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sky-900">
                             <p className="text-xs font-semibold uppercase tracking-wide">Poll</p>
@@ -348,6 +495,49 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 }
 
                 if (semanticType === "REMINDER") {
+                    const schedule = message.schedule;
+                    if (schedule) {
+                        content = (
+                            <div className="w-72 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                                <p className="text-xs font-semibold uppercase tracking-wide">Group schedule</p>
+                                <p className="mt-1 text-sm font-semibold">{schedule.title}</p>
+                                {schedule.description && (
+                                    <p className="mt-1 text-xs whitespace-pre-wrap">{schedule.description}</p>
+                                )}
+                                <p className="mt-1 text-[11px]">Starts: {formatPollDeadline(schedule.startsAt) ?? schedule.startsAt}</p>
+                                <p className="mt-0.5 text-[11px]">
+                                    Scope: {schedule.scope === "group" ? "Group" : "Only me"}
+                                    {schedule.repeat !== "none" ? ` • Repeat ${schedule.repeat}` : ""}
+                                </p>
+                                <p className="mt-0.5 text-[11px]">
+                                    Remind: {schedule.reminderOffsets.length > 0 ? schedule.reminderOffsets.map((offset) => {
+                                        if (offset === 0) return "on time";
+                                        if (offset < 60) return `${offset}m`;
+                                        if (offset < 1440) return `${Math.floor(offset / 60)}h`;
+                                        return `${Math.floor(offset / 1440)}d`;
+                                    }).join(", ") : "on time"}
+                                </p>
+                                <p className="mt-1 text-[11px] font-semibold">
+                                    Status: {schedule.isCompleted ? "Completed" : "Active"}
+                                </p>
+                                {schedule.isCompleted && schedule.completedAt && (
+                                    <p className="mt-0.5 text-[10px]">Completed at {formatPollDeadline(schedule.completedAt) ?? schedule.completedAt}</p>
+                                )}
+                                {schedule.canManage && !schedule.isCompleted && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onCompleteSchedule?.();
+                                        }}
+                                        className="mt-2 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-900 hover:bg-amber-200"
+                                    >
+                                        Mark completed
+                                    </button>
+                                )}
+                            </div>
+                        );
+                        break;
+                    }
                     content = (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
                             <p className="text-xs font-semibold uppercase tracking-wide">Reminder</p>
@@ -358,10 +548,28 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
                 }
 
                 if (semanticType === "NOTE") {
+                    const noteKind = String(structuredPayload?.["kind"] ?? "NOTE").toUpperCase();
+                    const preview = String(structuredPayload?.["preview"] ?? "");
+                    const noteBody = String(structuredPayload?.["note"] ?? title ?? "");
+                    const pinToTop = Boolean(structuredPayload?.["pinToTop"]);
                     content = (
                         <div className="rounded-xl border border-lime-200 bg-lime-50 px-3 py-2 text-lime-900">
-                            <p className="text-xs font-semibold uppercase tracking-wide">Shared note</p>
-                            <p className="mt-1 whitespace-pre-wrap text-sm">{title}</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide">
+                                {noteKind === "PIN_MESSAGE"
+                                    ? "Pinned message"
+                                    : noteKind === "BOARD_NOTE"
+                                        ? "Group note"
+                                        : "Shared note"}
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap text-sm">{noteBody}</p>
+                            {noteKind === "PIN_MESSAGE" && preview && (
+                                <p className="mt-1 text-[11px] text-lime-800">{preview}</p>
+                            )}
+                            {noteKind === "BOARD_NOTE" && (
+                                <p className="mt-1 text-[11px] text-lime-800">
+                                    {pinToTop ? "Pinned to top" : "Note only"}
+                                </p>
+                            )}
                         </div>
                     );
                     break;
