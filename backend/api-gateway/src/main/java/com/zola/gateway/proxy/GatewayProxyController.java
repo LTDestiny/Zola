@@ -984,6 +984,7 @@ public class GatewayProxyController {
         Boolean onlyAdminsCanMessage,
         Boolean requireApprovalToJoin,
         Boolean allowMemberInvite,
+        Boolean allowMemberEditGroupInfo,
         String transferOwnerId
     ) {
     }

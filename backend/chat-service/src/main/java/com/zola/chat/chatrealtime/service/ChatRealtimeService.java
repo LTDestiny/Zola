@@ -132,6 +132,7 @@ public class ChatRealtimeService {
         conversation.setOnlyAdminsCanMessage(false);
         conversation.setRequireApprovalToJoin(false);
         conversation.setAllowMemberInvite(true);
+        conversation.setAllowMemberEditGroupInfo(false);
         conversation.setInviteCode(generateUniqueInviteCode());
         conversation.setLastMessage("");
         conversation.setLastMessageAt(now.toString());
@@ -370,6 +371,7 @@ public class ChatRealtimeService {
         Boolean onlyAdminsCanMessage,
         Boolean requireApprovalToJoin,
         Boolean allowMemberInvite,
+        Boolean allowMemberEditGroupInfo,
         String transferOwnerId
     ) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
@@ -379,10 +381,11 @@ public class ChatRealtimeService {
         boolean isOwner = actorId.equals(conversation.getOwnerId());
         boolean isAdmin = normalizeAdmins(conversation).contains(actorId);
         boolean changed = false;
+        boolean canEditGroupInfo = isOwner || isAdmin || conversation.isAllowMemberEditGroupInfo();
 
         if (name != null || avatar != null) {
-            if (!isOwner && !isAdmin) {
-                throw new ForbiddenOperationException("Only group admin can update group info");
+            if (!canEditGroupInfo) {
+                throw new ForbiddenOperationException("Only allowed members can update group info");
             }
 
             if (name != null) {
@@ -401,7 +404,11 @@ public class ChatRealtimeService {
             }
         }
 
-        if (onlyAdminsCanMessage != null || requireApprovalToJoin != null || allowMemberInvite != null || transferOwnerId != null) {
+        if (onlyAdminsCanMessage != null
+            || requireApprovalToJoin != null
+            || allowMemberInvite != null
+            || allowMemberEditGroupInfo != null
+            || transferOwnerId != null) {
             if (!isOwner) {
                 throw new ForbiddenOperationException("Only owner can update security and invitation settings");
             }
@@ -416,6 +423,10 @@ public class ChatRealtimeService {
             }
             if (allowMemberInvite != null) {
                 conversation.setAllowMemberInvite(allowMemberInvite);
+                changed = true;
+            }
+            if (allowMemberEditGroupInfo != null) {
+                conversation.setAllowMemberEditGroupInfo(allowMemberEditGroupInfo);
                 changed = true;
             }
 
@@ -1459,6 +1470,7 @@ public class ChatRealtimeService {
         payload.put("onlyAdminsCanMessage", conversation.isOnlyAdminsCanMessage());
         payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
         payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
+        payload.put("allowMemberEditGroupInfo", conversation.isAllowMemberEditGroupInfo());
         payload.put("inviteCode", Optional.ofNullable(conversation.getInviteCode()).orElse(""));
         payload.put("isOwner", requesterId.equals(conversation.getOwnerId()));
         payload.put("isAdmin", normalizeAdmins(conversation).contains(requesterId));

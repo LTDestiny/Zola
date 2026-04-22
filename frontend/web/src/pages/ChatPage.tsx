@@ -1268,6 +1268,7 @@ export function ChatPage() {
     onlyAdminsCanMessage?: boolean;
     requireApprovalToJoin?: boolean;
     allowMemberInvite?: boolean;
+    allowMemberEditGroupInfo?: boolean;
     transferOwnerId?: string;
     successMessageVi?: string;
     successMessageEn?: string;
@@ -6106,6 +6107,7 @@ export function ChatPage() {
                   onlyAdminsCanMessage?: boolean;
                   requireApprovalToJoin?: boolean;
                   allowMemberInvite?: boolean;
+                  allowMemberEditGroupInfo?: boolean;
                   transferOwnerId?: string;
                 }) => {
                   void onUpdateActiveGroupSettings(payload);

@@ -159,7 +159,7 @@ export function GroupChat({
     memberList: true,
   });
   const [memberPermissionMap, setMemberPermissionMap] = useState({
-    renameGroup: true,
+    renameGroup: false,
     pinBoardItems: true,
     createReminder: true,
     createPoll: true,
@@ -196,7 +196,15 @@ export function GroupChat({
   const canOpenManage = isOwner || isAdmin;
   const canInviteMembers = canOpenManage || Boolean(settings?.allowMemberInvite);
   const canEditSecuritySettings = isOwner;
+  const canEditGroupProfile = canOpenManage || Boolean(settings?.allowMemberEditGroupInfo);
   const resolvedConversationAvatar = resolveMediaUrl(conversation?.avatar ?? null);
+
+  useEffect(() => {
+    setMemberPermissionMap((prev) => ({
+      ...prev,
+      renameGroup: Boolean(settings?.allowMemberEditGroupInfo),
+    }));
+  }, [settings?.allowMemberEditGroupInfo]);
 
   useEffect(() => {
     const closeMemberActionMenu = () => {
@@ -633,7 +641,7 @@ export function GroupChat({
   };
 
   const triggerAvatarSelect = () => {
-    if (!canOpenManage || isUpdatingGroupProfile) {
+    if (!canEditGroupProfile || isUpdatingGroupProfile) {
       return;
     }
     avatarInputRef.current?.click?.();
@@ -696,10 +704,10 @@ export function GroupChat({
             <button
               type="button"
               onClick={triggerAvatarSelect}
-              disabled={!canOpenManage || isUpdatingGroupProfile}
-              className={`group relative rounded-full ${canOpenManage ? "cursor-pointer" : "cursor-default"}`}
+              disabled={!canEditGroupProfile || isUpdatingGroupProfile}
+              className={`group relative rounded-full ${canEditGroupProfile ? "cursor-pointer" : "cursor-default"}`}
               title={
-                canOpenManage
+                canEditGroupProfile
                   ? language === "vi"
                     ? "Doi anh nhom"
                     : "Change group avatar"
@@ -717,7 +725,7 @@ export function GroupChat({
                   {initials(conversation?.name ?? "Group")}
                 </div>
               )}
-              {canOpenManage && (
+              {canEditGroupProfile && (
                 <span className="pointer-events-none absolute inset-0 rounded-full bg-black/0 transition group-hover:bg-black/20" />
               )}
             </button>
@@ -757,13 +765,13 @@ export function GroupChat({
             ) : (
               <button
                 type="button"
-                disabled={!canOpenManage}
+                disabled={!canEditGroupProfile}
                 onClick={() => {
-                  if (canOpenManage) {
+                  if (canEditGroupProfile) {
                     setIsHeaderEditOpen(true);
                   }
                 }}
-                className={`mt-3 text-center text-4xl font-semibold text-slate-100 ${canOpenManage ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
+                className={`mt-3 text-center text-4xl font-semibold text-slate-100 ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
               >
                 {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
               </button>
@@ -772,7 +780,7 @@ export function GroupChat({
             <p className="mt-1 text-xs text-slate-400">
               {language === "vi" ? "Cong dong" : "Community"}
             </p>
-            {canOpenManage && (
+            {canEditGroupProfile && (
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
@@ -1790,12 +1798,15 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.renameGroup}
-                        onChange={(event) =>
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
                             ...prev,
-                            renameGroup: event.target.checked,
-                          }))
-                        }
+                            renameGroup: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberEditGroupInfo: checked });
+                        }}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
