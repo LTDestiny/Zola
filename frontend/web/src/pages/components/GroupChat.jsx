@@ -6,10 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Download,
   ExternalLink,
   FileText,
-  Forward,
   Image as ImageIcon,
   KeyRound,
   Link as LinkIcon,
@@ -116,8 +114,6 @@ export function GroupChat({
   onDeleteGroup,
   onPreferenceChange,
   onSendTemplateMessage,
-  onForwardMessage,
-  onDeleteMessageForMe,
   children,
 }) {
   const safeMembers = members ?? [];
@@ -152,7 +148,6 @@ export function GroupChat({
   const [archiveDateFilter, setArchiveDateFilter] = useState("all");
   const [activeMemberActionId, setActiveMemberActionId] = useState(null);
   const [activeMemberActionDirection, setActiveMemberActionDirection] = useState("down");
-  const [activeMediaActionId, setActiveMediaActionId] = useState(null);
   const [openSections, setOpenSections] = useState({
     members: true,
     board: true,
@@ -164,7 +159,7 @@ export function GroupChat({
     memberList: true,
   });
   const [memberPermissionMap, setMemberPermissionMap] = useState({
-    renameGroup: true,
+    renameGroup: false,
     pinBoardItems: true,
     createReminder: true,
     createPoll: true,
@@ -184,7 +179,6 @@ export function GroupChat({
     setArchiveDateFilter("all");
     setActiveMemberActionId(null);
     setActiveMemberActionDirection("down");
-    setActiveMediaActionId(null);
     setIsHeaderEditOpen(false);
     setIsCreateNoteOpen(false);
     setIsCreatePollOpen(false);
@@ -201,58 +195,21 @@ export function GroupChat({
   );
   const canOpenManage = isOwner || isAdmin;
   const canInviteMembers = canOpenManage || Boolean(settings?.allowMemberInvite);
-  const canManageMemberPermissions = isOwner || isAdmin;
   const canEditSecuritySettings = isOwner;
-  const allowMembersEditGroupProfile = Boolean(settings?.allowMembersEditGroupProfile ?? true);
-  const canEditGroupProfile = canOpenManage || allowMembersEditGroupProfile;
-  const canPinBoardItems = canOpenManage || Boolean(settings?.allowMembersPinBoardItems ?? true);
-  const canCreateGroupNote = canOpenManage || Boolean(settings?.allowMembersCreateNotes ?? true);
-  const canCreateGroupReminder = canOpenManage || Boolean(settings?.allowMembersCreateNotes ?? true);
-  const canCreateGroupPoll = canOpenManage || Boolean(settings?.allowMembersCreatePolls ?? true);
+  const canEditGroupProfile = canOpenManage || Boolean(settings?.allowMemberEditGroupInfo);
   const resolvedConversationAvatar = resolveMediaUrl(conversation?.avatar ?? null);
 
   useEffect(() => {
-    setMemberPermissionMap({
-      renameGroup: Boolean(settings?.allowMembersEditGroupProfile ?? true),
-      pinBoardItems: Boolean(settings?.allowMembersPinBoardItems ?? true),
-      createReminder: Boolean(settings?.allowMembersCreateNotes ?? true),
-      createPoll: Boolean(settings?.allowMembersCreatePolls ?? true),
-      sendMessage: Boolean(
-        settings?.allowMembersSendMessages ??
-        !(settings?.onlyAdminsCanMessage ?? false),
-      ),
-    });
-  }, [
-    settings?.allowMembersCreateNotes,
-    settings?.allowMembersCreatePolls,
-    settings?.allowMembersEditGroupProfile,
-    settings?.allowMembersPinBoardItems,
-    settings?.allowMembersSendMessages,
-    settings?.onlyAdminsCanMessage,
-  ]);
-
-  const updateMemberPermission = (key, checked) => {
     setMemberPermissionMap((prev) => ({
       ...prev,
-      [key]: checked,
+      renameGroup: Boolean(settings?.allowMemberEditGroupInfo),
     }));
-
-    const payloadByKey = {
-      renameGroup: { allowMembersEditGroupProfile: checked },
-      pinBoardItems: { allowMembersPinBoardItems: checked },
-      createReminder: { allowMembersCreateNotes: checked },
-      createPoll: { allowMembersCreatePolls: checked },
-      sendMessage: { allowMembersSendMessages: checked },
-    };
-
-    void onUpdateSettings?.(payloadByKey[key]);
-  };
+  }, [settings?.allowMemberEditGroupInfo]);
 
   useEffect(() => {
     const closeMemberActionMenu = () => {
       setActiveMemberActionId(null);
       setActiveMemberActionDirection("down");
-      setActiveMediaActionId(null);
     };
     document.addEventListener("click", closeMemberActionMenu);
     return () => {
@@ -552,31 +509,6 @@ export function GroupChat({
     }
   };
 
-  const copyText = async (value) => {
-    if (!value) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Ignore clipboard errors.
-    }
-  };
-
-  const downloadFile = (url, fileName) => {
-    if (!url) {
-      return;
-    }
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName || "download";
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-  };
-
   const openMemberPicker = () => {
     if (!canInviteMembers) {
       return;
@@ -746,131 +678,6 @@ export function GroupChat({
   };
   const backToDefaultPanel = () => setPanelView("default");
 
-  const renderMediaCard = (item, variant = "preview") => {
-    const isPreviewCard = variant === "preview";
-    const frameClass = isPreviewCard ? "h-16" : "h-20";
-    const menuWidthClass = isPreviewCard ? "w-40" : "w-44";
-
-    return (
-      <div
-        key={item.id}
-        className="group relative overflow-visible"
-      >
-        <div className="overflow-hidden rounded-lg border border-slate-700 bg-[#081a33]">
-          <a
-            href={item.resolvedFileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block"
-          >
-            {item.type === "VIDEO" ? (
-              <div className={`grid ${frameClass} place-items-center bg-slate-900 text-slate-300`}>
-                <ImageIcon size={16} />
-              </div>
-            ) : (
-              <img
-                src={item.resolvedFileUrl}
-                alt={item.fileName ?? "media"}
-                className={`${frameClass} w-full object-cover`}
-              />
-            )}
-            <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-900/15 to-slate-900/0 opacity-0 transition duration-150 group-hover:opacity-100" />
-          </a>
-
-          <div className="absolute right-1 top-1 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onForwardMessage?.(item.id);
-                setActiveMediaActionId(null);
-              }}
-              className="grid h-7 w-7 place-items-center rounded-lg bg-slate-950/80 text-slate-100 shadow-lg hover:bg-sky-600"
-              title={language === "vi" ? "Chuyen tiep" : "Forward"}
-            >
-              <Forward size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setActiveMediaActionId((prev) => (prev === item.id ? null : item.id));
-              }}
-              className="grid h-7 w-7 place-items-center rounded-lg bg-slate-950/80 text-slate-100 shadow-lg hover:bg-slate-700"
-              title={language === "vi" ? "Them thao tac" : "More actions"}
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          </div>
-        </div>
-
-        {activeMediaActionId === item.id && (
-          <div
-            className={`absolute right-0 top-[calc(100%+0.4rem)] z-30 ${menuWidthClass} rounded-xl border border-[#335b89] bg-[#102d52] p-1.5 shadow-2xl`}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                void copyText(item.resolvedFileUrl);
-                setActiveMediaActionId(null);
-              }}
-              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
-            >
-              {language === "vi" ? "Sao chep" : "Copy"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onForwardMessage?.(item.id);
-                setActiveMediaActionId(null);
-              }}
-              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
-            >
-              {language === "vi" ? "Chia se" : "Share"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onOpenPinnedMessage?.(item.id);
-                setActiveMediaActionId(null);
-              }}
-              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
-            >
-              {language === "vi" ? "Xem tin nhan goc" : "View original message"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                downloadFile(item.resolvedFileUrl, item.fileName);
-                setActiveMediaActionId(null);
-              }}
-              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
-            >
-              {language === "vi" ? "Luu ve may" : "Download"}
-            </button>
-            <div className="my-1 h-px bg-slate-700" />
-            <button
-              type="button"
-              onClick={() => {
-                onDeleteMessageForMe?.(item.id);
-                setActiveMediaActionId(null);
-              }}
-              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-rose-200 hover:bg-rose-500/10"
-            >
-              {language === "vi" ? "Xoa chi o phia toi" : "Delete only for me"}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="flex h-full min-h-0">
       <div className="min-w-0 flex flex-1 flex-col overflow-hidden">{children}</div>
@@ -973,7 +780,7 @@ export function GroupChat({
             <p className="mt-1 text-xs text-slate-400">
               {language === "vi" ? "Cong dong" : "Community"}
             </p>
-            {canOpenManage && (
+            {canEditGroupProfile && (
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
@@ -1197,15 +1004,15 @@ export function GroupChat({
 
                   <button
                     type="button"
-                    disabled={!canCreateGroupPoll}
+                    disabled={!canOpenManage}
                     onClick={() => setIsCreatePollOpen(true)}
-                    className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canCreateGroupPoll ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
+                    className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canOpenManage ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
                   >
                     <Newspaper size={16} className="text-sky-200" />
                     <span>{language === "vi" ? "Tao binh chon" : "Create poll"}</span>
                   </button>
 
-                  {!canCreateGroupPoll && (
+                  {!canOpenManage && (
                     <p className="text-[11px] text-amber-300">
                       {language === "vi"
                         ? "Chi truong/pho nhom moi duoc tao binh chon"
@@ -1326,9 +1133,8 @@ export function GroupChat({
 
                   <button
                     type="button"
-                    disabled={!canCreateGroupNote}
                     onClick={() => setIsCreateNoteOpen(true)}
-                    className={`flex w-full items-center gap-2 rounded-xl border border-lime-400/30 px-3 py-2 text-left ${canCreateGroupNote ? "bg-lime-500/10 hover:bg-lime-500/15" : "bg-slate-800/60 text-slate-500"}`}
+                    className="flex w-full items-center gap-2 rounded-xl border border-lime-400/30 bg-lime-500/10 px-3 py-2 text-left hover:bg-lime-500/15"
                   >
                     <FileText size={16} className="text-lime-200" />
                     <span>{language === "vi" ? "Tao ghi chu nhom" : "Create group note"}</span>
@@ -1395,7 +1201,27 @@ export function GroupChat({
                   </p>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
-                    {previewMediaItems.map((item) => renderMediaCard(item, "preview"))}
+                    {previewMediaItems.map((item) => (
+                      <a
+                        key={item.id}
+                        href={item.resolvedFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group relative block overflow-hidden rounded-lg border border-slate-700"
+                      >
+                        {item.type === "VIDEO" ? (
+                          <div className="grid h-16 place-items-center bg-slate-900 text-slate-300">
+                            <ImageIcon size={16} />
+                          </div>
+                        ) : (
+                          <img
+                            src={item.resolvedFileUrl}
+                            alt={item.fileName ?? "media"}
+                            className="h-16 w-full object-cover"
+                          />
+                        )}
+                      </a>
+                    ))}
                   </div>
                 )}
                 <button
@@ -1753,9 +1579,8 @@ export function GroupChat({
                             </button>
                             <button
                               type="button"
-                              disabled={!canPinBoardItems}
                               onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
-                              className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10 disabled:opacity-40"
+                              className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
                             >
                               {language === "vi" ? "Bo ghim" : "Unpin"}
                             </button>
@@ -1770,17 +1595,16 @@ export function GroupChat({
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  disabled={!canCreateGroupNote}
                   onClick={() => setIsCreateNoteOpen(true)}
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreateGroupNote ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
+                  className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600"
                 >
                   {language === "vi" ? "Tao ghi chu" : "Create note"}
                 </button>
                 <button
                   type="button"
-                  disabled={!canCreateGroupPoll}
+                  disabled={!canOpenManage}
                   onClick={() => setIsCreatePollOpen(true)}
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreateGroupPoll ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canOpenManage ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
                 >
                   {language === "vi" ? "Tao binh chon" : "Create poll"}
                 </button>
@@ -1804,9 +1628,8 @@ export function GroupChat({
                 </h3>
                 <button
                   type="button"
-                  disabled={!canCreateGroupReminder}
                   onClick={() => setIsCreateReminderOpen(true)}
-                  className={`grid h-8 w-8 place-items-center rounded-lg ${canCreateGroupReminder ? "bg-sky-600 text-white hover:bg-sky-500" : "bg-slate-700 text-slate-400"}`}
+                  className="grid h-8 w-8 place-items-center rounded-lg bg-sky-600 text-white hover:bg-sky-500"
                 >
                   <Plus size={16} />
                 </button>
@@ -1829,9 +1652,8 @@ export function GroupChat({
               </div>
               <button
                 type="button"
-                disabled={!canCreateGroupReminder}
                 onClick={() => setIsCreateReminderOpen(true)}
-                className={`mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold ${canCreateGroupReminder ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
+                className="mt-3 w-full rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600"
               >
                 {language === "vi" ? "Tao nhac hen" : "Create reminder"}
               </button>
@@ -1908,7 +1730,17 @@ export function GroupChat({
                     </p>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
-                      {archiveMediaItems.map((item) => renderMediaCard(item, "archive"))}
+                      {archiveMediaItems.map((item) => (
+                        <a key={item.id} href={item.resolvedFileUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-700">
+                          {item.type === "VIDEO" ? (
+                            <div className="grid h-16 place-items-center bg-slate-900 text-slate-300">
+                              <ImageIcon size={16} />
+                            </div>
+                          ) : (
+                            <img src={item.resolvedFileUrl} alt={item.fileName ?? "media"} className="h-16 w-full object-cover" />
+                          )}
+                        </a>
+                      ))}
                     </div>
                   ))}
 
@@ -1966,8 +1798,15 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.renameGroup}
-                        disabled={!canManageMemberPermissions}
-                        onChange={(event) => updateMemberPermission("renameGroup", event.target.checked)}
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            renameGroup: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberEditGroupInfo: checked });
+                        }}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
@@ -1975,8 +1814,12 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.pinBoardItems}
-                        disabled={!canManageMemberPermissions}
-                        onChange={(event) => updateMemberPermission("pinBoardItems", event.target.checked)}
+                        onChange={(event) =>
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            pinBoardItems: event.target.checked,
+                          }))
+                        }
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
@@ -1984,8 +1827,12 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createReminder}
-                        disabled={!canManageMemberPermissions}
-                        onChange={(event) => updateMemberPermission("createReminder", event.target.checked)}
+                        onChange={(event) =>
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            createReminder: event.target.checked,
+                          }))
+                        }
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
@@ -1993,8 +1840,12 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createPoll}
-                        disabled={!canManageMemberPermissions}
-                        onChange={(event) => updateMemberPermission("createPoll", event.target.checked)}
+                        onChange={(event) =>
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            createPoll: event.target.checked,
+                          }))
+                        }
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
@@ -2002,8 +1853,12 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.sendMessage}
-                        disabled={!canManageMemberPermissions}
-                        onChange={(event) => updateMemberPermission("sendMessage", event.target.checked)}
+                        onChange={(event) =>
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            sendMessage: event.target.checked,
+                          }))
+                        }
                       />
                     </label>
                   </div>
@@ -2023,13 +1878,13 @@ export function GroupChat({
                   </div>
 
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span>{language === "vi" ? "Danh dau tin nhan tu truong/pho nhom" : "Highlight owner/admin messages"}</span>
+                    <span>{language === "vi" ? "Danh dau tin nhan tu truong/pho nhom" : "Only owner/admin can send"}</span>
                     <input
                       type="checkbox"
-                      checked={Boolean(settings?.highlightAdminMessages)}
+                      checked={Boolean(settings?.onlyAdminsCanMessage)}
                       disabled={!canEditSecuritySettings}
                       onChange={(event) => {
-                        void onUpdateSettings?.({ highlightAdminMessages: event.target.checked });
+                        void onUpdateSettings?.({ onlyAdminsCanMessage: event.target.checked });
                       }}
                     />
                   </div>

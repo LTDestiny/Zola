@@ -195,6 +195,7 @@ public class ChatConversationController {
             request.requireApprovalToJoin(),
             request.highlightAdminMessages(),
             request.allowMemberInvite(),
+            request.allowMemberEditGroupInfo(),
             request.transferOwnerId()
         );
 
@@ -436,6 +437,7 @@ public class ChatConversationController {
         Boolean requireApprovalToJoin,
         Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
+        Boolean allowMemberEditGroupInfo,
         String transferOwnerId
     ) {
     }

@@ -1093,6 +1093,7 @@ public class GatewayProxyController {
         Boolean requireApprovalToJoin,
         Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
+        Boolean allowMemberEditGroupInfo,
         String transferOwnerId
     ) {
     }

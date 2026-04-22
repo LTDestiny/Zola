@@ -56,6 +56,9 @@ public class ConversationDocument {
     @Field("allow_member_invite")
     private Boolean allowMemberInvite;
 
+    @Field("allow_member_edit_group_info")
+    private Boolean allowMemberEditGroupInfo;
+
     @Field("invite_code")
     private String inviteCode;
 
@@ -221,6 +224,14 @@ public class ConversationDocument {
 
     public void setAllowMemberInvite(Boolean allowMemberInvite) {
         this.allowMemberInvite = allowMemberInvite;
+    }
+
+    public boolean isAllowMemberEditGroupInfo() {
+        return Boolean.TRUE.equals(allowMemberEditGroupInfo);
+    }
+
+    public void setAllowMemberEditGroupInfo(Boolean allowMemberEditGroupInfo) {
+        this.allowMemberEditGroupInfo = allowMemberEditGroupInfo;
     }
 
     public String getInviteCode() {

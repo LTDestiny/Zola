@@ -163,6 +163,7 @@ export type GroupSettings = {
   requireApprovalToJoin: boolean;
   highlightAdminMessages: boolean;
   allowMemberInvite: boolean;
+  allowMemberEditGroupInfo?: boolean;
   inviteCode?: string | null;
   isOwner: boolean;
   isAdmin: boolean;
@@ -180,6 +181,7 @@ export type UpdateGroupSettingsInput = {
   requireApprovalToJoin?: boolean;
   highlightAdminMessages?: boolean;
   allowMemberInvite?: boolean;
+  allowMemberEditGroupInfo?: boolean;
   transferOwnerId?: string;
 };
 
