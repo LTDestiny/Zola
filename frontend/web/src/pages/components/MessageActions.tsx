@@ -16,6 +16,7 @@ type MessageActionsProps = {
   onReact?: (messageId: string, emoji: string) => void | Promise<void>;
   onPin?: (message: ChatMessage) => void | Promise<void>;
   onUnpin?: (message: ChatMessage) => void | Promise<void>;
+  canPin?: boolean;
   onToggleMore: () => void;
 };
 
@@ -35,6 +36,7 @@ export function MessageActions({
   onReact,
   onPin,
   onUnpin,
+  canPin = true,
   onToggleMore,
 }: MessageActionsProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -114,7 +116,7 @@ export function MessageActions({
       <div className="grid grid-cols-5 gap-1 text-slate-200">
         <button
           type="button"
-          disabled={isRecalled}
+          disabled={isRecalled || !canPin}
           onClick={() => {
             if (message.isPinned) {
               void onUnpin?.(message);

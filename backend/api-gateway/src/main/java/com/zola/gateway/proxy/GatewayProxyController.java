@@ -581,6 +581,35 @@ public class GatewayProxyController {
         );
     }
 
+    @PostMapping("/chat/conversations/{conversationId}/pins")
+    public ApiResponse<Object> pinGroupMessage(
+        @PathVariable("conversationId") String conversationId,
+        @RequestBody PinMessageRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pins",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @DeleteMapping("/chat/conversations/{conversationId}/pins/{messageId}")
+    public ApiResponse<Object> unpinGroupMessage(
+        @PathVariable("conversationId") String conversationId,
+        @PathVariable("messageId") String messageId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pins/{messageId}",
+            Map.of("conversationId", conversationId, "messageId", messageId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @DeleteMapping("/chat/conversations/{conversationId}")
     public ApiResponse<Object> deleteGroupConversation(
         @PathVariable("conversationId") String conversationId,
@@ -1094,8 +1123,15 @@ public class GatewayProxyController {
         Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         Boolean allowMemberEditGroupInfo,
+        Boolean allowMemberPinBoardItems,
+        Boolean allowMemberCreateNotes,
+        Boolean allowMemberCreateReminders,
+        Boolean allowMemberCreatePolls,
         String transferOwnerId
     ) {
+    }
+
+    public record PinMessageRequest(@NotBlank String sourceMessageId) {
     }
 
     public record ForwardRequest(@NotNull java.util.UUID targetConversationId) {

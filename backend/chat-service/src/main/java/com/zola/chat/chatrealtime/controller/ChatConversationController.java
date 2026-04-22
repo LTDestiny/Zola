@@ -196,11 +196,37 @@ public class ChatConversationController {
             request.highlightAdminMessages(),
             request.allowMemberInvite(),
             request.allowMemberEditGroupInfo(),
+            request.allowMemberPinBoardItems(),
+            request.allowMemberCreateNotes(),
+            request.allowMemberCreateReminders(),
+            request.allowMemberCreatePolls(),
             request.transferOwnerId()
         );
 
         emitUnreadSyncEvents(conversationId, null);
         return ApiResponse.ok("Group settings updated", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/pins")
+    public ApiResponse<Map<String, Object>> pinMessage(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody PinMessageRequest request
+    ) {
+        Map<String, Object> response = chatRealtimeService.pinGroupMessage(userId, conversationId, request.sourceMessageId());
+        emitUnreadSyncEvents(conversationId, null);
+        return ApiResponse.ok("Message pinned", response);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}/pins/{messageId}")
+    public ApiResponse<Map<String, Object>> unpinMessage(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @PathVariable("messageId") String messageId
+    ) {
+        Map<String, Object> response = chatRealtimeService.unpinGroupMessage(userId, conversationId, messageId);
+        emitUnreadSyncEvents(conversationId, null);
+        return ApiResponse.ok("Message unpinned", response);
     }
 
     @DeleteMapping("/conversations/{conversationId}")
@@ -438,8 +464,15 @@ public class ChatConversationController {
         Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         Boolean allowMemberEditGroupInfo,
+        Boolean allowMemberPinBoardItems,
+        Boolean allowMemberCreateNotes,
+        Boolean allowMemberCreateReminders,
+        Boolean allowMemberCreatePolls,
         String transferOwnerId
     ) {
+    }
+
+    public record PinMessageRequest(@NotBlank String sourceMessageId) {
     }
 
     public record JoinByLinkRequest(@NotBlank String code) {

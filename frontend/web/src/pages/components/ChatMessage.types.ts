@@ -85,6 +85,7 @@ export interface ChatMessageProps {
   onReact?: (messageId: string, emoji: string) => void | Promise<void>;
   onPin?: (message: ChatMessage) => void | Promise<void>;
   onUnpin?: (message: ChatMessage) => void | Promise<void>;
+  canPin?: boolean;
   onVotePoll?: (message: ChatMessage, optionId: string) => void | Promise<void>;
   onClosePoll?: (message: ChatMessage) => void | Promise<void>;
   onCompleteSchedule?: (message: ChatMessage) => void | Promise<void>;
