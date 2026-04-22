@@ -140,8 +140,8 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surface,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgSecondary,
   },
   backButtonPressed: {
     opacity: 0.6,
@@ -155,17 +155,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   title: {
-    fontSize: typography.h1,
-    fontWeight: "700",
+    ...typography.title1,
     color: colors.text,
     marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: typography.body,
+    ...typography.body,
     color: colors.textSecondary,
   },
   emailText: {
-    fontSize: typography.body,
+    ...typography.body,
     color: colors.primary,
     fontWeight: "600",
     marginTop: spacing.xs,
@@ -176,7 +175,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bgSecondary,
     borderRadius: borderRadius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -192,7 +191,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: typography.body,
+    ...typography.body,
     color: colors.text,
     letterSpacing: 4,
   },
@@ -211,7 +210,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitButtonText: {
-    fontSize: typography.body,
+    ...typography.body,
     fontWeight: "700",
     color: "#fff",
   },

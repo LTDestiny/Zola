@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { socketService, type SocketState } from "@/modules/chat/socket/socketService";
+import {
+  socketService,
+  type CallSignalType,
+  type SocketState,
+} from "@/modules/chat/socket/socketService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SOCKET STORE - Zustand integration with singleton SocketService
@@ -9,7 +13,7 @@ import { socketService, type SocketState } from "@/modules/chat/socket/socketSer
 // The actual socket logic is in socketService.ts (singleton).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
   if (DEBUG) {
@@ -25,7 +29,19 @@ type SocketStoreState = {
   connect: (accessToken: string) => void;
   disconnect: () => void;
   forceReconnect: () => void;
-  publishTyping: (conversationId: string, typing: boolean) => Promise<void>;
+  publishTyping: (
+    conversationId: string,
+    typing: boolean,
+    conversationType?: "private" | "group",
+  ) => Promise<void>;
+  publishCallSignal: (
+    conversationId: string,
+    targetUserId: string | null,
+    callId: string,
+    mode: "voice" | "video",
+    signalType: CallSignalType,
+    payload?: unknown,
+  ) => void;
   syncSubscriptions: (conversationIds: string[]) => void;
 };
 
@@ -59,8 +75,23 @@ export const useSocketStore = create<SocketStoreState>()(
         socketService.forceReconnect();
       },
 
-      publishTyping: async (conversationId: string, typing: boolean) => {
-        await socketService.publishTyping(conversationId, typing);
+      publishTyping: async (
+        conversationId: string,
+        typing: boolean,
+        conversationType: "private" | "group" = "private",
+      ) => {
+        await socketService.publishTyping(conversationId, typing, conversationType);
+      },
+
+      publishCallSignal: (conversationId, targetUserId, callId, mode, signalType, payload) => {
+        socketService.publishCallSignal(
+          conversationId,
+          targetUserId,
+          callId,
+          mode,
+          signalType,
+          payload,
+        );
       },
 
       syncSubscriptions: (conversationIds: string[]) => {

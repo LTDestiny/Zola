@@ -13,7 +13,7 @@ import type { MessageItem } from "@/shared/types/api";
 // - AppState handling (foreground/background)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
     if (DEBUG) {
@@ -77,6 +77,28 @@ export type ChatRealtimeEvent = {
     lastSeenAt?: string | null;
 };
 
+export type CallSignalType =
+    | "CALL_INVITE"
+    | "CALL_ACCEPT"
+    | "CALL_REJECT"
+    | "CALL_JOINED"
+    | "CALL_LEAVE"
+    | "WEBRTC_OFFER"
+    | "WEBRTC_ANSWER"
+    | "WEBRTC_ICE"
+    | "CALL_END";
+
+export type CallRealtimeEvent = {
+    actorId: string;
+    conversationId: string;
+    targetUserId: string | null;
+    callId: string;
+    mode: "voice" | "video";
+    signalType: CallSignalType;
+    payload: string | null;
+    createdAt: string;
+};
+
 type QueuedEvent = {
     destination: string;
     body: string;
@@ -84,6 +106,7 @@ type QueuedEvent = {
 };
 
 type EventListener = (event: ChatRealtimeEvent) => void;
+type CallEventListener = (event: CallRealtimeEvent) => void;
 type StateListener = (state: SocketState) => void;
 
 // ─── SOCKET URL RESOLVER ───────────────────────────────────────────────────────
@@ -132,8 +155,11 @@ class SocketService {
 
     // Subscriptions - FIXED: Use Maps for proper tracking
     private conversationSubs = new Map<string, StompSubscription>();
+    private callTopicSubs = new Map<string, StompSubscription>();
     private userQueueSubs = new Map<string, StompSubscription>(); // FIXED: was single sub, now Map
     private presenceSub: StompSubscription | null = null; // Global presence subscription
+    private callQueueSub: StompSubscription | null = null;
+    private globalCallTopicSub: StompSubscription | null = null;
     private pendingConversationIds = new Set<string>(); // FIXED: renamed, NOT cleared on cleanup
 
     // Event queue
@@ -141,6 +167,7 @@ class SocketService {
 
     // Listeners
     private eventListeners = new Set<EventListener>();
+    private callEventListeners = new Set<CallEventListener>();
     private stateListeners = new Set<StateListener>();
 
     // Connection waiters
@@ -204,12 +231,27 @@ class SocketService {
         return () => this.stateListeners.delete(listener);
     }
 
+    addCallListener(listener: CallEventListener): () => void {
+        this.callEventListeners.add(listener);
+        return () => this.callEventListeners.delete(listener);
+    }
+
     private emitEvent(event: ChatRealtimeEvent) {
         this.eventListeners.forEach((listener) => {
             try {
                 listener(event);
             } catch (error) {
                 log("emit-error", "Listener threw:", error);
+            }
+        });
+    }
+
+    private emitCallEvent(event: CallRealtimeEvent) {
+        this.callEventListeners.forEach((listener) => {
+            try {
+                listener(event);
+            } catch (error) {
+                log("emit-call-error", "Listener threw:", error);
             }
         });
     }
@@ -356,7 +398,7 @@ class SocketService {
                 this.setState("DISCONNECTED");
                 this.scheduleReconnect();
             }
-        }, 10000);
+        }, CONNECT_TIMEOUT_MS);
 
         this.client?.activate();
         log("connect", "Activating client...");
@@ -590,6 +632,10 @@ class SocketService {
             try { sub.unsubscribe(); } catch { /* ignore */ }
         });
         this.conversationSubs.clear();
+        this.callTopicSubs.forEach((sub) => {
+            try { sub.unsubscribe(); } catch { /* ignore */ }
+        });
+        this.callTopicSubs.clear();
         // CRITICAL FIX: Do NOT clear pendingConversationIds!
         // We need to keep track of which conversations to re-subscribe after reconnect
 
@@ -603,6 +649,16 @@ class SocketService {
         if (this.presenceSub) {
             try { this.presenceSub.unsubscribe(); } catch { /* ignore */ }
             this.presenceSub = null;
+        }
+
+        if (this.callQueueSub) {
+            try { this.callQueueSub.unsubscribe(); } catch { /* ignore */ }
+            this.callQueueSub = null;
+        }
+
+        if (this.globalCallTopicSub) {
+            try { this.globalCallTopicSub.unsubscribe(); } catch { /* ignore */ }
+            this.globalCallTopicSub = null;
         }
 
         if (this.client) {
@@ -656,6 +712,7 @@ class SocketService {
 
         // Subscribe to global presence topic
         this.subscribePresence();
+        this.subscribeCallQueues();
     }
 
     /**
@@ -680,6 +737,40 @@ class SocketService {
             log("subscribe", "✅ Subscribed to /topic/presence");
         } catch (error) {
             log("subscribe-error", "Failed to subscribe to /topic/presence:", error);
+        }
+    }
+
+    private subscribeCallQueues() {
+        if (!this.client?.connected) {
+            return;
+        }
+
+        if (this.callQueueSub) {
+            try { this.callQueueSub.unsubscribe(); } catch { /* ignore */ }
+            this.callQueueSub = null;
+        }
+
+        if (this.globalCallTopicSub) {
+            try { this.globalCallTopicSub.unsubscribe(); } catch { /* ignore */ }
+            this.globalCallTopicSub = null;
+        }
+
+        try {
+            this.callQueueSub = this.client.subscribe("/user/queue/call", (message) => {
+                this.handleCallMessage(message, "/user/queue/call");
+            });
+            log("subscribe", "✅ Subscribed to /user/queue/call");
+        } catch (error) {
+            log("subscribe-error", "Failed to subscribe to /user/queue/call:", error);
+        }
+
+        try {
+            this.globalCallTopicSub = this.client.subscribe("/topic/call", (message) => {
+                this.handleCallMessage(message, "/topic/call");
+            });
+            log("subscribe", "✅ Subscribed to /topic/call");
+        } catch (error) {
+            log("subscribe-error", "Failed to subscribe to /topic/call:", error);
         }
     }
 
@@ -712,6 +803,24 @@ class SocketService {
             this.emitEvent(event);
         } catch (error) {
             log("presence-error", "Failed to parse presence message:", error);
+        }
+    }
+
+    private handleCallMessage(message: IMessage, destination: string) {
+        try {
+            const event = JSON.parse(message.body) as CallRealtimeEvent;
+            if (!event?.callId || !event?.signalType) {
+                return;
+            }
+
+            log("call-event", `[${destination}] ${event.signalType}`, {
+                callId: event.callId,
+                conversationId: event.conversationId?.slice(0, 8),
+                targetUserId: event.targetUserId?.slice(0, 8),
+            });
+            this.emitCallEvent(event);
+        } catch (error) {
+            log("call-parse-error", `Failed parsing call event from ${destination}:`, error);
         }
     }
 
@@ -748,6 +857,19 @@ class SocketService {
                 log("subscribe-error", `Failed to subscribe to ${dest}:`, error);
             }
         });
+
+        const callDest = `/topic/call/${conversationId}`;
+        if (!this.callTopicSubs.has(callDest)) {
+            try {
+                const callSub = this.client!.subscribe(callDest, (message) => {
+                    this.handleCallMessage(message, callDest);
+                });
+                this.callTopicSubs.set(callDest, callSub);
+                log("subscribe", `✅ Subscribed to ${callDest}`);
+            } catch (error) {
+                log("subscribe-error", `Failed to subscribe to ${callDest}:`, error);
+            }
+        }
     }
 
     unsubscribeConversation(conversationId: string) {
@@ -761,6 +883,13 @@ class SocketService {
                 this.conversationSubs.delete(dest);
             }
         });
+
+        const callDest = `/topic/call/${conversationId}`;
+        const callSub = this.callTopicSubs.get(callDest);
+        if (callSub) {
+            try { callSub.unsubscribe(); } catch { /* ignore */ }
+            this.callTopicSubs.delete(callDest);
+        }
 
         this.pendingConversationIds.delete(conversationId);
         log("unsubscribe", `Unsubscribed from conversation ${conversationId.slice(0, 8)}`);
@@ -801,6 +930,10 @@ class SocketService {
             try { sub.unsubscribe(); } catch { /* ignore */ }
         });
         this.conversationSubs.clear();
+        this.callTopicSubs.forEach((sub) => {
+            try { sub.unsubscribe(); } catch { /* ignore */ }
+        });
+        this.callTopicSubs.clear();
 
         // Re-subscribe to all pending conversations
         this.pendingConversationIds.forEach((id) => {
@@ -843,8 +976,14 @@ class SocketService {
         }
     }
 
-    async publishTyping(conversationId: string, typing: boolean): Promise<void> {
-        const destination = `/app/chat.typing`;
+    async publishTyping(
+        conversationId: string,
+        typing: boolean,
+        conversationType: "private" | "group" = "private",
+    ): Promise<void> {
+        const destination = conversationType === "group"
+            ? "/app/typing_group"
+            : "/app/chat.typing";
         const body = { conversationId, typing };
 
         // If not connected, try to wait briefly
@@ -872,12 +1011,38 @@ class SocketService {
         }
     }
 
+    publishCallSignal(
+        conversationId: string,
+        targetUserId: string | null,
+        callId: string,
+        mode: "voice" | "video",
+        signalType: CallSignalType,
+        payload?: unknown,
+    ) {
+        const normalizedPayload =
+            payload == null
+                ? null
+                : typeof payload === "string"
+                    ? payload
+                    : JSON.stringify(payload);
+
+        this.publish("/app/signal/call", {
+            conversationId,
+            targetUserId,
+            callId,
+            mode,
+            signalType,
+            payload: normalizedPayload,
+        });
+    }
+
     // ─── CLEANUP ─────────────────────────────────────────────────────────────────
 
     destroy() {
         this.disconnect();
         this.appStateSubscription?.remove();
         this.eventListeners.clear();
+        this.callEventListeners.clear();
         this.stateListeners.clear();
         SocketService.instance = null;
         log("destroy", "SocketService destroyed");

@@ -10,6 +10,7 @@ export type AuthStackParamList = {
 export type ChatStackParamList = {
   ChatList: undefined;
   ChatDetail: { conversation: ConversationItem };
+  GroupSettings: { conversation: ConversationItem };
 };
 
 export type RootTabParamList = {

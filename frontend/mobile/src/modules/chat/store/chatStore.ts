@@ -12,7 +12,7 @@ import type { ConversationItem, MessageItem } from "@/shared/types/api";
 // 4. Debug logging for all state changes
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
   if (DEBUG) {

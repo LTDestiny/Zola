@@ -75,6 +75,7 @@ import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
 import { useTyping } from "../hooks/useTyping";
+import { resolveMediaUrl } from "./utils/mediaUrl";
 import {
   CallManager,
   type CallLifecycleEvent,
@@ -364,6 +365,8 @@ function parseCallSignalPayload(payload: string | null): ParsedCallSignalPayload
   }
 }
 
+import { env } from "../shared/env";
+
 function loadWebRtcIceServers(): RTCIceServer[] {
   const fallback: RTCIceServer[] = [
     {
@@ -371,7 +374,7 @@ function loadWebRtcIceServers(): RTCIceServer[] {
     },
   ];
 
-  const raw = import.meta.env.VITE_WEBRTC_ICE_SERVERS;
+  const raw = env.VITE_WEBRTC_ICE_SERVERS;
   if (!raw || typeof raw !== "string") {
     return fallback;
   }
@@ -423,7 +426,7 @@ function loadWebRtcIceServers(): RTCIceServer[] {
 
 const WEBRTC_ICE_SERVERS = loadWebRtcIceServers();
 const WEBRTC_FORCE_RELAY =
-  String(import.meta.env.VITE_WEBRTC_FORCE_RELAY ?? "false").toLowerCase() ===
+  String(env.VITE_WEBRTC_FORCE_RELAY ?? "false").toLowerCase() ===
   "true";
 const WEBRTC_ICE_POLICY: RTCIceTransportPolicy = WEBRTC_FORCE_RELAY
   ? "relay"
@@ -432,7 +435,7 @@ const CALL_CONNECT_TIMEOUT_MS = 30000;
 const CALL_INVITE_RETRY_MS = 1800;
 const GROUP_CALL_SOLO_TIMEOUT_MS = 30000;
 const CALL_DEBUG =
-  String(import.meta.env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
+  String(env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
 
 function logCallDebug(stage: string, payload?: unknown) {
   if (!CALL_DEBUG) {
@@ -1506,6 +1509,10 @@ export function ChatPage() {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
     }
+    if (activePinnedBoardItems.length >= 3) {
+      setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
+      return;
+    }
 
     const nowIso = new Date().toISOString();
     const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
@@ -1725,6 +1732,45 @@ export function ChatPage() {
       });
 
       setBannerMessage(language === "vi" ? "Da tao cuoc binh chon" : "Poll created");
+      await fetchConversations({ silent: true });
+      return true;
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+      return false;
+    }
+  };
+
+  const onCreateGroupReminder = async (input: { title: string; when?: string | null }) => {
+    if (!activeConversationId || activeConversation?.type !== "group") {
+      return false;
+    }
+
+    const title = input.title.trim();
+    if (!title) {
+      setBannerMessage(language === "vi" ? "Tieu de nhac hen khong duoc de trong" : "Reminder title cannot be empty");
+      return false;
+    }
+
+    const payload = {
+      title,
+      when: input.when ?? null,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "REMINDER",
+      });
+
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+
+      setBannerMessage(language === "vi" ? "Da tao nhac hen" : "Reminder created");
       await fetchConversations({ silent: true });
       return true;
     } catch (error) {
@@ -3459,7 +3505,7 @@ export function ChatPage() {
         id: conversation.id,
         name: displayName,
         avatar: initials(displayName),
-        avatarUrl: conversation.avatar ?? undefined,
+        avatarUrl: resolveMediaUrl(conversation.avatar ?? null) ?? undefined,
         timestamp: conversation.lastMessageAt
           ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
             hour: "2-digit",
@@ -4399,6 +4445,36 @@ export function ChatPage() {
       const result = await sendMessage(activeConversationId, content, {
         type: "TEXT",
         parentMessageId: options?.parentMessageId ?? null,
+      });
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
+      setDraftMessage("");
+      await fetchConversations();
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const onQuickSendText = async (text: string) => {
+    const content = text.trim();
+    if (!content || !activeConversationId || isSending) {
+      return;
+    }
+
+    onTypingSendMessage();
+
+    try {
+      setIsSending(true);
+      const result = await sendMessage(activeConversationId, content, {
+        type: "TEXT",
+        parentMessageId: null,
       });
       setMessages((prev) => {
         const exists = prev.some((item) => item.id === result.data.id);
@@ -6011,6 +6087,9 @@ export function ChatPage() {
                 onCreatePoll={(input: CreateGroupPollInput) => {
                   return onCreateGroupPoll(input);
                 }}
+                onCreateReminder={(input: { title: string; when?: string | null }) => {
+                  return onCreateGroupReminder(input);
+                }}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 currentUserId={myProfile?.id ?? null}
@@ -6103,6 +6182,7 @@ export function ChatPage() {
                     void onStartQuickCall("video");
                   }}
                   onSendMessage={onSendMessage}
+                  onQuickSendText={onQuickSendText}
                   onSendFiles={onSendFiles}
                   onEditMessage={onEditMessage}
                   onRecallMessage={onRecallMessage}
@@ -6165,6 +6245,7 @@ export function ChatPage() {
                   void onStartQuickCall("video");
                 }}
                 onSendMessage={onSendMessage}
+                onQuickSendText={onQuickSendText}
                 onSendFiles={onSendFiles}
                 onEditMessage={onEditMessage}
                 onRecallMessage={onRecallMessage}

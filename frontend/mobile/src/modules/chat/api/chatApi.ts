@@ -1,19 +1,60 @@
 import { AxiosError } from "axios";
 import { httpClient } from "./httpClient";
-import type { ApiResponse, ConversationItem, MessageItem, MessageType, UserProfile } from "@/shared/types/api";
+import type {
+  ApiResponse,
+  ConversationItem,
+  FriendContactItem,
+  FriendshipStatus,
+  GroupSettings,
+  MessageItem,
+  MessagePageData,
+  MessageType,
+  PendingFriendRequestItem,
+  UpdateGroupSettingsInput,
+  UpdateUserProfileInput,
+  UserPresenceItem,
+  UserProfile,
+} from "@/shared/types/api";
 
 let supportsConversationReadEndpoint: boolean | null = null;
 let supportsMessageReadEndpoint: boolean | null = null;
 
-type MessagePageData = {
-  items: MessageItem[];
-  nextCursor: string | null;
+type ConversationPayload = Partial<ConversationItem> & {
+  id: string;
+  requesterUnreadCount?: number;
+  requesterLastReadAt?: string | null;
+  requesterLastReadMessageId?: string | null;
 };
 
 type RawMessageItem = Omit<MessageItem, "id"> & {
   id?: string;
   messageId?: string;
 };
+
+function normalizeConversationItem(item: ConversationPayload): ConversationItem {
+  return {
+    id: String(item.id),
+    type: item.type ?? "private",
+    name: item.name ?? "",
+    avatar: item.avatar ?? null,
+    lastMessage: item.lastMessage ?? "",
+    lastMessageAt: item.lastMessageAt ?? null,
+    unreadCount: Number.isFinite(item.unreadCount)
+      ? (item.unreadCount as number)
+      : Number.isFinite(item.requesterUnreadCount)
+        ? (item.requesterUnreadCount as number)
+        : 0,
+    lastReadAt: item.lastReadAt ?? item.requesterLastReadAt ?? null,
+    lastReadMessageId:
+      item.lastReadMessageId ?? item.requesterLastReadMessageId ?? null,
+    participants: item.participants ?? [],
+    admins: item.admins ?? [],
+    ownerId: item.ownerId ?? null,
+    isPinned: Boolean(item.isPinned),
+    isOnline: item.isOnline ?? null,
+    otherUserId: item.otherUserId ?? null,
+  };
+}
 
 function normalizeMessage(raw: RawMessageItem): MessageItem {
   const resolvedId = raw.id ?? raw.messageId;
@@ -28,7 +69,6 @@ function normalizeMessage(raw: RawMessageItem): MessageItem {
 }
 
 function normalizeMessagesInAscendingOrder(items: RawMessageItem[]): MessageItem[] {
-  // Backend paginates newest-first; mobile store expects oldest-first.
   return items
     .map(normalizeMessage)
     .filter((item) => Boolean(item.id))
@@ -40,22 +80,209 @@ export async function getMyProfile() {
   return response.data;
 }
 
-export async function getUserProfile(userId: string) {
+export async function updateMyProfile(input: UpdateUserProfileInput) {
+  const response = await httpClient.put<ApiResponse<UserProfile>>("/api/v1/users/me/profile", input);
+  return response.data;
+}
+
+export async function deleteMyProfile() {
+  const response = await httpClient.delete<ApiResponse<{ ok: boolean }>>("/api/v1/users/me/profile");
+  return response.data;
+}
+
+export async function searchUserByEmail(email: string) {
+  const response = await httpClient.get<ApiResponse<UserProfile>>("/api/v1/users/search-by-email", {
+    params: { email },
+  });
+  return response.data;
+}
+
+export async function getUserSummary(userId: string) {
   const response = await httpClient.get<ApiResponse<UserProfile>>(`/api/v1/users/${userId}/summary`);
   return response.data;
 }
 
+export async function getUserProfile(userId: string) {
+  return getUserSummary(userId);
+}
+
+export async function getUsersPresence(userIds: string[]) {
+  const ids = userIds
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(",");
+
+  if (!ids) {
+    return {
+      success: true,
+      message: "Presence fetched",
+      data: [] as UserPresenceItem[],
+    };
+  }
+
+  try {
+    const response = await httpClient.get<ApiResponse<UserPresenceItem[]>>("/api/v1/users/presence", {
+      params: { ids },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      return {
+        success: true,
+        message: "Presence endpoint unavailable, fallback to empty presence",
+        data: [] as UserPresenceItem[],
+      };
+    }
+    throw error;
+  }
+}
+
+export async function getFriendshipStatus(targetUserId: string) {
+  const response = await httpClient.get<ApiResponse<FriendshipStatus>>("/api/v1/users/friendships/status", {
+    params: { targetUserId },
+  });
+  return response.data;
+}
+
+export async function addFriend(addresseeId: string) {
+  const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>("/api/v1/users/friendships", {
+    addresseeId,
+  });
+  return response.data;
+}
+
+export async function getPendingFriendRequests() {
+  const response = await httpClient.get<ApiResponse<PendingFriendRequestItem[]>>("/api/v1/users/friendships/pending");
+  return response.data;
+}
+
+export async function getPendingFriendRequestsUnreadCount() {
+  const response = await httpClient.get<ApiResponse<{ count: number }>>("/api/v1/users/friendships/pending/unread-count");
+  return response.data;
+}
+
+export async function markPendingFriendRequestsRead() {
+  const response = await httpClient.post<ApiResponse<{ updated: number }>>("/api/v1/users/friendships/pending/mark-read", {});
+  return response.data;
+}
+
+export async function getFriends() {
+  const response = await httpClient.get<ApiResponse<FriendContactItem[]>>("/api/v1/users/friendships/friends");
+  return response.data;
+}
+
+export async function acceptFriendRequest(friendshipId: string) {
+  const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
+    `/api/v1/users/friendships/${friendshipId}/accept`,
+    {},
+  );
+  return response.data;
+}
+
+export async function declineFriendRequest(friendshipId: string) {
+  const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
+    `/api/v1/users/friendships/${friendshipId}/decline`,
+    {},
+  );
+  return response.data;
+}
+
+export async function removeFriend(friendshipId: string) {
+  const response = await httpClient.delete<ApiResponse<{ friendshipId: string; status: string }>>(
+    `/api/v1/users/friendships/${friendshipId}`,
+  );
+  return response.data;
+}
+
 export async function getConversations() {
-  const response = await httpClient.get<ApiResponse<ConversationItem[]>>("/api/v1/chat/conversations");
+  const response = await httpClient.get<ApiResponse<ConversationPayload[]>>("/api/v1/chat/conversations");
+  const normalized = (response.data.data ?? []).map((item) => normalizeConversationItem(item));
   return {
     ...response.data,
-    data: (response.data.data ?? []).map((item) => ({
-      ...item,
-      unreadCount: Number.isFinite(item.unreadCount) ? item.unreadCount : 0,
-      isOnline: Boolean(item.isOnline),
-      otherUserId: item.otherUserId ?? null,
-    })),
+    data: normalized,
   };
+}
+
+export async function createDirectConversation(targetUserId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>("/api/v1/chat/conversations/direct", {
+    targetUserId,
+  });
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
+}
+
+export async function createGroupConversation(name: string, memberIds: string[], avatar?: string | null) {
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>("/api/v1/chat/conversations/group", {
+    name,
+    memberIds,
+    avatar: avatar ?? null,
+  });
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
+}
+
+export async function joinGroupByInviteCode(code: string) {
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>("/api/v1/chat/groups/join-by-link", { code });
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
+}
+
+export async function addGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/add-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function removeGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/remove-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function leaveGroupConversation(conversationId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/leave`,
+  );
+  return response.data;
+}
+
+export async function setGroupAdmin(conversationId: string, userId: string, admin = true) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/set-admin`,
+    { userId, admin },
+  );
+  return response.data;
+}
+
+export async function getGroupSettings(conversationId: string) {
+  const response = await httpClient.get<ApiResponse<GroupSettings>>(`/api/v1/chat/conversations/${conversationId}/settings`);
+  return response.data;
+}
+
+export async function updateGroupSettings(conversationId: string, input: UpdateGroupSettingsInput) {
+  const response = await httpClient.patch<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/settings`,
+    input,
+  );
+  return response.data;
+}
+
+export async function deleteGroupConversation(conversationId: string) {
+  const response = await httpClient.delete<ApiResponse<{ conversationId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}`,
+  );
+  return response.data;
 }
 
 export async function getMessages(conversationId: string, options?: { cursor?: string | null; limit?: number }) {
@@ -82,29 +309,63 @@ export async function getMessages(conversationId: string, options?: { cursor?: s
   return {
     ...response.data,
     data: {
-      items: normalizeMessagesInAscendingOrder(
-        (response.data.data?.items ?? []) as RawMessageItem[],
-      ),
+      items: normalizeMessagesInAscendingOrder((response.data.data?.items ?? []) as RawMessageItem[]),
       nextCursor: response.data.data?.nextCursor ?? null,
     },
   };
 }
 
+export async function editMessage(conversationId: string, messageId: string, content: string) {
+  const response = await httpClient.patch<ApiResponse<{ messageId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/edit`,
+    { content },
+  );
+  return response.data;
+}
+
 export async function sendMessage(
   conversationId: string,
   content: string,
-  options?: { type?: MessageType; fileUrl?: string | null; fileName?: string | null },
+  options?: {
+    type?: MessageType;
+    fileUrl?: string | null;
+    fileName?: string | null;
+    parentMessageId?: string | null;
+  },
 ) {
   const response = await httpClient.post<ApiResponse<RawMessageItem>>(`/api/v1/chat/conversations/${conversationId}/messages`, {
     type: options?.type ?? "TEXT",
     content,
     fileUrl: options?.fileUrl ?? null,
     fileName: options?.fileName ?? null,
+    parentMessageId: options?.parentMessageId ?? null,
   });
   return {
     ...response.data,
     data: normalizeMessage(response.data.data),
   };
+}
+
+export async function recallMessage(conversationId: string, messageId: string) {
+  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/recall`,
+  );
+  return response.data;
+}
+
+export async function deleteForMe(conversationId: string, messageId: string) {
+  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
+    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/delete-for-me`,
+  );
+  return response.data;
+}
+
+export async function forwardMessage(sourceConversationId: string, messageId: string, targetConversationId: string) {
+  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
+    `/api/v1/chat/conversations/${sourceConversationId}/messages/${messageId}/forward`,
+    { targetConversationId },
+  );
+  return response.data;
 }
 
 export async function readMessage(conversationId: string, messageId: string) {
@@ -149,7 +410,9 @@ export async function markConversationRead(conversationId: string, messageId?: s
     const response = await httpClient.patch<ApiResponse<{ conversationId: string; messageId: string }>>(
       `/api/v1/chat/conversations/${conversationId}/read`,
       null,
-      { params: { messageId: messageId ?? undefined } },
+      {
+        params: { messageId: messageId ?? undefined },
+      },
     );
     supportsConversationReadEndpoint = true;
     return response.data;
@@ -157,6 +420,7 @@ export async function markConversationRead(conversationId: string, messageId?: s
     const axiosError = error as AxiosError;
     if (axiosError.response?.status === 404) {
       supportsConversationReadEndpoint = false;
+      supportsMessageReadEndpoint = false;
       return {
         success: true,
         message: "Conversation read endpoint unavailable",
@@ -167,20 +431,6 @@ export async function markConversationRead(conversationId: string, messageId?: s
   }
 }
 
-export async function recallMessage(conversationId: string, messageId: string) {
-  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
-    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/recall`,
-  );
-  return response.data;
-}
-
-export async function deleteForMe(conversationId: string, messageId: string) {
-  const response = await httpClient.post<ApiResponse<{ messageId: string }>>(
-    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/delete-for-me`,
-  );
-  return response.data;
-}
-
 export async function addReaction(conversationId: string, messageId: string, emoji: string) {
   const response = await httpClient.post<ApiResponse<{ messageId: string; emoji: string }>>(
     `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/reactions`,
@@ -189,58 +439,20 @@ export async function addReaction(conversationId: string, messageId: string, emo
   return response.data;
 }
 
+export async function removeReaction(conversationId: string, messageId: string, emoji: string) {
+  const response = await httpClient.delete<ApiResponse<{ messageId: string; emoji: string }>>(
+    `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/reactions`,
+    {
+      params: { emoji },
+    },
+  );
+  return response.data;
+}
+
 export function toApiErrorMessage(error: unknown) {
   const axiosError = error as AxiosError<{ message?: string }>;
+  if (axiosError.response?.status === 413) {
+    return "File quá lớn. Vui lòng chọn file nhỏ hơn giới hạn hệ thống.";
+  }
   return axiosError.response?.data?.message ?? axiosError.message ?? "Unexpected error";
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// FRIEND REQUEST APIs
-// ═══════════════════════════════════════════════════════════════════════════════
-
-import type { PendingFriendRequestItem, FriendContactItem } from "@/shared/types/api";
-
-export async function getPendingFriendRequests() {
-  const response = await httpClient.get<ApiResponse<PendingFriendRequestItem[]>>(
-    "/api/v1/users/friendships/pending",
-  );
-  return response.data;
-}
-
-export async function getPendingFriendRequestsUnreadCount() {
-  const response = await httpClient.get<ApiResponse<{ count: number }>>(
-    "/api/v1/users/friendships/pending/unread-count",
-  );
-  return response.data;
-}
-
-export async function markPendingFriendRequestsRead() {
-  const response = await httpClient.post<ApiResponse<{ updated: number }>>(
-    "/api/v1/users/friendships/pending/mark-read",
-    {},
-  );
-  return response.data;
-}
-
-export async function getFriends() {
-  const response = await httpClient.get<ApiResponse<FriendContactItem[]>>(
-    "/api/v1/users/friendships/friends",
-  );
-  return response.data;
-}
-
-export async function acceptFriendRequest(friendshipId: string) {
-  const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
-    `/api/v1/users/friendships/${friendshipId}/accept`,
-    {},
-  );
-  return response.data;
-}
-
-export async function declineFriendRequest(friendshipId: string) {
-  const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
-    `/api/v1/users/friendships/${friendshipId}/decline`,
-    {},
-  );
-  return response.data;
 }

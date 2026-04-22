@@ -16,12 +16,18 @@ import { useChatStore } from "@/modules/chat/store/chatStore";
 const DEBOUNCE_MS = 300;      // Debounce trước khi gửi typing=true
 const STOP_TYPING_MS = 2000;  // Tự động tắt typing sau khi ngừng gõ
 const MIN_SEND_INTERVAL_MS = 500; // Rate limiting giữa các lần gửi
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
-    console.log(`[useTyping][${tag}]`, ...args);
+    if (DEBUG) {
+        console.log(`[useTyping][${tag}]`, ...args);
+    }
 }
 
-export function useTyping(conversationId: string) {
+export function useTyping(
+    conversationId: string,
+    conversationType: "private" | "group" = "private",
+) {
     const publishTyping = useSocketStore((s) => s.publishTyping);
     const connected = useSocketStore((s) => s.connected);
     const forceReconnect = useSocketStore((s) => s.forceReconnect);
@@ -61,7 +67,7 @@ export function useTyping(conversationId: string) {
 
         // Gửi qua socket (async but fire-and-forget)
         // publishTyping tự handle connection waiting
-        void publishTyping(conversationId, typing).catch((err) => {
+        void publishTyping(conversationId, typing, conversationType).catch((err) => {
             log("send-error", "Failed to publish typing:", err);
         });
 
@@ -80,7 +86,7 @@ export function useTyping(conversationId: string) {
                 stopTypingTimerRef.current = null;
             }
         }
-    }, [conversationId, publishTyping, connected]);
+    }, [connected, conversationId, conversationType, publishTyping]);
 
     // ─── HANDLE TEXT CHANGE (với debounce) ───────────────────────────────────────
     const onTextChange = useCallback((text: string) => {
@@ -146,11 +152,11 @@ export function useTyping(conversationId: string) {
             // Send typing=false when leaving (fire-and-forget)
             if (isTypingRef.current) {
                 // Don't await, just fire
-                void publishTyping(conversationId, false).catch(() => undefined);
+                void publishTyping(conversationId, false, conversationType).catch(() => undefined);
                 isTypingRef.current = false;
             }
         };
-    }, [conversationId, publishTyping]);
+    }, [conversationId, conversationType, publishTyping]);
 
     // ─── AUTO-RECONNECT CHECK ────────────────────────────────────────────────────
     // When user starts typing but socket is disconnected, try to reconnect once

@@ -24,7 +24,7 @@ import { useChatStore } from "@/modules/chat/store/chatStore";
 // - Tracks lastReceivedMessageAt for delta sync
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
     if (DEBUG) {

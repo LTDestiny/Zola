@@ -16,6 +16,10 @@
       "package": "com.zola.mobile"
     },
     "extra": {
+      "VITE_API_URL": "http://172.20.10.2:8080",
+      "VITE_WS_URL": "ws://172.20.10.2:8083/ws",
+      "VITE_CALL_DEBUG": "true",
+      "VITE_WEBRTC_FORCE_RELAY": "false",
       "apiBaseUrl": "http://172.20.10.2:8080",
       "socketUrl": "ws://172.20.10.2:8083/ws"
     }

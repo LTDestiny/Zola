@@ -23,7 +23,7 @@ import { useSocketStore } from "@/modules/chat/store/socketStore";
 // 7. PRESENCE - Updates presenceStore on PRESENCE_UPDATED events
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
   if (DEBUG) {
@@ -531,8 +531,12 @@ export function useSocket() {
   // ─── RETURN HOOK API ───────────────────────────────────────────────────────
   return {
     connected,
-    publishTyping: useCallback((conversationId: string, typing: boolean) => {
-      socketService.publishTyping(conversationId, typing);
+    publishTyping: useCallback((
+      conversationId: string,
+      typing: boolean,
+      conversationType: "private" | "group" = "private",
+    ) => {
+      socketService.publishTyping(conversationId, typing, conversationType);
     }, []),
   };
 }

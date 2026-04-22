@@ -1,10 +1,11 @@
 import axios, { type AxiosRequestConfig } from "axios";
 import Constants from "expo-constants";
 import { clearAuthTokens, getAccessToken } from "@/shared/storage/authToken";
+import { env } from "@/shared/env";
 
 function resolveApiBaseUrl() {
-  const explicit = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined;
-  if (explicit) {
+  const explicit = env.VITE_API_URL;
+  if (explicit && explicit !== "http://127.0.0.1:8080") {
     return explicit;
   }
 

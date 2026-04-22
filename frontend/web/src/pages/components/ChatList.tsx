@@ -59,16 +59,18 @@ interface ChatItemProps {
 
 const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemProps) {
     const hasUnread = chat.unreadCount > 0;
+    const isGroupChat = (chat.presenceLabel ?? "").toLowerCase().includes("thanh vien")
+        || (chat.presenceLabel ?? "").toLowerCase().includes("members");
 
     return (
         <button
             type="button"
             onClick={onSelect}
-            className={`mb-1 flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-all duration-200 hover:bg-slate-700/60 ${isActive ? "bg-sky-700/35 ring-1 ring-sky-500/40" : ""
+            className={`mb-1.5 flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-all duration-200 hover:bg-[#14365f] ${isActive ? "bg-[#165082] shadow-[inset_0_0_0_1px_rgba(93,177,255,0.55)]" : ""
                 }`}
         >
             {/* Avatar with presence badge */}
-            <div className="relative h-12 w-12 shrink-0">
+            <div className="relative h-12 w-12 shrink-0 rounded-full ring-1 ring-white/10">
                 {chat.avatarUrl ? (
                     <img
                         src={chat.avatarUrl}
@@ -80,7 +82,7 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
                         {chat.avatar}
                     </div>
                 )}
-                <PresenceBadge online={chat.isOnline} />
+                {!isGroupChat && <PresenceBadge online={chat.isOnline} />}
             </div>
 
             {/* Content */}
@@ -93,23 +95,23 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
                             {chat.name}
                         </p>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-400">{chat.timestamp}</span>
+                    <span className={`shrink-0 text-xs ${hasUnread ? "text-sky-300" : "text-slate-400"}`}>{chat.timestamp}</span>
                 </div>
 
-                {/* Presence label (only show when offline with lastSeen) */}
-                {chat.presenceLabel && !chat.isOnline && (
-                    <p className="mb-1 text-[11px] text-slate-400">
+                {/* Presence label for groups or offline direct chats */}
+                {chat.presenceLabel && (isGroupChat || !chat.isOnline) && (
+                    <p className="mb-1 text-[11px] text-slate-400/90">
                         {chat.presenceLabel}
                     </p>
                 )}
 
                 {/* Last message and unread badge row */}
                 <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-100" : "text-slate-400"}`}>
+                    <p className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-100" : "text-slate-400/90"}`}>
                         {chat.lastMessage}
                     </p>
                     {hasUnread && (
-                        <span className="shrink-0 rounded-full bg-sky-500 px-2 text-xs font-medium text-white">
+                        <span className="shrink-0 rounded-full bg-[#1f8cff] px-2 text-xs font-medium text-white shadow-[0_0_0_1px_rgba(255,255,255,0.1)]">
                             {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
                         </span>
                     )}
@@ -141,14 +143,14 @@ export function ChatList({
     }, [chats, viewMode]);
 
     return (
-        <aside className="flex h-screen w-80 shrink-0 flex-col border-r border-slate-800 bg-[#131b28]">
-            <div className="flex items-center justify-between px-5 pb-3 pt-5">
-                <h2 className="text-2xl font-bold text-slate-100">Chats</h2>
+        <aside className="flex h-screen w-[20.5rem] shrink-0 flex-col border-r border-[#153760] bg-[#0e2341]">
+            <div className="flex items-center justify-between px-4 pb-3 pt-5">
+                <h2 className="text-[1.9rem] font-bold tracking-tight text-white">Chats</h2>
                 <div className="flex items-center gap-1.5">
                     <button
                         type="button"
                         onClick={onAddFriend}
-                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
+                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[#14365f] hover:text-white"
                         title="Add friend"
                         aria-label="Add friend"
                     >
@@ -157,7 +159,7 @@ export function ChatList({
                     <button
                         type="button"
                         onClick={onCreateGroup}
-                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
+                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[#14365f] hover:text-white"
                         title="Create group"
                         aria-label="Create group"
                     >
@@ -166,18 +168,18 @@ export function ChatList({
                 </div>
             </div>
 
-            <div className="sticky top-0 z-10 bg-[#131b28] px-4 pb-3">
+            <div className="sticky top-0 z-10 bg-[#0e2341] px-4 pb-3">
                 <div className="relative">
                     <Search
                         size={15}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
                     <input
                         type="text"
                         value={searchText}
                         onChange={(event) => onSearchTextChange(event.target.value)}
                         placeholder="Search"
-                        className="h-10 w-full rounded-full border border-slate-700 bg-[#0f1724] pl-9 pr-3 text-sm text-slate-100 outline-none transition-all duration-200 focus:border-sky-400"
+                        className="h-10 w-full rounded-full border border-[#264f7f] bg-[#0a1b34] pl-9 pr-3 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-[#3da2ff]"
                     />
                 </div>
 
@@ -185,21 +187,21 @@ export function ChatList({
                     <button
                         type="button"
                         onClick={() => setViewMode("all")}
-                        className={`rounded-full px-3 py-1 ${viewMode === "all" ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+                        className={`rounded-full px-3 py-1 ${viewMode === "all" ? "bg-[#1f8cff] text-white" : "bg-[#142a48] text-slate-300 hover:bg-[#1a355a]"}`}
                     >
                         All
                     </button>
                     <button
                         type="button"
                         onClick={() => setViewMode("unread")}
-                        className={`rounded-full px-3 py-1 ${viewMode === "unread" ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+                        className={`rounded-full px-3 py-1 ${viewMode === "unread" ? "bg-[#1f8cff] text-white" : "bg-[#142a48] text-slate-300 hover:bg-[#1a355a]"}`}
                     >
                         Unread
                     </button>
                 </div>
             </div>
 
-            <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
                 {displayChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                         <p className="text-sm">No conversations yet</p>

@@ -17,11 +17,20 @@ export type UserProfile = {
   id: string;
   fullName: string;
   email: string | null;
+  phone?: string | null;
   avatarUrl: string | null;
   gender: string | null;
   birthdate: string | null;
   isOnline?: boolean | null;
   lastSeenAt?: string | null;
+};
+
+export type UpdateUserProfileInput = {
+  fullName: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  gender?: string | null;
+  birthdate?: string | null;
 };
 
 export type PendingFriendRequestItem = {
@@ -41,19 +50,63 @@ export type FriendContactItem = {
   avatarUrl?: string | null;
 };
 
+export type FriendshipStatus = {
+  status: string;
+};
+
 export type ConversationItem = {
   id: string;
   type?: "private" | "group";
   name: string;
+  avatar?: string | null;
   lastMessage: string;
   lastMessageSenderId?: string | null;
   lastMessageType?: MessageType | string | null;
   lastMessageAt: string | null;
   unreadCount: number;
   isPinned?: boolean;
+  lastReadAt?: string | null;
+  lastReadMessageId?: string | null;
   participants: string[];
+  admins?: string[];
+  ownerId?: string | null;
   isOnline?: boolean | null;
   otherUserId?: string | null;
+};
+
+export type GroupSettings = {
+  conversationId: string;
+  name: string;
+  avatar: string | null;
+  ownerId: string | null;
+  admins: string[];
+  participants: string[];
+  onlyAdminsCanMessage: boolean;
+  requireApprovalToJoin: boolean;
+  allowMemberInvite: boolean;
+  inviteCode?: string | null;
+  isOwner: boolean;
+  isAdmin: boolean;
+};
+
+export type UpdateGroupSettingsInput = {
+  name?: string;
+  avatar?: string | null;
+  onlyAdminsCanMessage?: boolean;
+  requireApprovalToJoin?: boolean;
+  allowMemberInvite?: boolean;
+  transferOwnerId?: string;
+};
+
+export type UserPresenceItem = {
+  userId: string;
+  online: boolean;
+  lastChangedAt: string | null;
+};
+
+export type MessageReactionEntry = {
+  userId: string;
+  emoji: string;
 };
 
 export type MessageType =
@@ -63,7 +116,15 @@ export type MessageType =
   | "FORWARD"
   | "IMAGE"
   | "VIDEO"
-  | "AUDIO";
+  | "AUDIO"
+  | "STICKER"
+  | "GIF"
+  | "CONTACT"
+  | "LOCATION"
+  | "POLL"
+  | "REMINDER"
+  | "NOTE"
+  | "MEETING";
 
 export type MessageItem = {
   id: string;
@@ -72,10 +133,21 @@ export type MessageItem = {
   receiverId?: string | null;
   type?: MessageType;
   content: string;
+  parentMessageId?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   reactions?: string[];
+  reactionEntries?: MessageReactionEntry[];
   recalled?: boolean;
+  deletedForUsers?: string[];
+  deliveredTo?: string[];
   seenBy?: string[];
   createdAt: string | null;
+  updatedAt?: string | null;
+  edited?: boolean;
+};
+
+export type MessagePageData = {
+  items: MessageItem[];
+  nextCursor: string | null;
 };

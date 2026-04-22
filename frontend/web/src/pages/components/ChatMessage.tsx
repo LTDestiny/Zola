@@ -72,21 +72,10 @@ export function ChatMessageRow({
   onClosePoll,
   onCompleteSchedule,
 }: ChatMessageProps) {
-  const [isHovered, setIsHovered] = useState(false);
   const [isMenuPinned, setIsMenuPinned] = useState(false);
   const [isLongPressOpen, setIsLongPressOpen] = useState(false);
-  const [canHover, setCanHover] = useState(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const media = window.matchMedia("(hover: hover)");
-    setCanHover(media.matches);
-
-    const listener = (event: MediaQueryListEvent) => setCanHover(event.matches);
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
-  }, []);
 
   useEffect(() => {
     const onOutside = (event: MouseEvent | TouchEvent) => {
@@ -96,7 +85,6 @@ export function ChatMessageRow({
       if (!rowRef.current.contains(event.target as Node)) {
         setIsMenuPinned(false);
         setIsLongPressOpen(false);
-        setIsHovered(false);
       }
     };
 
@@ -113,18 +101,9 @@ export function ChatMessageRow({
     () => isMenuPinned || isLongPressOpen,
     [isLongPressOpen, isMenuPinned],
   );
-  const showActionTrigger = useMemo(() => {
-    if (!canHover) {
-      return true;
-    }
-    return isHovered || showMenu;
-  }, [canHover, isHovered, showMenu]);
   const reactionSummary = useMemo(() => summarizeReactions(message.reactions), [message.reactions]);
 
   const startLongPress = () => {
-    if (canHover) {
-      return;
-    }
     if (longPressTimerRef.current) {
       window.clearTimeout(longPressTimerRef.current);
     }
@@ -143,11 +122,7 @@ export function ChatMessageRow({
   };
 
   return (
-    <div
-      className={`group flex w-full ${isMine ? "justify-end" : "justify-start"}`}
-      onMouseEnter={() => canHover && setIsHovered(true)}
-      onMouseLeave={() => canHover && !isMenuPinned && setIsHovered(false)}
-    >
+    <div className={`group flex w-full ${isMine ? "justify-end" : "justify-start"}`}>
       <div
         ref={rowRef}
         className={`relative flex max-w-full items-end gap-2 rounded-xl px-1 py-1 transition-colors duration-150 ${showMenu ? "bg-slate-800/45" : "bg-transparent"}`}
@@ -183,27 +158,6 @@ export function ChatMessageRow({
               {senderName ?? (language === "vi" ? "Thanh vien" : "Member")}
             </p>
           )}
-
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsMenuPinned((prev) => {
-                const next = !prev;
-                if (!next) {
-                  setIsHovered(false);
-                }
-                return next;
-              });
-              setIsLongPressOpen(false);
-            }}
-            aria-label={language === "vi" ? "Mo tac vu tin nhan" : "Open message actions"}
-            title={language === "vi" ? "Tac vu" : "Actions"}
-            className={`absolute top-1/2 z-40 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border border-indigo-300 bg-white text-[12px] font-extrabold text-indigo-700 shadow-sm transition-all duration-150 ${isMine ? "-left-8" : "-right-8"} ${showActionTrigger ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
-          >
-            !
-          </button>
 
           <MessageActions
             message={message}

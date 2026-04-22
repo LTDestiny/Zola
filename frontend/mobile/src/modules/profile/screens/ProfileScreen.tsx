@@ -1,6 +1,17 @@
-import { useRef } from "react";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { deleteMyProfile, updateMyProfile } from "@/modules/chat/api/chatApi";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
@@ -66,46 +77,113 @@ function SettingsItem({ icon, label, value, onPress, danger, showChevron = true 
   );
 }
 
+function getInitials(name: string) {
+  const parts = name.split(" ");
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+}
+
 export function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
+  const setProfile = useAuthStore((s) => s.setProfile);
+
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
+  const [fullNameDraft, setFullNameDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [genderDraft, setGenderDraft] = useState("");
+  const [birthdateDraft, setBirthdateDraft] = useState("");
+
+  const meInitials = useMemo(() => getInitials(me?.fullName ?? "U"), [me?.fullName]);
+
+  const openEditModal = () => {
+    setFullNameDraft(me?.fullName ?? "");
+    setPhoneDraft(me?.phone ?? "");
+    setGenderDraft(me?.gender ?? "");
+    setBirthdateDraft(me?.birthdate ?? "");
+    setEditModalVisible(true);
+  };
 
   const handleEditProfile = () => {
-    // TODO: Navigate to edit profile
+    openEditModal();
   };
 
   const handleChangePassword = () => {
-    // TODO: Navigate to change password
+    Alert.alert("Thông báo", "Đổi mật khẩu hiện đang thực hiện ở web. Mobile sẽ cập nhật trong bản tới.");
   };
 
   const handleNotificationSettings = () => {
-    // TODO: Navigate to notification settings
+    Alert.alert("Thông báo", "Thiết lập thông báo sẽ được cập nhật ở phiên bản kế tiếp.");
   };
 
   const handlePrivacySettings = () => {
-    // TODO: Navigate to privacy settings
+    Alert.alert("Thông báo", "Thiết lập quyền riêng tư sẽ được cập nhật ở phiên bản kế tiếp.");
   };
 
   const handleHelpSupport = () => {
-    // TODO: Navigate to help & support
+    Alert.alert("Hỗ trợ", "Liên hệ support@zola.vn để được hỗ trợ.");
   };
 
   const handleAbout = () => {
-    // TODO: Navigate to about
+    Alert.alert("Về ứng dụng", "Zola Messenger Mobile v1.0.0");
   };
 
   const handleLogout = () => {
     void logout();
   };
 
-  // Get initials for avatar
-  const getInitials = (name: string) => {
-    const parts = name.split(" ");
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const handleSaveProfile = async () => {
+    const nextName = fullNameDraft.trim();
+    if (!nextName) {
+      Alert.alert("Thông báo", "Họ tên không được để trống");
+      return;
     }
-    return name.substring(0, 2).toUpperCase();
+
+    setSavingProfile(true);
+    try {
+      const response = await updateMyProfile({
+        fullName: nextName,
+        phone: phoneDraft.trim() || null,
+        gender: genderDraft.trim() || null,
+        birthdate: birthdateDraft.trim() || null,
+      });
+      setProfile(response.data);
+      setEditModalVisible(false);
+    } catch {
+      Alert.alert("Thông báo", "Không thể cập nhật hồ sơ");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleDeleteProfile = () => {
+    Alert.alert(
+      "Xóa tài khoản",
+      "Bạn có chắc chắn muốn xóa tài khoản? Hành động này không thể hoàn tác.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: deletingProfile ? "Đang xóa..." : "Xóa",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingProfile(true);
+            try {
+              await deleteMyProfile();
+              await logout();
+            } catch {
+              Alert.alert("Thông báo", "Không thể xóa tài khoản");
+            } finally {
+              setDeletingProfile(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -128,7 +206,7 @@ export function ProfileScreen() {
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {getInitials(me?.fullName ?? "U")}
+                {meInitials}
               </Text>
             </View>
             <View style={styles.onlineIndicator} />
@@ -201,6 +279,14 @@ export function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.settingsCard}>
             <SettingsItem
+              icon="🗑️"
+              label="Xóa tài khoản"
+              onPress={handleDeleteProfile}
+              danger
+              showChevron={false}
+            />
+            <View style={styles.separator} />
+            <SettingsItem
               icon="🚪"
               label="Đăng xuất"
               onPress={handleLogout}
@@ -216,6 +302,64 @@ export function ProfileScreen() {
           <Text style={styles.footerVersion}>Phiên bản 1.0.0</Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Chỉnh sửa hồ sơ</Text>
+
+            <TextInput
+              value={fullNameDraft}
+              onChangeText={setFullNameDraft}
+              placeholder="Họ và tên"
+              placeholderTextColor={colors.placeholder}
+              style={styles.modalInput}
+            />
+            <TextInput
+              value={phoneDraft}
+              onChangeText={setPhoneDraft}
+              placeholder="Số điện thoại"
+              placeholderTextColor={colors.placeholder}
+              style={styles.modalInput}
+            />
+            <TextInput
+              value={genderDraft}
+              onChangeText={setGenderDraft}
+              placeholder="Giới tính"
+              placeholderTextColor={colors.placeholder}
+              style={styles.modalInput}
+            />
+            <TextInput
+              value={birthdateDraft}
+              onChangeText={setBirthdateDraft}
+              placeholder="Ngày sinh (YYYY-MM-DD)"
+              placeholderTextColor={colors.placeholder}
+              style={styles.modalInput}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setEditModalVisible(false)}
+                style={({ pressed }) => [styles.modalCancelButton, pressed && styles.modalButtonPressed]}
+              >
+                <Text style={styles.modalCancelText}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleSaveProfile()}
+                style={({ pressed }) => [styles.modalConfirmButton, pressed && styles.modalButtonPressed]}
+                disabled={savingProfile}
+              >
+                <Text style={styles.modalConfirmText}>{savingProfile ? "Đang lưu..." : "Lưu"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -305,7 +449,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   editButtonText: {
-    ...typography.subheadline,
+    ...typography.subhead,
     color: "#FFFFFF",
     fontWeight: "600",
   },
@@ -399,5 +543,67 @@ const styles = StyleSheet.create({
   footerVersion: {
     ...typography.caption1,
     color: colors.placeholder,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.cardElevated,
+    padding: spacing.lg,
+    ...shadows.md,
+  },
+  modalTitle: {
+    ...typography.title3,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  modalInput: {
+    ...typography.body,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.bgSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  modalCancelButton: {
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalCancelText: {
+    ...typography.subhead,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  modalConfirmButton: {
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalConfirmText: {
+    ...typography.subhead,
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  modalButtonPressed: {
+    opacity: 0.8,
   },
 });

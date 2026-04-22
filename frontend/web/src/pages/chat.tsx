@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
+import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, SendHorizontal, Smile, Sparkles, Video, X } from "lucide-react";
 import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
 import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
+import { resolveMediaUrl } from "./utils/mediaUrl";
 
 const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -37,6 +38,7 @@ type ChatProps = {
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
   onSendMessage: (options?: { parentMessageId?: string | null }) => Promise<void>;
+  onQuickSendText?: (text: string) => Promise<void>;
   onSendFiles: (files: File[], caption: string) => Promise<void>;
   onEditMessage: (messageId: string, nextContent: string) => void | Promise<void>;
   onRecallMessage: (messageId: string) => void | Promise<void>;
@@ -573,6 +575,7 @@ export function Chat({
   onVoiceCall,
   onVideoCall,
   onSendMessage,
+  onQuickSendText,
   onSendFiles,
   onEditMessage,
   onRecallMessage,
@@ -623,6 +626,13 @@ export function Chat({
   const mobileCameraInputId = `${fileInputId}-camera`;
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const emojiPanelRef = useRef<HTMLDivElement | null>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const attachButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pinnedListRef = useRef<HTMLDivElement | null>(null);
+  const pinnedListButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFirstMessageIdRef = useRef<string | null>(null);
   const previousLastMessageIdRef = useRef<string | null>(null);
   const lastViewportBottomRef = useRef<boolean | null>(null);
@@ -631,6 +641,7 @@ export function Chat({
   const quickEmojis = ["😀", "😂", "😍", "👍", "🔥", "🙏", "🎉", "💬"];
 
   const currentUserId = myProfile?.id ?? currentUserIdFallback;
+  const activeConversationAvatarUrl = resolveMediaUrl(activeConversation?.avatar ?? null);
   const pollSummaries = useMemo(
     () => buildPollSummaries(messages, currentUserId, userProfileMap),
     [messages, currentUserId, userProfileMap],
@@ -788,6 +799,63 @@ export function Chat({
   useEffect(() => {
     notifyViewportBottom(messageListRef.current);
   }, [localMessages]);
+
+  useEffect(() => {
+    if (!showEmojiPanel) {
+      return;
+    }
+
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (emojiPanelRef.current?.contains(target) || emojiButtonRef.current?.contains(target)) {
+        return;
+      }
+      setShowEmojiPanel(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [showEmojiPanel]);
+
+  useEffect(() => {
+    if (!showAttachMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (attachMenuRef.current?.contains(target) || attachButtonRef.current?.contains(target)) {
+        return;
+      }
+      setShowAttachMenu(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [showAttachMenu]);
+
+  useEffect(() => {
+    if (!isPinnedListOpen) {
+      return;
+    }
+
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (pinnedListRef.current?.contains(target) || pinnedListButtonRef.current?.contains(target)) {
+        return;
+      }
+      setIsPinnedListOpen(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [isPinnedListOpen]);
 
   const jumpToMessageById = (messageId: string) => {
     if (!messageId) {
@@ -949,6 +1017,32 @@ export function Chat({
     }
   };
 
+  const focusComposerFromChat = (target: EventTarget | null) => {
+    const element = target instanceof HTMLElement ? target : null;
+    if (!element) {
+      return;
+    }
+
+    const interactiveSelector = [
+      "button",
+      "a",
+      "input",
+      "textarea",
+      "select",
+      "video",
+      "audio",
+      "[role='button']",
+      "[contenteditable='true']",
+      "[data-ignore-chat-focus='true']",
+    ].join(",");
+
+    if (element.closest(interactiveSelector)) {
+      return;
+    }
+
+    composerTextareaRef.current?.focus();
+  };
+
   if (!activeConversation) {
     return (
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#0f1724] p-6 text-center sm:p-12">
@@ -976,11 +1070,21 @@ export function Chat({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0f1724]">
-      <header className="flex h-16 items-center justify-between border-b border-slate-700/80 bg-[#182433] px-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#081a33]">
+      <header className="flex h-16 items-center justify-between border-b border-[#1f4673] bg-[#0f2a4d] px-4 sm:px-5">
         <div className="flex items-center gap-3">
-          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200">
-            {activeConversation.name.slice(0, 2).toUpperCase()}
+          <div className="relative h-10 w-10">
+            {activeConversationAvatarUrl ? (
+              <img
+                src={activeConversationAvatarUrl}
+                alt={activeConversation.name}
+                className="h-10 w-10 rounded-full border border-slate-600/60 object-cover"
+              />
+            ) : (
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200">
+                {activeConversation.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
             <span
               className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#182433] ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-500"}`}
             />
@@ -1014,14 +1118,14 @@ export function Chat({
           <button
             type="button"
             onClick={onVoiceCall}
-            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
           >
             <Phone size={18} />
           </button>
           <button
             type="button"
             onClick={onVideoCall}
-            className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
           >
             <Video size={18} />
           </button>
@@ -1029,7 +1133,7 @@ export function Chat({
             <button
               type="button"
               onClick={onToggleGroupPanel}
-              className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isGroupPanelOpen ? "border-sky-400/60 bg-sky-500/20 text-sky-100" : "border-slate-600 text-slate-200 hover:bg-slate-700/70 hover:text-white"}`}
+              className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isGroupPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
               title={
                 language === "vi"
                   ? "Bat/tat bang dieu khien nhom"
@@ -1041,12 +1145,12 @@ export function Chat({
                   : "Toggle group control panel"
               }
             >
-              <span className="text-lg font-extrabold leading-none">!</span>
+              <span className="text-lg font-extrabold leading-none">i</span>
             </button>
           ) : (
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-lg transition-all duration-200 hover:bg-slate-700/70 hover:text-white"
+              className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
             >
               <Info size={18} />
             </button>
@@ -1057,6 +1161,7 @@ export function Chat({
       {latestPinnedSummary && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
           <button
+            ref={pinnedListButtonRef}
             type="button"
             onClick={() => setIsPinnedListOpen((prev) => !prev)}
             className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left hover:bg-amber-500/10"
@@ -1081,30 +1186,54 @@ export function Chat({
           </button>
 
           {isPinnedListOpen && (
-            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
+            <div ref={pinnedListRef} className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
               {(pinnedMessages ?? []).length === 0 ? (
                 <p className="px-1 py-1 text-xs text-amber-100/80">
                   {language === "vi" ? "Chua co tin nhan ghim" : "No pinned messages"}
                 </p>
               ) : (
                 (pinnedMessages ?? []).map((item) => (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setIsPinnedListOpen(false);
-                      jumpToMessageById(item.sourceMessageId);
-                    }}
-                    className="w-full rounded-md border border-transparent px-2 py-1.5 text-left hover:border-amber-300/40 hover:bg-amber-500/10"
+                    className="rounded-md border border-transparent px-2 py-1.5 hover:border-amber-300/40 hover:bg-amber-500/10"
                   >
-                    <p className="truncate text-xs font-semibold text-amber-100">
-                      <span className="mr-1 inline-flex align-middle">
-                        {item.itemType === "note" ? <FileText size={12} /> : <Pin size={12} />}
-                      </span>
-                      <span className="align-middle">{item.title}</span>
-                    </p>
-                    {item.preview && <p className="truncate text-[11px] text-amber-100/85">{item.preview}</p>}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPinnedListOpen(false);
+                        jumpToMessageById(item.sourceMessageId);
+                      }}
+                      className="w-full text-left"
+                    >
+                      <p className="truncate text-xs font-semibold text-amber-100">
+                        <span className="mr-1 inline-flex align-middle">
+                          {item.itemType === "note" ? <FileText size={12} /> : <Pin size={12} />}
+                        </span>
+                        <span className="align-middle">{item.title}</span>
+                      </p>
+                      {item.preview && <p className="truncate text-[11px] text-amber-100/85">{item.preview}</p>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const sourceMessage = localMessages.find((msg) => msg.id === item.sourceMessageId);
+                        void onUnpinMessage?.(
+                          sourceMessage ?? {
+                            id: item.sourceMessageId,
+                            text: item.preview || item.title,
+                            senderId: currentUserId,
+                            timestamp: "",
+                            status: "sent",
+                            type: "text",
+                          },
+                        );
+                      }}
+                      className="mt-1 rounded border border-rose-300/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/15"
+                    >
+                      {language === "vi" ? "Bo ghim" : "Unpin"}
+                    </button>
+                  </div>
                 ))
               )}
             </div>
@@ -1114,7 +1243,10 @@ export function Chat({
 
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[#0f1724] px-4 py-6 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0a1f3d_0%,#0b213f_100%)] px-4 py-5 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        onClickCapture={(event) => {
+          focusComposerFromChat(event.target);
+        }}
         onScroll={() => notifyViewportBottom(messageListRef.current)}
         onDragOver={(event) => {
           event.preventDefault();
@@ -1291,7 +1423,7 @@ export function Chat({
         </div>
       </div>
 
-      <footer className="relative mt-auto border-t border-slate-700/80 bg-[#1b2736] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
+      <footer className="relative mt-auto border-t border-[#1f4673] bg-[#102d52] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
         {isTyping && (
           <div className="mb-2 text-xs text-slate-300">
             {language === "vi" ? "Dang go..." : "Typing..."}
@@ -1384,7 +1516,10 @@ export function Chat({
         )}
 
         {showEmojiPanel && (
-          <div className="absolute bottom-[calc(100%+8px)] left-3 z-20 rounded-2xl border border-slate-600 bg-slate-800 p-3 shadow-2xl sm:left-4">
+          <div
+            ref={emojiPanelRef}
+            className="absolute bottom-[calc(100%+8px)] left-3 z-20 rounded-2xl border border-[#335b89] bg-[#102d52] p-3 shadow-2xl sm:left-4"
+          >
             <div className="grid grid-cols-4 gap-2">
               {quickEmojis.map((emoji) => (
                 <button
@@ -1400,23 +1535,17 @@ export function Chat({
           </div>
         )}
 
-        <div className="grid grid-cols-[auto_1fr_auto_auto] items-end gap-1.5">
+        <div className="grid grid-cols-[auto_1fr_auto_auto] items-end gap-1.5 rounded-2xl border border-[#335b89] bg-[#0f2747] p-1.5">
           <div className="flex items-center gap-1">
             <button
               type="button"
+              ref={attachButtonRef}
               onClick={() => setShowAttachMenu((prev) => !prev)}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f]"
               title={language === "vi" ? "Dinh kem" : "Attachment"}
               aria-label={language === "vi" ? "Dinh kem" : "Attachment"}
             >
               <Paperclip size={18} />
-            </button>
-            <button
-              type="button"
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
-              title={language === "vi" ? "Sticker" : "Sticker"}
-            >
-              <Sticker size={18} />
             </button>
             <input
               id={fileInputId}
@@ -1476,7 +1605,8 @@ export function Chat({
             />
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700"
+              ref={emojiButtonRef}
+              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f]"
               onClick={() => setShowEmojiPanel((prev) => !prev)}
               title={language === "vi" ? "Emoji" : "Emoji"}
             >
@@ -1485,7 +1615,8 @@ export function Chat({
           </div>
 
           <textarea
-            className="max-h-24 min-h-9 resize-none rounded-2xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-sky-400"
+            ref={composerTextareaRef}
+            className="max-h-24 min-h-9 resize-none rounded-2xl border border-[#335b89] bg-[#0a1b34] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#4aa5ff]"
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
@@ -1498,18 +1629,19 @@ export function Chat({
 
           <button
             type="button"
-            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-600 px-3 text-sm font-semibold text-rose-300 hover:bg-rose-500/15"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-[#335b89] px-3 text-sm font-semibold text-rose-300 hover:bg-rose-500/15"
             onClick={() => {
-              onDraftChange(`${draftMessage} ❤️`);
+              void onQuickSendText?.("❤️");
             }}
             title={language === "vi" ? "Tim" : "Heart"}
+            disabled={isSending}
           >
             <Heart size={16} />
           </button>
 
           <button
             type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-900/40 disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#1f8cff] px-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-900/40 hover:bg-[#1578e2] disabled:opacity-50"
             onClick={() => {
               void handleSendMessage();
             }}
@@ -1527,7 +1659,7 @@ export function Chat({
         </div>
 
         {showAttachMenu && (
-          <div className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
+          <div ref={attachMenuRef} className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
             <button
               type="button"
               onClick={() => document.getElementById(imageInputId)?.click()}

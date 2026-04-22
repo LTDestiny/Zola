@@ -11,7 +11,7 @@ import { useChatStore } from "@/modules/chat/store/chatStore";
 // 3. Returns store data directly (no local state duplication)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEBUG = true;
+const DEBUG = false;
 
 function log(tag: string, ...args: unknown[]) {
   if (DEBUG) {

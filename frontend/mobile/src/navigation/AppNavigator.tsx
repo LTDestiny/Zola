@@ -11,6 +11,7 @@ import { ForgotPasswordScreen } from "@/modules/auth/screens/ForgotPasswordScree
 import { VerifyRegisterOtpScreen } from "@/modules/auth/screens/VerifyRegisterOtpScreen";
 import { ChatListScreen } from "@/modules/chat/screens/ChatListScreen";
 import { ChatDetailScreen } from "@/modules/chat/screens/ChatDetailScreen";
+import { GroupSettingsScreen } from "@/modules/chat/screens/GroupSettingsScreen";
 import { FriendRequestsScreen } from "@/modules/chat/screens/FriendRequestsScreen";
 import { ProfileScreen } from "@/modules/profile/screens/ProfileScreen";
 import { getMyProfile } from "@/modules/chat/api/chatApi";
@@ -69,6 +70,7 @@ function ChatStackNavigator() {
     >
       <ChatStack.Screen name="ChatList" component={ChatListScreen} />
       <ChatStack.Screen name="ChatDetail" component={ChatDetailScreen} />
+      <ChatStack.Screen name="GroupSettings" component={GroupSettingsScreen} />
     </ChatStack.Navigator>
   );
 }

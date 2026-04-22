@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { httpClient } from "@/modules/chat/api/httpClient";
 import { formatPresence, getPresenceLabel, type PresenceInfo } from "@/modules/chat/utils/timeFormatter";
-import { useChatStore } from "@/modules/chat/store/chatStore";
 import type { ApiResponse } from "@/shared/types/api";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -118,9 +117,6 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
   const pendingUserIdsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
 
-  // Get store's updatePresence for syncing
-  const updateStorePresence = useChatStore((s) => s.updatePresence);
-
   // ─── BATCH FETCH PRESENCE ─────────────────────────────────────────────────────
 
   const fetchPresenceBatch = useCallback(async (ids: string[]) => {
@@ -148,8 +144,6 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
             lastSeenAt: item.lastChangedAt,
             lastUpdated: now,
           };
-          // Also sync to store
-          updateStorePresence(item.userId, item.online);
         });
         return next;
       });
@@ -162,7 +156,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
         setLoading(false);
       }
     }
-  }, [updateStorePresence]);
+  }, []);
 
   // ─── DEBOUNCED FETCH ──────────────────────────────────────────────────────────
 
@@ -216,9 +210,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
       },
     }));
 
-    // Also sync to store
-    updateStorePresence(event.userId, event.online);
-  }, [updateStorePresence]);
+  }, []);
 
   // ─── PUBLIC: CHECK IF ONLINE ──────────────────────────────────────────────────
 

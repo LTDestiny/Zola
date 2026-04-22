@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   ActivityIndicator,
   Animated,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,7 +15,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { getConversations } from "@/modules/chat/api/chatApi";
+import {
+  addFriend,
+  createDirectConversation,
+  createGroupConversation,
+  getConversations,
+  joinGroupByInviteCode,
+  searchUserByEmail,
+  toApiErrorMessage,
+} from "@/modules/chat/api/chatApi";
 import { ChatItem } from "@/modules/chat/components/ChatItem";
 import { useUserProfiles } from "@/modules/chat/hooks/useUserProfiles";
 import { useChatStore } from "@/modules/chat/store/chatStore";
@@ -47,6 +57,11 @@ export function ChatListScreen({ navigation }: Props) {
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"priority" | "other">("priority");
+  const [showQuickActionModal, setShowQuickActionModal] = useState(false);
+  const [quickActionMode, setQuickActionMode] = useState<"direct" | "friend" | "group" | "join">("direct");
+  const [actionInputOne, setActionInputOne] = useState("");
+  const [actionInputTwo, setActionInputTwo] = useState("");
+  const [quickActionLoading, setQuickActionLoading] = useState(false);
   const flatListRef = useRef<FlatList<ConversationItem>>(null);
 
   const me = useAuthStore((s) => s.me);
@@ -162,6 +177,123 @@ export function ChatListScreen({ navigation }: Props) {
     </View>
   ), []);
 
+  const resetQuickActionForm = useCallback(() => {
+    setActionInputOne("");
+    setActionInputTwo("");
+    setQuickActionLoading(false);
+  }, []);
+
+  const openQuickActionModal = useCallback(() => {
+    setQuickActionMode("direct");
+    resetQuickActionForm();
+    setShowQuickActionModal(true);
+  }, [resetQuickActionForm]);
+
+  const closeQuickActionModal = useCallback(() => {
+    setShowQuickActionModal(false);
+    resetQuickActionForm();
+  }, [resetQuickActionForm]);
+
+  const quickActionTitle = useMemo(() => {
+    if (quickActionMode === "friend") return "Thêm bạn bằng email";
+    if (quickActionMode === "group") return "Tạo nhóm";
+    if (quickActionMode === "join") return "Vào nhóm bằng mã";
+    return "Mở chat riêng";
+  }, [quickActionMode]);
+
+  const quickActionPlaceholderOne = useMemo(() => {
+    if (quickActionMode === "friend") return "Email người dùng";
+    if (quickActionMode === "group") return "Tên nhóm";
+    if (quickActionMode === "join") return "Mã mời";
+    return "User ID";
+  }, [quickActionMode]);
+
+  const quickActionPlaceholderTwo = useMemo(() => {
+    if (quickActionMode === "group") return "Danh sách User ID, cách nhau bởi dấu phẩy";
+    return "";
+  }, [quickActionMode]);
+
+  const runQuickAction = useCallback(async () => {
+    if (quickActionLoading) {
+      return;
+    }
+
+    setQuickActionLoading(true);
+
+    try {
+      if (quickActionMode === "friend") {
+        const email = actionInputOne.trim().toLowerCase();
+        if (!email) {
+          throw new Error("Vui lòng nhập email");
+        }
+
+        const user = await searchUserByEmail(email);
+        await addFriend(user.data.id);
+        await loadConversations({ silent: true });
+        closeQuickActionModal();
+        return;
+      }
+
+      if (quickActionMode === "direct") {
+        const targetUserId = actionInputOne.trim();
+        if (!targetUserId) {
+          throw new Error("Vui lòng nhập User ID");
+        }
+
+        const response = await createDirectConversation(targetUserId);
+        await loadConversations({ silent: true });
+        closeQuickActionModal();
+        navigation.navigate("ChatDetail", { conversation: response.data });
+        return;
+      }
+
+      if (quickActionMode === "group") {
+        const groupName = actionInputOne.trim();
+        const memberIds = actionInputTwo
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+        if (!groupName) {
+          throw new Error("Vui lòng nhập tên nhóm");
+        }
+
+        if (memberIds.length === 0) {
+          throw new Error("Vui lòng nhập ít nhất 1 thành viên");
+        }
+
+        const response = await createGroupConversation(groupName, memberIds);
+        await loadConversations({ silent: true });
+        closeQuickActionModal();
+        navigation.navigate("ChatDetail", { conversation: response.data });
+        return;
+      }
+
+      const inviteCode = actionInputOne.trim();
+      if (!inviteCode) {
+        throw new Error("Vui lòng nhập mã mời");
+      }
+
+      const response = await joinGroupByInviteCode(inviteCode);
+      await loadConversations({ silent: true });
+      closeQuickActionModal();
+      navigation.navigate("ChatDetail", { conversation: response.data });
+    } catch (error) {
+      const fallback = error instanceof Error ? error.message : "Không thể thực hiện thao tác";
+      const message = toApiErrorMessage(error) || fallback;
+      Alert.alert("Thông báo", message);
+      setQuickActionLoading(false);
+    }
+  }, [
+    actionInputOne,
+    actionInputTwo,
+    closeQuickActionModal,
+    loadConversations,
+    navigation,
+    quickActionLoading,
+    quickActionMode,
+  ]);
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
@@ -182,6 +314,7 @@ export function ChatListScreen({ navigation }: Props) {
               styles.composeButton,
               pressed && styles.composeButtonPressed,
             ]}
+            onPress={openQuickActionModal}
           >
             <Text style={styles.composeIcon}>✏️</Text>
           </Pressable>
@@ -273,6 +406,81 @@ export function ChatListScreen({ navigation }: Props) {
           }
         />
       )}
+
+      <Modal
+        visible={showQuickActionModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeQuickActionModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{quickActionTitle}</Text>
+
+            <View style={styles.modeRow}>
+              {[
+                { key: "direct", label: "Chat riêng" },
+                { key: "friend", label: "Thêm bạn" },
+                { key: "group", label: "Tạo nhóm" },
+                { key: "join", label: "Vào nhóm" },
+              ].map((item) => (
+                <Pressable
+                  key={item.key}
+                  onPress={() => {
+                    setQuickActionMode(item.key as "direct" | "friend" | "group" | "join");
+                    setActionInputOne("");
+                    setActionInputTwo("");
+                  }}
+                  style={[
+                    styles.modeChip,
+                    quickActionMode === item.key && styles.modeChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modeChipText,
+                      quickActionMode === item.key && styles.modeChipTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <TextInput
+              value={actionInputOne}
+              onChangeText={setActionInputOne}
+              placeholder={quickActionPlaceholderOne}
+              placeholderTextColor={colors.placeholder}
+              autoCapitalize="none"
+              style={styles.modalInput}
+            />
+
+            {quickActionMode === "group" && (
+              <TextInput
+                value={actionInputTwo}
+                onChangeText={setActionInputTwo}
+                placeholder={quickActionPlaceholderTwo}
+                placeholderTextColor={colors.placeholder}
+                autoCapitalize="none"
+                style={[styles.modalInput, styles.modalInputSecondary]}
+              />
+            )}
+
+            <View style={styles.modalActionRow}>
+              <Pressable style={styles.modalCancelButton} onPress={closeQuickActionModal}>
+                <Text style={styles.modalCancelText}>Hủy</Text>
+              </Pressable>
+              <Pressable style={styles.modalConfirmButton} onPress={() => void runQuickAction()}>
+                <Text style={styles.modalConfirmText}>
+                  {quickActionLoading ? "Đang xử lý..." : "Xác nhận"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -411,5 +619,91 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.muted,
     textAlign: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.cardElevated,
+    padding: spacing.lg,
+    ...shadows.md,
+  },
+  modalTitle: {
+    ...typography.title3,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  modeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  modeChip: {
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  modeChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: "rgba(0,122,255,0.12)",
+  },
+  modeChipText: {
+    ...typography.caption1,
+    color: colors.muted,
+    fontWeight: "600",
+  },
+  modeChipTextActive: {
+    color: colors.primary,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.bgSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...typography.body,
+    color: colors.text,
+  },
+  modalInputSecondary: {
+    marginTop: spacing.sm,
+  },
+  modalActionRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  modalCancelButton: {
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalCancelText: {
+    ...typography.subhead,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  modalConfirmButton: {
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalConfirmText: {
+    ...typography.subhead,
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 });

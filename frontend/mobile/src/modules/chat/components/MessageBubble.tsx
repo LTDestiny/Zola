@@ -8,6 +8,19 @@ import { formatTime } from "@/modules/chat/utils/format";
 // MESSAGE BUBBLE - Premium iOS Style (iMessage + Zola)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function summarizeReactions(reactions: string[] | undefined) {
+  const buckets = new Map<string, number>();
+  for (const value of reactions ?? []) {
+    const [first, second] = String(value).split("|");
+    const emoji = second ?? first;
+    if (!emoji) {
+      continue;
+    }
+    buckets.set(emoji, (buckets.get(emoji) ?? 0) + 1);
+  }
+  return Array.from(buckets.entries());
+}
+
 function MessageBubbleComponent({
   message,
   mine,
@@ -37,6 +50,7 @@ function MessageBubbleComponent({
 
   const bubbleStyle = mine ? styles.bubbleMine : styles.bubbleOther;
   const textStyle = mine ? styles.textMine : styles.textOther;
+  const reactionSummary = summarizeReactions(message.reactions);
 
   return (
     <View style={[styles.container, mine && styles.containerMine]}>
@@ -60,7 +74,20 @@ function MessageBubbleComponent({
                 </View>
               )}
               <Text style={[styles.content, textStyle]}>{message.content}</Text>
+              {message.edited && (
+                <Text style={[styles.editedLabel, mine && styles.editedLabelMine]}>(đã chỉnh sửa)</Text>
+              )}
             </>
+          )}
+          {reactionSummary.length > 0 && !message.recalled && (
+            <View style={styles.reactionRow}>
+              {reactionSummary.map(([emoji, count]) => (
+                <View key={`${message.id}-${emoji}`} style={[styles.reactionChip, mine && styles.reactionChipMine]}>
+                  <Text style={styles.reactionText}>{emoji}</Text>
+                  {count > 1 && <Text style={styles.reactionCount}>{count}</Text>}
+                </View>
+              ))}
+            </View>
           )}
           <View style={styles.metaRow}>
             <Text style={[styles.time, mine && styles.timeMine]}>
@@ -118,6 +145,14 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontStyle: "italic",
   },
+  editedLabel: {
+    ...typography.caption2,
+    color: colors.muted,
+    marginTop: spacing.xs,
+  },
+  editedLabelMine: {
+    color: "rgba(255, 255, 255, 0.75)",
+  },
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -138,6 +173,32 @@ const styles = StyleSheet.create({
   },
   fileNameMine: {
     color: "rgba(255, 255, 255, 0.9)",
+  },
+  reactionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  reactionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: borderRadius.pill,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  reactionChipMine: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  reactionText: {
+    ...typography.caption1,
+    color: colors.text,
+  },
+  reactionCount: {
+    ...typography.caption2,
+    color: colors.muted,
+    marginLeft: 2,
   },
   metaRow: {
     flexDirection: "row",

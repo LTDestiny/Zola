@@ -60,6 +60,49 @@ function parseStructuredPayload(raw: string) {
     }
 }
 
+function summarizeStructuredText(raw: string) {
+    const parsed = parseStructuredPayload(raw);
+    if (!parsed) {
+        return raw;
+    }
+
+    const kind = String(parsed.kind ?? "").toUpperCase();
+    const title = String(parsed.title ?? parsed.question ?? parsed.note ?? parsed.preview ?? "").trim();
+
+    if (kind === "GROUP_POLL") {
+        return title || "Poll";
+    }
+    if (kind === "BOARD_NOTE" || kind === "PIN_MESSAGE" || kind === "UNPIN_MESSAGE") {
+        return title || String(parsed.note ?? parsed.preview ?? "Note");
+    }
+
+    if (title) {
+        return title;
+    }
+
+    const link = String(parsed.link ?? "").trim();
+    if (link) {
+        return link;
+    }
+
+    return "";
+}
+
+function getStructuredDisplayTitle(payload: Record<string, unknown> | null, fallbackText: string) {
+    if (!payload) {
+        return fallbackText;
+    }
+
+    return String(
+        payload["title"] ??
+        payload["question"] ??
+        payload["note"] ??
+        payload["preview"] ??
+        payload["description"] ??
+        "",
+    ).trim();
+}
+
 async function downloadMediaToDevice(url: string, preferredFileName: string) {
     const fallback = () => {
         const anchor = document.createElement("a");
@@ -191,10 +234,10 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
 
     if (message.isRecalled) {
         content = (
-            <p className="max-w-full text-sm italic opacity-95">
-                {message.text}
-            </p>
-        );
+                <p className="max-w-full text-sm italic opacity-95">
+                    {summarizeStructuredText(message.text) || message.text}
+                </p>
+            );
     } else {
     switch (message.type) {
         case "image":
@@ -307,7 +350,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
         case "text":
         default:
             if (["STICKER", "GIF", "CONTACT", "LOCATION", "POLL", "REMINDER", "NOTE", "MEETING"].includes(semanticType)) {
-                const title = String(structuredPayload?.["title"] ?? message.text ?? "");
+                const title = getStructuredDisplayTitle(structuredPayload, summarizeStructuredText(message.text));
                 const link = typeof structuredPayload?.["link"] === "string" ? structuredPayload["link"] : "";
 
                 if (semanticType === "STICKER") {
@@ -550,19 +593,22 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                 if (semanticType === "NOTE") {
                     const noteKind = String(structuredPayload?.["kind"] ?? "NOTE").toUpperCase();
                     const preview = String(structuredPayload?.["preview"] ?? "");
-                    const noteBody = String(structuredPayload?.["note"] ?? title ?? "");
+                    const noteBody = String(structuredPayload?.["note"] ?? title ?? "").trim();
                     const pinToTop = Boolean(structuredPayload?.["pinToTop"]);
+                    const noteLabel = noteKind === "PIN_MESSAGE"
+                        ? "Pinned message"
+                        : noteKind === "UNPIN_MESSAGE"
+                            ? "Unpinned message"
+                            : noteKind === "BOARD_NOTE"
+                                ? "Group note"
+                                : "Shared note";
                     content = (
                         <div className="rounded-xl border border-lime-200 bg-lime-50 px-3 py-2 text-lime-900">
-                            <p className="text-xs font-semibold uppercase tracking-wide">
-                                {noteKind === "PIN_MESSAGE"
-                                    ? "Pinned message"
-                                    : noteKind === "BOARD_NOTE"
-                                        ? "Group note"
-                                        : "Shared note"}
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap text-sm">{noteBody}</p>
-                            {noteKind === "PIN_MESSAGE" && preview && (
+                            <p className="text-xs font-semibold uppercase tracking-wide">{noteLabel}</p>
+                            {noteBody && (
+                                <p className="mt-1 whitespace-pre-wrap text-sm">{noteBody}</p>
+                            )}
+                            {(noteKind === "PIN_MESSAGE" || noteKind === "UNPIN_MESSAGE") && preview && (
                                 <p className="mt-1 text-[11px] text-lime-800">{preview}</p>
                             )}
                             {noteKind === "BOARD_NOTE" && (
@@ -598,7 +644,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
 
             content = (
                 <p className="max-w-full whitespace-pre-wrap wrap-break-word [word-break:break-word] text-sm leading-relaxed">
-                    {renderTextWithMentions(message.text)}
+                    {renderTextWithMentions(summarizeStructuredText(message.text) || message.text)}
                 </p>
             );
             break;
@@ -615,7 +661,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                 )}
                 {message.replyPreviewText && !message.isRecalled && (
                     <div className={`mb-2 rounded-lg border px-2 py-1 text-[11px] ${isMine ? "border-indigo-200/60 bg-indigo-500/40 text-indigo-50" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-                        <p className="truncate">{message.replyPreviewText}</p>
+                        <p className="truncate">{summarizeStructuredText(message.replyPreviewText) || message.replyPreviewText}</p>
                     </div>
                 )}
                 {content}

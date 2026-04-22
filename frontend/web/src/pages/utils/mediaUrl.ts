@@ -3,7 +3,9 @@ function looksLikeObjectStorageHost(hostname: string, port: string) {
   return port === "9000" || lower.includes("minio") || lower.includes("s3");
 }
 
-const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8080";
+import { env } from "../../shared/env";
+
+const DEFAULT_API_BASE_URL = env.VITE_API_URL ?? "http://127.0.0.1:8080";
 
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");

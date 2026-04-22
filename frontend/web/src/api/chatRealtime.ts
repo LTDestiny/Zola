@@ -9,8 +9,10 @@ import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
 // 3. Proper subscription management
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { env } from "../shared/env";
+
 const CALL_DEBUG =
-  String(import.meta.env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
+  String(env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
 
 const CALL_LOG_PATTERN =
   /\/app\/(call\.signal|signal\/call)|\/topic\/call|\/user\/queue\/call|\/queue\/call|CALL_|WEBRTC_|\bERROR\b/i;
@@ -154,7 +156,7 @@ export class ChatRealtimeClient {
     this.onCallEvent = handlers.onCallEvent;
     this.onError = handlers.onError;
 
-    const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
+    const wsUrl = env.VITE_WS_URL ?? "ws://localhost:8083/ws";
     log("constructor", `WebSocket URL: ${wsUrl}`);
 
     this.client = new Client({
