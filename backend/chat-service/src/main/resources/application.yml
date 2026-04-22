@@ -5,7 +5,7 @@ spring:
   application:
     name: chat-service
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${CHAT_DB_NAME:zola_chat_db}
+    url: jdbc:postgresql://${DB_HOST:localhost}:5433/${CHAT_DB_NAME:zola_chat_db}
     username: ${DB_USER:zola}
     password: ${DB_PASSWORD:zola_pass}
   jpa:
