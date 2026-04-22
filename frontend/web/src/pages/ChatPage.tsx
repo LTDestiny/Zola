@@ -36,7 +36,9 @@ import {
   searchUserByEmail,
   sendMessage,
   setGroupAdmin,
+  pinGroupMessage,
   toApiErrorMessage,
+  unpinGroupMessage,
   updateMyProfile,
   updateGroupSettings,
   type ConversationItem,
@@ -210,8 +212,8 @@ type PinnedBoardItem = {
 
 type PinBoardEvent = {
   id: string;
-  kind: "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE";
-  itemType: "pin" | "note";
+  kind: "BOARD_NOTE";
+  itemType: "note";
   pinToTop: boolean;
   sourceMessageId: string;
   title: string;
@@ -240,7 +242,7 @@ function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
   try {
     const payload = JSON.parse(message.content) as Record<string, unknown>;
     const kind = String(payload?.kind ?? "").toUpperCase();
-    if (kind !== "PIN_MESSAGE" && kind !== "UNPIN_MESSAGE" && kind !== "BOARD_NOTE") {
+    if (kind !== "BOARD_NOTE") {
       return null;
     }
 
@@ -249,24 +251,18 @@ function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
       return null;
     }
 
-    const pinToTop = kind === "UNPIN_MESSAGE"
-      ? false
-      : kind === "PIN_MESSAGE"
-        ? true
-        : Boolean(payload?.pinToTop);
+    const pinToTop = Boolean(payload?.pinToTop);
     const title = String(payload?.title ?? "").trim();
     const preview = String(payload?.preview ?? payload?.note ?? "").trim();
     const createdAtRaw = String(payload?.createdAt ?? message.createdAt ?? "");
     const createdAtMs = Date.parse(createdAtRaw);
-    const itemType = kind === "BOARD_NOTE" ? "note" : "pin";
-
     return {
       id: message.id,
-      kind: kind as "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE",
-      itemType,
+      kind: "BOARD_NOTE",
+      itemType: "note",
       pinToTop,
       sourceMessageId,
-      title: title || (kind === "UNPIN_MESSAGE" ? "Unpinned message" : kind === "BOARD_NOTE" ? "Group note" : "Pinned message"),
+      title: title || "Group note",
       preview,
       createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
     };
@@ -1269,6 +1265,10 @@ export function ChatPage() {
     requireApprovalToJoin?: boolean;
     allowMemberInvite?: boolean;
     allowMemberEditGroupInfo?: boolean;
+    allowMemberPinBoardItems?: boolean;
+    allowMemberCreateNotes?: boolean;
+    allowMemberCreateReminders?: boolean;
+    allowMemberCreatePolls?: boolean;
     transferOwnerId?: string;
     successMessageVi?: string;
     successMessageEn?: string;
@@ -1506,46 +1506,35 @@ export function ChatPage() {
       return;
     }
 
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canPinBoardItems = Boolean(
+      activeSettings?.isOwner || activeSettings?.isAdmin || activeSettings?.allowMemberPinBoardItems,
+    );
+    if (!canPinBoardItems) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban khong duoc phep ghim tin nhan trong nhom nay"
+          : "You are not allowed to pin messages in this group",
+      );
+      return;
+    }
+
     if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
     }
-    if (activePinnedBoardItems.length >= 3) {
+    if (activePinnedBoardItems.filter((item) => item.itemType === "pin").length >= 3) {
       setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
-    const authorName = myProfile?.fullName?.trim() || (language === "vi" ? "Ban" : "You");
-    const title =
-      language === "vi"
-        ? `${authorName} da ghim mot tin nhan`
-        : `${authorName} pinned a message`;
-
-    const payload = {
-      kind: "PIN_MESSAGE",
-      sourceMessageId: targetMessage.id,
-      title,
-      preview,
-      createdAt: nowIso,
-    };
-
     try {
-      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
-        type: "NOTE",
-      });
-
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-
+      const result = await pinGroupMessage(activeConversationId, targetMessage.id);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [activeConversationId]: result.data,
+      }));
       setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
-      await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -1561,35 +1550,13 @@ export function ChatPage() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const authorName = myProfile?.fullName?.trim() || (language === "vi" ? "Ban" : "You");
-    const title =
-      language === "vi"
-        ? `${authorName} da bo ghim mot tin nhan`
-        : `${authorName} unpinned a message`;
-
-    const payload = {
-      kind: "UNPIN_MESSAGE",
-      sourceMessageId: normalizedSourceId,
-      title,
-      createdAt: nowIso,
-    };
-
     try {
-      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
-        type: "NOTE",
-      });
-
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-
+      const result = await unpinGroupMessage(activeConversationId, normalizedSourceId);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [activeConversationId]: result.data,
+      }));
       setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
-      await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -1597,6 +1564,19 @@ export function ChatPage() {
 
   const onCreateGroupBoardNote = async (noteText: string, pinToTop: boolean) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateNotes = Boolean(
+      activeSettings?.isOwner || activeSettings?.isAdmin || activeSettings?.allowMemberCreateNotes,
+    );
+    if (!canCreateNotes) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban khong duoc phep tao ghi chu trong nhom nay"
+          : "You are not allowed to create notes in this group",
+      );
       return;
     }
 
@@ -1651,8 +1631,11 @@ export function ChatPage() {
     const activeSettings = groupSettingsMap[activeConversationId] ?? null;
     const isCurrentOwner = Boolean(activeSettings?.isOwner);
     const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
-    if (!isCurrentOwner && !isCurrentAdmin) {
-      setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
+    const canCreatePolls = Boolean(
+      isCurrentOwner || isCurrentAdmin || activeSettings?.allowMemberCreatePolls,
+    );
+    if (!canCreatePolls) {
+      setBannerMessage(language === "vi" ? "Ban khong duoc phep tao binh chon trong nhom nay" : "You are not allowed to create polls in this group");
       return false;
     }
 
@@ -1743,6 +1726,19 @@ export function ChatPage() {
 
   const onCreateGroupReminder = async (input: { title: string; when?: string | null }) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
+      return false;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateReminders = Boolean(
+      activeSettings?.isOwner || activeSettings?.isAdmin || activeSettings?.allowMemberCreateReminders,
+    );
+    if (!canCreateReminders) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban khong duoc phep tao nhac hen trong nhom nay"
+          : "You are not allowed to create reminders in this group",
+      );
       return false;
     }
 
@@ -3904,6 +3900,10 @@ export function ChatPage() {
                 Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
               );
             }
+
+            if (selectedConversationId === event.conversationId) {
+              void refreshGroupSettings(event.conversationId);
+            }
           }
           if (typeof event.totalUnreadCount === "number") {
             syncTotalUnread(event.totalUnreadCount);
@@ -5409,19 +5409,34 @@ export function ChatPage() {
       return [] as PinnedBoardItem[];
     }
 
+    const pinnedBySource = new Map<string, PinnedBoardItem>();
+
+    const settingsPinnedMessages =
+      activeConversationForView?.type === "group"
+        ? groupSettingsMap[activeConversationForView.id]?.pinnedMessages ?? []
+        : [];
+
+    for (const item of settingsPinnedMessages) {
+      const sourceMessageId = String(item.sourceMessageId ?? "").trim();
+      if (!sourceMessageId) {
+        continue;
+      }
+      pinnedBySource.set(sourceMessageId, {
+        id: `pin-${sourceMessageId}`,
+        itemType: "pin",
+        sourceMessageId,
+        title: String(item.title ?? "").trim() || (language === "vi" ? "Tin nhan da ghim" : "Pinned message"),
+        preview: String(item.preview ?? "").trim(),
+        createdAtMs: Number.isFinite(item.createdAtMs) ? item.createdAtMs : 0,
+      });
+    }
+
     const orderedEvents = messages
       .map((item) => parsePinBoardEvent(item))
       .filter((item): item is PinBoardEvent => Boolean(item))
       .sort((a, b) => a.createdAtMs - b.createdAtMs);
 
-    const pinnedBySource = new Map<string, PinnedBoardItem>();
-
     for (const event of orderedEvents) {
-      if (event.kind === "UNPIN_MESSAGE") {
-        pinnedBySource.delete(event.sourceMessageId);
-        continue;
-      }
-
       if (!event.pinToTop) {
         pinnedBySource.delete(event.sourceMessageId);
         continue;
@@ -5438,7 +5453,7 @@ export function ChatPage() {
     }
 
     return Array.from(pinnedBySource.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
-  }, [messages, activeConversationForView?.id, activeConversationForView?.type]);
+  }, [messages, activeConversationForView?.id, activeConversationForView?.type, groupSettingsMap, language]);
 
   const latestPinnedSummary = useMemo(() => {
     const latest = activePinnedBoardItems[0];
@@ -6108,6 +6123,10 @@ export function ChatPage() {
                   requireApprovalToJoin?: boolean;
                   allowMemberInvite?: boolean;
                   allowMemberEditGroupInfo?: boolean;
+                  allowMemberPinBoardItems?: boolean;
+                  allowMemberCreateNotes?: boolean;
+                  allowMemberCreateReminders?: boolean;
+                  allowMemberCreatePolls?: boolean;
                   transferOwnerId?: string;
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
@@ -6197,6 +6216,7 @@ export function ChatPage() {
                   onUnpinMessage={(targetMessage) => {
                     void onUnpinGroupMessage(targetMessage.id);
                   }}
+                  canPinMessages={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin || activeGroupSettings?.allowMemberPinBoardItems)}
                   onVotePollMessage={(targetMessage, optionId) => {
                     void onVoteGroupPoll(targetMessage, optionId);
                   }}

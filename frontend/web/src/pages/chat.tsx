@@ -49,6 +49,7 @@ type ChatProps = {
   onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
   onVotePollMessage?: (message: ChatMessage, optionId: string) => void | Promise<void>;
   onClosePollMessage?: (message: ChatMessage) => void | Promise<void>;
+  canPinMessages?: boolean;
   canManageGroupPoll?: boolean;
   pinnedMessages?: Array<{
     id: string;
@@ -260,6 +261,44 @@ function isPollVoteEventMessage(item: MessageItem) {
   }
   const kind = String(payload.kind ?? "").toUpperCase();
   return kind === "POLL_VOTE" || kind === "POLL_CLOSE";
+}
+
+function isLegacyPinEventMessage(item: MessageItem) {
+  if ((item.type ?? "").toUpperCase() !== "NOTE") {
+    return false;
+  }
+  const payload = parseJsonObject(item.content);
+  if (!payload) {
+    return false;
+  }
+  const kind = String(payload.kind ?? "").toUpperCase();
+  return kind === "PIN_MESSAGE" || kind === "UNPIN_MESSAGE";
+}
+
+function getBoardSystemNotice(
+  item: MessageItem,
+  language: "vi" | "en",
+  myId: string,
+  userProfileMap: Record<string, UserProfile>,
+) {
+  const payload = parseJsonObject(item.content);
+  const actorName = item.senderId === myId
+    ? (language === "vi" ? "Ban" : "You")
+    : (userProfileMap[item.senderId]?.fullName ?? `User ${item.senderId.slice(0, 8)}`);
+
+  if ((item.type ?? "").toUpperCase() === "REMINDER") {
+    return language === "vi"
+      ? `${actorName} da tao nhac hen`
+      : `${actorName} created a reminder`;
+  }
+
+  if ((item.type ?? "").toUpperCase() === "NOTE" && String(payload?.kind ?? "").toUpperCase() === "BOARD_NOTE") {
+    return language === "vi"
+      ? `${actorName} da tao ghi chu nhom`
+      : `${actorName} created a group note`;
+  }
+
+  return null;
 }
 
 function buildPollSummaries(
@@ -586,6 +625,7 @@ export function Chat({
   onUnpinMessage,
   onVotePollMessage,
   onClosePollMessage,
+  canPinMessages = true,
   canManageGroupPoll = false,
   pinnedMessages = [],
   latestPinnedSummary = null,
@@ -649,7 +689,7 @@ export function Chat({
 
   const mappedFromServer = useMemo(() => {
     return messages
-      .filter((item) => !isPollVoteEventMessage(item))
+      .filter((item) => !isPollVoteEventMessage(item) && !isLegacyPinEventMessage(item))
       .map((item) =>
       mapToUiMessage(item, language, currentUserId, userProfileMap),
       );
@@ -1313,6 +1353,21 @@ export function Chat({
                   );
                 }
 
+                const serverMessage = messages.find((item) => item.id === message.id);
+                const boardSystemNotice = serverMessage
+                  ? getBoardSystemNotice(serverMessage, language, currentUserId, userProfileMap)
+                  : null;
+                if (boardSystemNotice) {
+                  return (
+                    <div key={message.id} className="my-3 flex justify-center">
+                      <div className="max-w-[90%] rounded-full border border-slate-600 bg-slate-800/80 px-4 py-1.5 text-center text-xs text-slate-200">
+                        <span>{boardSystemNotice}</span>
+                        <span className="ml-2 text-[10px] text-slate-400">{message.timestamp}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isMine = message.senderId === currentUserId;
                 const prev = localMessages[index - 1];
                 const next = localMessages[index + 1];
@@ -1329,7 +1384,6 @@ export function Chat({
                       : "You"
                     : `User ${message.senderId.slice(0, 8)}`);
                 const senderInitial = initials(senderDisplayName);
-                const serverMessage = messages.find((item) => item.id === message.id);
                 const pollSummary = serverMessage
                   ? pollSummaries.byMessageId.get(serverMessage.id)
                   : undefined;
@@ -1411,6 +1465,7 @@ export function Chat({
                       onReact={(messageId, emoji) => onReactMessage(messageId, emoji)}
                       onPin={(targetMessage) => onPinMessage?.(targetMessage)}
                       onUnpin={(targetMessage) => onUnpinMessage?.(targetMessage)}
+                      canPin={canPinMessages}
                       onVotePoll={(targetMessage, optionId) => onVotePollMessage?.(targetMessage, optionId)}
                       onClosePoll={(targetMessage) => onClosePollMessage?.(targetMessage)}
                     />

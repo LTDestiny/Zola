@@ -127,6 +127,12 @@ export type MessageItem = {
 };
 
 export type GroupSettings = {
+  pinnedMessages?: Array<{
+    sourceMessageId: string;
+    title: string;
+    preview: string;
+    createdAtMs: number;
+  }>;
   conversationId: string;
   name: string;
   avatar: string | null;
@@ -137,6 +143,10 @@ export type GroupSettings = {
   requireApprovalToJoin: boolean;
   allowMemberInvite: boolean;
   allowMemberEditGroupInfo?: boolean;
+  allowMemberPinBoardItems?: boolean;
+  allowMemberCreateNotes?: boolean;
+  allowMemberCreateReminders?: boolean;
+  allowMemberCreatePolls?: boolean;
   inviteCode?: string | null;
   isOwner: boolean;
   isAdmin: boolean;
@@ -149,6 +159,10 @@ export type UpdateGroupSettingsInput = {
   requireApprovalToJoin?: boolean;
   allowMemberInvite?: boolean;
   allowMemberEditGroupInfo?: boolean;
+  allowMemberPinBoardItems?: boolean;
+  allowMemberCreateNotes?: boolean;
+  allowMemberCreateReminders?: boolean;
+  allowMemberCreatePolls?: boolean;
   transferOwnerId?: string;
 };
 
@@ -403,6 +417,21 @@ export async function updateGroupSettings(
   const response = await httpClient.patch<ApiResponse<GroupSettings>>(
     `/api/v1/chat/conversations/${conversationId}/settings`,
     input,
+  );
+  return response.data;
+}
+
+export async function pinGroupMessage(conversationId: string, sourceMessageId: string) {
+  const response = await httpClient.post<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/pins`,
+    { sourceMessageId },
+  );
+  return response.data;
+}
+
+export async function unpinGroupMessage(conversationId: string, messageId: string) {
+  const response = await httpClient.delete<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
   );
   return response.data;
 }

@@ -68,6 +68,7 @@ export function ChatMessageRow({
   onReact,
   onPin,
   onUnpin,
+  canPin = true,
   onVotePoll,
   onClosePoll,
   onCompleteSchedule,
@@ -173,6 +174,7 @@ export function ChatMessageRow({
             onReact={onReact}
             onPin={onPin}
             onUnpin={onUnpin}
+            canPin={canPin}
             onToggleMore={() => setIsMenuPinned((prev) => !prev)}
           />
 

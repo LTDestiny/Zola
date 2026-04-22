@@ -160,9 +160,10 @@ export function GroupChat({
   });
   const [memberPermissionMap, setMemberPermissionMap] = useState({
     renameGroup: false,
-    pinBoardItems: true,
-    createReminder: true,
-    createPoll: true,
+    pinBoardItems: false,
+    createNote: false,
+    createReminder: false,
+    createPoll: false,
     sendMessage: true,
   });
   const avatarInputRef = useRef(null);
@@ -197,14 +198,28 @@ export function GroupChat({
   const canInviteMembers = canOpenManage || Boolean(settings?.allowMemberInvite);
   const canEditSecuritySettings = isOwner;
   const canEditGroupProfile = canOpenManage || Boolean(settings?.allowMemberEditGroupInfo);
+  const canPinBoardItems = canOpenManage || Boolean(settings?.allowMemberPinBoardItems);
+  const canCreateNotes = canOpenManage || Boolean(settings?.allowMemberCreateNotes);
+  const canCreateReminders = canOpenManage || Boolean(settings?.allowMemberCreateReminders);
+  const canCreatePolls = canOpenManage || Boolean(settings?.allowMemberCreatePolls);
   const resolvedConversationAvatar = resolveMediaUrl(conversation?.avatar ?? null);
 
   useEffect(() => {
     setMemberPermissionMap((prev) => ({
       ...prev,
       renameGroup: Boolean(settings?.allowMemberEditGroupInfo),
+      pinBoardItems: Boolean(settings?.allowMemberPinBoardItems),
+      createNote: Boolean(settings?.allowMemberCreateNotes),
+      createReminder: Boolean(settings?.allowMemberCreateReminders),
+      createPoll: Boolean(settings?.allowMemberCreatePolls),
     }));
-  }, [settings?.allowMemberEditGroupInfo]);
+  }, [
+    settings?.allowMemberEditGroupInfo,
+    settings?.allowMemberPinBoardItems,
+    settings?.allowMemberCreateNotes,
+    settings?.allowMemberCreateReminders,
+    settings?.allowMemberCreatePolls,
+  ]);
 
   useEffect(() => {
     const closeMemberActionMenu = () => {
@@ -970,11 +985,14 @@ export function GroupChat({
                             <span className="shrink-0">
                               <button
                                 type="button"
+                                disabled={!canPinBoardItems}
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  onUnpinPinnedMessage?.(item.sourceMessageId);
+                                  if (canPinBoardItems) {
+                                    onUnpinPinnedMessage?.(item.sourceMessageId);
+                                  }
                                 }}
-                                className="rounded-md border border-rose-300/40 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/20"
+                                className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
                               >
                                 {language === "vi" ? "Bo ghim" : "Unpin"}
                               </button>
@@ -1004,19 +1022,19 @@ export function GroupChat({
 
                   <button
                     type="button"
-                    disabled={!canOpenManage}
+                    disabled={!canCreatePolls}
                     onClick={() => setIsCreatePollOpen(true)}
-                    className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canOpenManage ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
+                    className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canCreatePolls ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
                   >
                     <Newspaper size={16} className="text-sky-200" />
                     <span>{language === "vi" ? "Tao binh chon" : "Create poll"}</span>
                   </button>
 
-                  {!canOpenManage && (
+                  {!canCreatePolls && (
                     <p className="text-[11px] text-amber-300">
                       {language === "vi"
-                        ? "Chi truong/pho nhom moi duoc tao binh chon"
-                        : "Only owner/admin can create polls"}
+                        ? "Ban khong duoc phep tao binh chon"
+                        : "You are not allowed to create polls"}
                     </p>
                   )}
 
@@ -1134,7 +1152,8 @@ export function GroupChat({
                   <button
                     type="button"
                     onClick={() => setIsCreateNoteOpen(true)}
-                    className="flex w-full items-center gap-2 rounded-xl border border-lime-400/30 bg-lime-500/10 px-3 py-2 text-left hover:bg-lime-500/15"
+                    disabled={!canCreateNotes}
+                    className={`flex w-full items-center gap-2 rounded-xl border border-lime-400/30 px-3 py-2 text-left ${canCreateNotes ? "bg-lime-500/10 hover:bg-lime-500/15" : "bg-slate-800/60 text-slate-500"}`}
                   >
                     <FileText size={16} className="text-lime-200" />
                     <span>{language === "vi" ? "Tao ghi chu nhom" : "Create group note"}</span>
@@ -1529,8 +1548,9 @@ export function GroupChat({
                 </h3>
                 <button
                   type="button"
+                  disabled={!canCreateNotes}
                   onClick={() => setIsCreateNoteOpen(true)}
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-sky-600 text-white hover:bg-sky-500"
+                  className={`grid h-8 w-8 place-items-center rounded-lg ${canCreateNotes ? "bg-sky-600 text-white hover:bg-sky-500" : "bg-slate-700 text-slate-500"}`}
                 >
                   <Plus size={16} />
                 </button>
@@ -1579,8 +1599,13 @@ export function GroupChat({
                             </button>
                             <button
                               type="button"
-                              onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
-                              className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
+                              disabled={!canPinBoardItems}
+                              onClick={() => {
+                                if (canPinBoardItems) {
+                                  onUnpinPinnedMessage?.(item.sourceId);
+                                }
+                              }}
+                              className={`rounded-md border border-rose-400/40 px-2 py-1 text-[11px] ${canPinBoardItems ? "text-rose-200 hover:bg-rose-500/10" : "text-slate-500"}`}
                             >
                               {language === "vi" ? "Bo ghim" : "Unpin"}
                             </button>
@@ -1596,15 +1621,16 @@ export function GroupChat({
                 <button
                   type="button"
                   onClick={() => setIsCreateNoteOpen(true)}
-                  className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+                  disabled={!canCreateNotes}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreateNotes ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
                 >
                   {language === "vi" ? "Tao ghi chu" : "Create note"}
                 </button>
                 <button
                   type="button"
-                  disabled={!canOpenManage}
+                  disabled={!canCreatePolls}
                   onClick={() => setIsCreatePollOpen(true)}
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canOpenManage ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreatePolls ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
                 >
                   {language === "vi" ? "Tao binh chon" : "Create poll"}
                 </button>
@@ -1628,8 +1654,9 @@ export function GroupChat({
                 </h3>
                 <button
                   type="button"
+                  disabled={!canCreateReminders}
                   onClick={() => setIsCreateReminderOpen(true)}
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-sky-600 text-white hover:bg-sky-500"
+                  className={`grid h-8 w-8 place-items-center rounded-lg ${canCreateReminders ? "bg-sky-600 text-white hover:bg-sky-500" : "bg-slate-700 text-slate-500"}`}
                 >
                   <Plus size={16} />
                 </button>
@@ -1652,8 +1679,9 @@ export function GroupChat({
               </div>
               <button
                 type="button"
+                disabled={!canCreateReminders}
                 onClick={() => setIsCreateReminderOpen(true)}
-                className="mt-3 w-full rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+                className={`mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold ${canCreateReminders ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
               >
                 {language === "vi" ? "Tao nhac hen" : "Create reminder"}
               </button>
@@ -1814,25 +1842,47 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.pinBoardItems}
-                        onChange={(event) =>
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
                             ...prev,
-                            pinBoardItems: event.target.checked,
-                          }))
-                        }
+                            pinBoardItems: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberPinBoardItems: checked });
+                        }}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Tao moi ghi chu, nhac hen" : "Create notes and reminders"}</span>
+                      <span>{language === "vi" ? "Tao moi ghi chu" : "Create notes"}</span>
+                      <input
+                        type="checkbox"
+                        checked={memberPermissionMap.createNote}
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setMemberPermissionMap((prev) => ({
+                            ...prev,
+                            createNote: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberCreateNotes: checked });
+                        }}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2">
+                      <span>{language === "vi" ? "Tao moi nhac hen" : "Create reminders"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createReminder}
-                        onChange={(event) =>
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
                             ...prev,
-                            createReminder: event.target.checked,
-                          }))
-                        }
+                            createReminder: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberCreateReminders: checked });
+                        }}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
@@ -1840,12 +1890,15 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createPoll}
-                        onChange={(event) =>
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
                             ...prev,
-                            createPoll: event.target.checked,
-                          }))
-                        }
+                            createPoll: checked,
+                          }));
+                          void onUpdateSettings?.({ allowMemberCreatePolls: checked });
+                        }}
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">

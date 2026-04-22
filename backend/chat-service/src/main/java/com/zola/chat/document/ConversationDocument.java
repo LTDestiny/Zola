@@ -41,8 +41,23 @@ public class ConversationDocument {
     @Field("allow_member_edit_group_info")
     private Boolean allowMemberEditGroupInfo;
 
+    @Field("allow_member_pin_board_items")
+    private Boolean allowMemberPinBoardItems;
+
+    @Field("allow_member_create_notes")
+    private Boolean allowMemberCreateNotes;
+
+    @Field("allow_member_create_reminders")
+    private Boolean allowMemberCreateReminders;
+
+    @Field("allow_member_create_polls")
+    private Boolean allowMemberCreatePolls;
+
     @Field("invite_code")
     private String inviteCode;
+
+    @Field("pinned_messages")
+    private List<PinnedMessageItem> pinnedMessages;
 
     @Field("last_message")
     private String lastMessage;
@@ -164,12 +179,52 @@ public class ConversationDocument {
         this.allowMemberEditGroupInfo = allowMemberEditGroupInfo;
     }
 
+    public boolean isAllowMemberPinBoardItems() {
+        return Boolean.TRUE.equals(allowMemberPinBoardItems);
+    }
+
+    public void setAllowMemberPinBoardItems(Boolean allowMemberPinBoardItems) {
+        this.allowMemberPinBoardItems = allowMemberPinBoardItems;
+    }
+
+    public boolean isAllowMemberCreateNotes() {
+        return Boolean.TRUE.equals(allowMemberCreateNotes);
+    }
+
+    public void setAllowMemberCreateNotes(Boolean allowMemberCreateNotes) {
+        this.allowMemberCreateNotes = allowMemberCreateNotes;
+    }
+
+    public boolean isAllowMemberCreateReminders() {
+        return Boolean.TRUE.equals(allowMemberCreateReminders);
+    }
+
+    public void setAllowMemberCreateReminders(Boolean allowMemberCreateReminders) {
+        this.allowMemberCreateReminders = allowMemberCreateReminders;
+    }
+
+    public boolean isAllowMemberCreatePolls() {
+        return Boolean.TRUE.equals(allowMemberCreatePolls);
+    }
+
+    public void setAllowMemberCreatePolls(Boolean allowMemberCreatePolls) {
+        this.allowMemberCreatePolls = allowMemberCreatePolls;
+    }
+
     public String getInviteCode() {
         return inviteCode;
     }
 
     public void setInviteCode(String inviteCode) {
         this.inviteCode = inviteCode;
+    }
+
+    public List<PinnedMessageItem> getPinnedMessages() {
+        return pinnedMessages == null ? Collections.emptyList() : pinnedMessages;
+    }
+
+    public void setPinnedMessages(List<PinnedMessageItem> pinnedMessages) {
+        this.pinnedMessages = pinnedMessages;
     }
 
     public String getLastMessage() {

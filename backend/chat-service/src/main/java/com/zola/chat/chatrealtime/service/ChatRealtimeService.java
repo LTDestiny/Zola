@@ -17,6 +17,7 @@ import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.document.ConversationDocument;
+import com.zola.chat.document.PinnedMessageItem;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
@@ -54,6 +55,7 @@ public class ChatRealtimeService {
     private static final char[] INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
     private static final int INVITE_CODE_LENGTH = 10;
     private static final int INVITE_CODE_MAX_ATTEMPTS = 8;
+    private static final int MAX_PINNED_MESSAGES = 3;
     private static final SecureRandom INVITE_CODE_RANDOM = new SecureRandom();
 
     private final PostgresConversationRepository conversationRepository;
@@ -133,6 +135,11 @@ public class ChatRealtimeService {
         conversation.setRequireApprovalToJoin(false);
         conversation.setAllowMemberInvite(true);
         conversation.setAllowMemberEditGroupInfo(false);
+        conversation.setAllowMemberPinBoardItems(false);
+        conversation.setAllowMemberCreateNotes(false);
+        conversation.setAllowMemberCreateReminders(false);
+        conversation.setAllowMemberCreatePolls(false);
+        conversation.setPinnedMessages(new ArrayList<>());
         conversation.setInviteCode(generateUniqueInviteCode());
         conversation.setLastMessage("");
         conversation.setLastMessageAt(now.toString());
@@ -372,6 +379,10 @@ public class ChatRealtimeService {
         Boolean requireApprovalToJoin,
         Boolean allowMemberInvite,
         Boolean allowMemberEditGroupInfo,
+        Boolean allowMemberPinBoardItems,
+        Boolean allowMemberCreateNotes,
+        Boolean allowMemberCreateReminders,
+        Boolean allowMemberCreatePolls,
         String transferOwnerId
     ) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
@@ -408,6 +419,10 @@ public class ChatRealtimeService {
             || requireApprovalToJoin != null
             || allowMemberInvite != null
             || allowMemberEditGroupInfo != null
+            || allowMemberPinBoardItems != null
+            || allowMemberCreateNotes != null
+            || allowMemberCreateReminders != null
+            || allowMemberCreatePolls != null
             || transferOwnerId != null) {
             if (!isOwner) {
                 throw new ForbiddenOperationException("Only owner can update security and invitation settings");
@@ -427,6 +442,22 @@ public class ChatRealtimeService {
             }
             if (allowMemberEditGroupInfo != null) {
                 conversation.setAllowMemberEditGroupInfo(allowMemberEditGroupInfo);
+                changed = true;
+            }
+            if (allowMemberPinBoardItems != null) {
+                conversation.setAllowMemberPinBoardItems(allowMemberPinBoardItems);
+                changed = true;
+            }
+            if (allowMemberCreateNotes != null) {
+                conversation.setAllowMemberCreateNotes(allowMemberCreateNotes);
+                changed = true;
+            }
+            if (allowMemberCreateReminders != null) {
+                conversation.setAllowMemberCreateReminders(allowMemberCreateReminders);
+                changed = true;
+            }
+            if (allowMemberCreatePolls != null) {
+                conversation.setAllowMemberCreatePolls(allowMemberCreatePolls);
                 changed = true;
             }
 
@@ -455,6 +486,70 @@ public class ChatRealtimeService {
             groupConversationRepository.save(conversation);
         }
 
+        return toGroupSettingsPayload(conversation, actorId);
+    }
+
+    @Transactional
+    public Map<String, Object> pinGroupMessage(String actorId, UUID conversationId, String sourceMessageId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+
+        if (!canPinBoardItems(conversation, actorId)) {
+            throw new ForbiddenOperationException("Only allowed members can pin messages");
+        }
+
+        String normalizedMessageId = sourceMessageId == null ? "" : sourceMessageId.trim();
+        if (normalizedMessageId.isBlank()) {
+            throw new IllegalArgumentException("sourceMessageId must not be blank");
+        }
+
+        MessageDocument targetMessage = messageRepository.findByConversationIdAndId(conversation.getId(), normalizedMessageId)
+            .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
+
+        List<PinnedMessageItem> pinnedMessages = new ArrayList<>(normalizePinnedMessages(conversation));
+        boolean alreadyPinned = pinnedMessages.stream()
+            .anyMatch(item -> normalizedMessageId.equals(item.getSourceMessageId()));
+        if (alreadyPinned) {
+            return toGroupSettingsPayload(conversation, actorId);
+        }
+        if (pinnedMessages.size() >= MAX_PINNED_MESSAGES) {
+            throw new ForbiddenOperationException("You can pin up to 3 messages");
+        }
+
+        PinnedMessageItem pinnedMessage = new PinnedMessageItem();
+        pinnedMessage.setSourceMessageId(normalizedMessageId);
+        pinnedMessage.setTitle(buildPinnedMessageTitle(targetMessage));
+        pinnedMessage.setPreview(buildPinnedMessagePreview(targetMessage));
+        pinnedMessage.setCreatedAt(Instant.now());
+        pinnedMessages.add(pinnedMessage);
+
+        conversation.setPinnedMessages(sortPinnedMessagesDescending(pinnedMessages));
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+        return toGroupSettingsPayload(conversation, actorId);
+    }
+
+    @Transactional
+    public Map<String, Object> unpinGroupMessage(String actorId, UUID conversationId, String sourceMessageId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(conversation, actorId);
+
+        if (!canPinBoardItems(conversation, actorId)) {
+            throw new ForbiddenOperationException("Only allowed members can pin messages");
+        }
+
+        String normalizedMessageId = sourceMessageId == null ? "" : sourceMessageId.trim();
+        if (normalizedMessageId.isBlank()) {
+            throw new IllegalArgumentException("sourceMessageId must not be blank");
+        }
+
+        List<PinnedMessageItem> nextPinnedMessages = normalizePinnedMessages(conversation).stream()
+            .filter(item -> !normalizedMessageId.equals(item.getSourceMessageId()))
+            .collect(Collectors.toCollection(ArrayList::new));
+
+        conversation.setPinnedMessages(sortPinnedMessagesDescending(nextPinnedMessages));
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
         return toGroupSettingsPayload(conversation, actorId);
     }
 
@@ -1471,10 +1566,70 @@ public class ChatRealtimeService {
         payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
         payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
         payload.put("allowMemberEditGroupInfo", conversation.isAllowMemberEditGroupInfo());
+        payload.put("allowMemberPinBoardItems", conversation.isAllowMemberPinBoardItems());
+        payload.put("allowMemberCreateNotes", conversation.isAllowMemberCreateNotes());
+        payload.put("allowMemberCreateReminders", conversation.isAllowMemberCreateReminders());
+        payload.put("allowMemberCreatePolls", conversation.isAllowMemberCreatePolls());
+        payload.put(
+            "pinnedMessages",
+            normalizePinnedMessages(conversation).stream()
+                .map(item -> Map.of(
+                    "sourceMessageId", Optional.ofNullable(item.getSourceMessageId()).orElse(""),
+                    "title", Optional.ofNullable(item.getTitle()).orElse("Pinned message"),
+                    "preview", Optional.ofNullable(item.getPreview()).orElse(""),
+                    "createdAtMs", Optional.ofNullable(item.getCreatedAt()).map(Instant::toEpochMilli).orElse(0L)
+                ))
+                .collect(Collectors.toList())
+        );
         payload.put("inviteCode", Optional.ofNullable(conversation.getInviteCode()).orElse(""));
         payload.put("isOwner", requesterId.equals(conversation.getOwnerId()));
         payload.put("isAdmin", normalizeAdmins(conversation).contains(requesterId));
         return payload;
+    }
+
+    private boolean canPinBoardItems(ConversationDocument conversation, String actorId) {
+        return actorId.equals(conversation.getOwnerId())
+            || normalizeAdmins(conversation).contains(actorId)
+            || conversation.isAllowMemberPinBoardItems();
+    }
+
+    private List<PinnedMessageItem> normalizePinnedMessages(ConversationDocument conversation) {
+        return sortPinnedMessagesDescending(
+            conversation.getPinnedMessages().stream()
+                .filter(item -> item != null && item.getSourceMessageId() != null && !item.getSourceMessageId().isBlank())
+                .collect(Collectors.toCollection(ArrayList::new))
+        );
+    }
+
+    private List<PinnedMessageItem> sortPinnedMessagesDescending(List<PinnedMessageItem> pinnedMessages) {
+        pinnedMessages.sort(Comparator.comparing(
+            (PinnedMessageItem item) -> Optional.ofNullable(item.getCreatedAt()).orElse(Instant.EPOCH)
+        ).reversed());
+        return pinnedMessages;
+    }
+
+    private String buildPinnedMessageTitle(MessageDocument message) {
+        String type = Optional.ofNullable(message.getType()).orElse("TEXT").trim().toUpperCase();
+        return switch (type) {
+            case "POLL" -> "Pinned poll";
+            case "NOTE" -> "Pinned note";
+            case "REMINDER" -> "Pinned reminder";
+            case "IMAGE" -> "Pinned image";
+            case "VIDEO" -> "Pinned video";
+            case "FILE" -> "Pinned file";
+            default -> "Pinned message";
+        };
+    }
+
+    private String buildPinnedMessagePreview(MessageDocument message) {
+        String content = Optional.ofNullable(message.getContent()).orElse("").trim().replaceAll("\\s+", " ");
+        if (!content.isBlank()) {
+            return content.length() > 140 ? content.substring(0, 140) : content;
+        }
+        if (message.getFileName() != null && !message.getFileName().isBlank()) {
+            return message.getFileName().trim();
+        }
+        return "";
     }
 
     private String ensureInviteCode(ConversationDocument conversation) {
