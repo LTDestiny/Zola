@@ -302,6 +302,8 @@ export function useSocket() {
       upsertConversation({
         id: conversationId,
         lastMessage: message.content,
+        lastMessageSenderId: message.senderId,
+        lastMessageType: message.type,
         lastMessageAt: message.createdAt,
       });
 
@@ -355,6 +357,8 @@ export function useSocket() {
           upsertConversation({
             id: conversationId,
             lastMessage: message.content,
+            lastMessageSenderId: message.senderId,
+            lastMessageType: message.type,
             lastMessageAt: message.createdAt,
           });
         }

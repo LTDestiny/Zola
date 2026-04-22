@@ -75,6 +75,8 @@ export const useChatStore = create<ChatState>((set) => ({
                     lastMessage: shouldPreserveLatestMessage
                         ? (existing?.lastMessage ?? item.lastMessage)
                         : item.lastMessage,
+                    lastMessageSenderId: item.lastMessageSenderId ?? existing?.lastMessageSenderId ?? null,
+                    lastMessageType: item.lastMessageType ?? existing?.lastMessageType ?? null,
                     lastMessageAt: shouldPreserveLatestMessage
                         ? (existing?.lastMessageAt ?? item.lastMessageAt)
                         : item.lastMessageAt,
@@ -112,6 +114,8 @@ export const useChatStore = create<ChatState>((set) => ({
                     name: patch.name ?? "Unknown",
                     avatar: patch.avatar ?? null,
                     lastMessage: patch.lastMessage ?? "",
+                    lastMessageSenderId: patch.lastMessageSenderId ?? null,
+                    lastMessageType: patch.lastMessageType ?? null,
                     lastMessageAt: patch.lastMessageAt ?? new Date().toISOString(),
                     unreadCount: patch.unreadCount ?? 0,
                     lastReadAt: patch.lastReadAt ?? null,

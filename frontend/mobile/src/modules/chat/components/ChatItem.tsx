@@ -14,11 +14,12 @@ import { colors, spacing, typography, borderRadius, shadows } from "@/shared/the
 type Props = {
   item: ConversationItem;
   displayName: string;
+  previewText: string;
   peerId?: string;
   onPress: () => void;
 };
 
-function ChatItemComponent({ item, displayName, peerId, onPress }: Props) {
+function ChatItemComponent({ item, displayName, previewText, peerId, onPress }: Props) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const isOnline = usePresenceStore(
@@ -90,7 +91,7 @@ function ChatItemComponent({ item, displayName, peerId, onPress }: Props) {
               ]}
               numberOfLines={1}
             >
-              {item.lastMessage || "Chưa có tin nhắn"}
+              {previewText}
             </Text>
             <UnreadBadge count={item.unreadCount ?? 0} />
           </View>

@@ -36,6 +36,8 @@ export type ConversationItem = {
   name: string;
   avatar?: string | null;
   lastMessage: string;
+  lastMessageSenderId?: string | null;
+  lastMessageType?: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
   lastReadAt?: string | null;
@@ -50,6 +52,10 @@ type ConversationPayload = Partial<ConversationItem> & {
   requesterUnreadCount?: number;
   requesterLastReadAt?: string | null;
   requesterLastReadMessageId?: string | null;
+  lastMessageSenderId?: string | null;
+  lastSenderId?: string | null;
+  lastMessageType?: string | null;
+  messageType?: string | null;
 };
 
 function normalizeConversationItem(item: ConversationPayload): ConversationItem {
@@ -59,6 +65,8 @@ function normalizeConversationItem(item: ConversationPayload): ConversationItem 
     name: item.name ?? "",
     avatar: item.avatar ?? null,
     lastMessage: item.lastMessage ?? "",
+    lastMessageSenderId: item.lastMessageSenderId ?? item.lastSenderId ?? null,
+    lastMessageType: item.lastMessageType ?? item.messageType ?? null,
     lastMessageAt: item.lastMessageAt ?? null,
     unreadCount: Number.isFinite(item.unreadCount)
       ? (item.unreadCount as number)

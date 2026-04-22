@@ -72,6 +72,60 @@ export function getConversationDisplayName(
     return conversation.name || "User";
 }
 
+function getLastMessageBody(conversation: ConversationItem): string {
+    const rawType = String(conversation.lastMessageType ?? "TEXT").toUpperCase();
+
+    if (rawType === "IMAGE") return "[Hình ảnh]";
+    if (rawType === "FILE") return "[File]";
+    if (rawType === "VIDEO") return "[Video]";
+    if (rawType === "AUDIO") return "[Âm thanh]";
+    if (rawType === "STICKER") return "[Sticker]";
+
+    const content = (conversation.lastMessage ?? "").trim();
+    return content || "Chưa có tin nhắn";
+}
+
+function getParticipantDisplayName(
+    userId: string,
+    currentUserId: string | null | undefined,
+    userProfileMap?: Record<string, UserProfile>,
+): string {
+    if (currentUserId && userId === currentUserId) {
+        return "Bạn";
+    }
+
+    if (userProfileMap?.[userId]?.fullName) {
+        return userProfileMap[userId].fullName;
+    }
+
+    if (userProfileCache[userId]?.fullName) {
+        return userProfileCache[userId].fullName;
+    }
+
+    return userId.length >= 8 ? `User ${userId.slice(0, 8)}` : userId;
+}
+
+export function getConversationLastMessagePreview(
+    conversation: ConversationItem,
+    currentUserId: string | null | undefined,
+    userProfileMap?: Record<string, UserProfile>,
+): string {
+    const body = getLastMessageBody(conversation);
+    const isGroup = conversation.type === "group" || (conversation.participants?.length ?? 0) > 2;
+
+    if (!isGroup) {
+        return body;
+    }
+
+    const senderId = conversation.lastMessageSenderId;
+    if (!senderId) {
+        return body;
+    }
+
+    const sender = getParticipantDisplayName(senderId, currentUserId, userProfileMap);
+    return `${sender}: ${body}`;
+}
+
 /**
  * Fetch and cache user profile
  */

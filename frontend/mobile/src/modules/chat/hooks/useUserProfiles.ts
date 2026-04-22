@@ -27,7 +27,14 @@ export function useUserProfiles(
         if (!currentUserId) return;
 
         const peerIds = conversations
-            .map((conv) => getPeerUserId(conv, currentUserId))
+            .flatMap((conv) => {
+                const isGroup = conv.type === "group" || (conv.participants?.length ?? 0) > 2;
+                if (isGroup) {
+                    return (conv.participants ?? []).filter((id) => id && id !== currentUserId);
+                }
+                const peer = getPeerUserId(conv, currentUserId);
+                return peer ? [peer] : [];
+            })
             .filter((id): id is string => !!id && !fetchedIds.has(id));
 
         // Remove duplicates

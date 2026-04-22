@@ -107,6 +107,8 @@ export function useMessages(conversationId: string) {
         upsertConversation({
           id: conversationId,
           lastMessage: response.data.content,
+          lastMessageSenderId: response.data.senderId,
+          lastMessageType: response.data.type,
           lastMessageAt: response.data.createdAt,
           unreadCount: 0,
         });

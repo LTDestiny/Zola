@@ -19,7 +19,7 @@ import { useUserProfiles } from "@/modules/chat/hooks/useUserProfiles";
 import { useChatStore } from "@/modules/chat/store/chatStore";
 import { usePresenceStore, setupPresenceAppStateListener } from "@/modules/chat/store/presenceStore";
 import { useAuthStore } from "@/modules/auth/authStore";
-import { getConversationDisplayName, getPeerUserId } from "@/modules/chat/utils/conversationUtils";
+import { getConversationDisplayName, getConversationLastMessagePreview, getPeerUserId } from "@/modules/chat/utils/conversationUtils";
 import type { ChatStackParamList } from "@/shared/types/navigation";
 import type { ConversationItem } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
@@ -136,11 +136,13 @@ export function ChatListScreen({ navigation }: Props) {
 
   const renderItem = useCallback(({ item }: { item: ConversationItem }) => {
     const displayName = getConversationDisplayName(item, userId, profileMap);
+    const previewText = getConversationLastMessagePreview(item, userId, profileMap);
     const peerId = getPeerUserId(item, userId);
     return (
       <ChatItem
         item={item}
         displayName={displayName}
+        previewText={previewText}
         peerId={peerId ?? undefined}
         onPress={() => {
           log("navigate", `Opening conversation: ${item.id.slice(0, 8)}`);

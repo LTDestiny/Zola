@@ -928,6 +928,59 @@ export function ChatPage() {
     return conversation.name || "User";
   };
 
+  const getParticipantDisplayName = (userId: string | null | undefined) => {
+    if (!userId) {
+      return language === "vi" ? "Nguoi dung" : "User";
+    }
+
+    const normalizedMyId = myUserIdRef.current ?? myProfile?.id ?? null;
+    if (normalizedMyId && userId === normalizedMyId) {
+      return language === "vi" ? "Bạn" : "You";
+    }
+
+    return userProfileMap[userId]?.fullName ??
+      (userId.length >= 8 ? `User ${userId.slice(0, 8)}` : userId);
+  };
+
+  const formatLastMessageBody = (conversation: ConversationItem) => {
+    const rawType = String(conversation.lastMessageType ?? "TEXT").toUpperCase();
+    if (rawType === "IMAGE") {
+      return language === "vi" ? "[Hình ảnh]" : "[Image]";
+    }
+    if (rawType === "FILE") {
+      return language === "vi" ? "[File]" : "[File]";
+    }
+    if (rawType === "VIDEO") {
+      return language === "vi" ? "[Video]" : "[Video]";
+    }
+    if (rawType === "AUDIO") {
+      return language === "vi" ? "[Âm thanh]" : "[Audio]";
+    }
+    if (rawType === "STICKER") {
+      return language === "vi" ? "[Sticker]" : "[Sticker]";
+    }
+
+    const content = (conversation.lastMessage ?? "").trim();
+    return content || "...";
+  };
+
+  const formatConversationLastPreview = (conversation: ConversationItem) => {
+    const mutedPrefix = groupPreferenceMap[conversation.id]?.muted ? "🔕 " : "";
+    const body = formatLastMessageBody(conversation);
+    const isGroupConversation = conversation.type === "group";
+
+    if (!isGroupConversation) {
+      return `${mutedPrefix}${body}`;
+    }
+
+    const senderId = conversation.lastMessageSenderId;
+    if (!senderId) {
+      return `${mutedPrefix}${body}`;
+    }
+
+    return `${mutedPrefix}${getParticipantDisplayName(senderId)}: ${body}`;
+  };
+
   const normalizeFriendshipStatus = (status: string | null | undefined) => {
     const normalized = (status ?? "").trim().toUpperCase();
     if (
@@ -3413,7 +3466,7 @@ export function ChatPage() {
             minute: "2-digit",
           }).format(new Date(conversation.lastMessageAt))
           : "--:--",
-        lastMessage: `${groupPreferenceMap[conversation.id]?.muted ? "🔕 " : ""}${conversation.lastMessage || "..."}`,
+        lastMessage: formatConversationLastPreview(conversation),
         unreadCount: conversation.unreadCount ?? 0,
         isPinned: Boolean(groupPreferenceMap[conversation.id]?.pinned),
         isOnline: isGroupConversation ? false : presence?.online ?? false,
@@ -3428,6 +3481,7 @@ export function ChatPage() {
     userProfileMap,
     groupPreferenceMap,
     myProfile?.id,
+    formatConversationLastPreview,
   ]);
 
   const fetchConversations = async (options?: { silent?: boolean }) => {
@@ -4004,6 +4058,8 @@ export function ChatPage() {
         upsertConversation({
           id: event.conversationId,
           lastMessage: normalizedMessage.content,
+          lastMessageSenderId: normalizedMessage.senderId,
+          lastMessageType: normalizedMessage.type ?? null,
           lastMessageAt: normalizedMessage.createdAt,
           unreadCount: unreadPatch,
         });
@@ -4607,6 +4663,8 @@ export function ChatPage() {
       upsertConversation({
         id: activeConversationId,
         lastMessage: recalledText,
+        lastMessageSenderId: myUserIdRef.current,
+        lastMessageType: "TEXT",
         lastMessageAt: new Date().toISOString(),
       });
     } catch (error) {

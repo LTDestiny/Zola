@@ -43,8 +43,11 @@ export type FriendContactItem = {
 
 export type ConversationItem = {
   id: string;
+  type?: "private" | "group";
   name: string;
   lastMessage: string;
+  lastMessageSenderId?: string | null;
+  lastMessageType?: MessageType | string | null;
   lastMessageAt: string | null;
   unreadCount: number;
   isPinned?: boolean;
