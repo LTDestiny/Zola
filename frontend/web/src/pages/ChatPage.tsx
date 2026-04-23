@@ -5563,6 +5563,17 @@ export function ChatPage() {
       ? groupSettingsMap[activeConversationForView.id] ?? null
       : null;
 
+  const canComposeInActiveConversation = activeConversationForView?.type === "group"
+    ? !activeGroupSettings?.onlyAdminsCanMessage ||
+      Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)
+    : true;
+
+  const composeBlockedMessage = activeConversationForView?.type === "group" && !canComposeInActiveConversation
+    ? language === "vi"
+      ? "Chỉ trưởng nhóm và phó nhóm được gửi tin nhắn vào nhóm này"
+      : "Only the owner and admins can send messages in this group"
+    : null;
+
   const activeGroupPreference =
     activeConversationForView?.type === "group"
       ? groupPreferenceMap[activeConversationForView.id] ?? {
@@ -6289,6 +6300,8 @@ export function ChatPage() {
                   onClosePollMessage={(targetMessage) => {
                     void onCloseGroupPoll(targetMessage);
                   }}
+                  canCompose={canComposeInActiveConversation}
+                  composeBlockedMessage={composeBlockedMessage}
                   canManageGroupPoll={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)}
                   pinnedMessages={activePinnedBoardItems}
                   latestPinnedSummary={latestPinnedSummary}
@@ -6342,6 +6355,7 @@ export function ChatPage() {
                 onReactMessage={onReactMessage}
                 onVotePollMessage={undefined}
                 onClosePollMessage={undefined}
+                canCompose
                 canManageGroupPoll={false}
                 pinnedMessages={[]}
                 latestPinnedSummary={null}

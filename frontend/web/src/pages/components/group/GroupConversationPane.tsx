@@ -49,6 +49,8 @@ type ChatProps = {
   onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
   onVotePollMessage?: (message: ChatMessage, optionId: string) => void | Promise<void>;
   onClosePollMessage?: (message: ChatMessage) => void | Promise<void>;
+  canCompose?: boolean;
+  composeBlockedMessage?: string | null;
   canPinMessages?: boolean;
   canManageGroupPoll?: boolean;
   pinnedMessages?: Array<{
@@ -657,6 +659,8 @@ export function Chat({
   onUnpinMessage,
   onVotePollMessage,
   onClosePollMessage,
+  canCompose = true,
+  composeBlockedMessage = null,
   canPinMessages = true,
   canManageGroupPoll = false,
   pinnedMessages = [],
@@ -997,6 +1001,9 @@ export function Chat({
   };
 
   const handleConfirmSendPreview = async () => {
+    if (!canCompose) {
+      return;
+    }
     const files = previewFiles.map((item) => item.file);
     if (files.length === 0) {
       return;
@@ -1030,6 +1037,9 @@ export function Chat({
   };
 
   const handleSendMessage = async () => {
+    if (!canCompose) {
+      return;
+    }
     const text = draftMessage.trim();
     if (!text) {
       return;
@@ -1083,6 +1093,9 @@ export function Chat({
   const handleKeyDown = async (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
+    if (!canCompose) {
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       await handleSendMessage();
@@ -1602,7 +1615,13 @@ export function Chat({
           </div>
         )}
 
-        {showEmojiPanel && (
+        {!canCompose && composeBlockedMessage && (
+          <div className="mb-2 rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100">
+            {composeBlockedMessage}
+          </div>
+        )}
+
+        {showEmojiPanel && canCompose && (
           <div
             ref={emojiPanelRef}
             className="absolute bottom-[calc(100%+8px)] left-3 z-20 rounded-2xl border border-[#335b89] bg-[#102d52] p-3 shadow-2xl sm:left-4"
@@ -1627,8 +1646,9 @@ export function Chat({
             <button
               type="button"
               ref={attachButtonRef}
+              disabled={!canCompose}
               onClick={() => setShowAttachMenu((prev) => !prev)}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f]"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-45"
               title={language === "vi" ? "Dinh kem" : "Attachment"}
               aria-label={language === "vi" ? "Dinh kem" : "Attachment"}
             >
@@ -1639,7 +1659,7 @@ export function Chat({
               type="file"
               className="hidden"
               multiple
-              disabled={isSending}
+              disabled={isSending || !canCompose}
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,image/*,.heic,.heif,.avif,.jfif,video/*,.mkv,.avi"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
@@ -1654,6 +1674,7 @@ export function Chat({
               type="file"
               className="hidden"
               multiple
+              disabled={!canCompose}
               accept="image/*,.heic,.heif,.avif,.jfif"
               onChange={(event) => {
                 const files = Array.from(event.target.files ?? []);
@@ -1667,6 +1688,7 @@ export function Chat({
               id={videoInputId}
               type="file"
               className="hidden"
+              disabled={!canCompose}
               accept="video/*,.mkv,.avi"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -1680,6 +1702,7 @@ export function Chat({
               id={mobileCameraInputId}
               type="file"
               className="hidden"
+              disabled={!canCompose}
               accept="image/*,video/*"
               capture="environment"
               onChange={(event) => {
@@ -1693,7 +1716,8 @@ export function Chat({
             <button
               type="button"
               ref={emojiButtonRef}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f]"
+              disabled={!canCompose}
+              className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-45"
               onClick={() => setShowEmojiPanel((prev) => !prev)}
               title={language === "vi" ? "Emoji" : "Emoji"}
             >
@@ -1703,11 +1727,14 @@ export function Chat({
 
           <textarea
             ref={composerTextareaRef}
-            className="max-h-24 min-h-9 resize-none rounded-2xl border border-[#335b89] bg-[#0a1b34] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#4aa5ff]"
+            disabled={!canCompose}
+            className="max-h-24 min-h-9 resize-none rounded-2xl border border-[#335b89] bg-[#0a1b34] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#4aa5ff] disabled:cursor-not-allowed disabled:opacity-60"
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
-              language === "vi" ? "Nhap tin nhan..." : "Type a message..."
+              canCompose
+                ? language === "vi" ? "Nhap tin nhan..." : "Type a message..."
+                : composeBlockedMessage ?? (language === "vi" ? "Chi truong/pho nhom duoc gui tin nhan" : "Only owner/admin can send messages")
             }
             onKeyDown={(event) => {
               void handleKeyDown(event);
@@ -1716,12 +1743,12 @@ export function Chat({
 
           <button
             type="button"
-            className="inline-flex h-9 items-center justify-center rounded-xl border border-[#335b89] px-3 text-sm font-semibold text-rose-300 hover:bg-rose-500/15"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-[#335b89] px-3 text-sm font-semibold text-rose-300 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-45"
             onClick={() => {
               void onQuickSendText?.("❤️");
             }}
             title={language === "vi" ? "Tim" : "Heart"}
-            disabled={isSending}
+            disabled={isSending || !canCompose}
           >
             <Heart size={16} />
           </button>
@@ -1732,7 +1759,7 @@ export function Chat({
             onClick={() => {
               void handleSendMessage();
             }}
-            disabled={isSending || !draftMessage.trim()}
+            disabled={isSending || !draftMessage.trim() || !canCompose}
           >
             <SendHorizontal size={16} />
             {editingMessage
@@ -1745,7 +1772,7 @@ export function Chat({
           </button>
         </div>
 
-        {showAttachMenu && (
+        {showAttachMenu && canCompose && (
           <div ref={attachMenuRef} className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
             <button
               type="button"
@@ -1848,6 +1875,7 @@ export function Chat({
                 onClick={() => {
                   void handleConfirmSendPreview();
                 }}
+                disabled={!canCompose}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
               >
                 {language === "vi" ? "Gui" : "Send"}
