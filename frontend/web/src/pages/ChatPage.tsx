@@ -6,6 +6,7 @@ import {
   addReaction,
   addGroupMember,
   addFriend,
+  approveGroupMember,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -31,6 +32,7 @@ import {
   removeFriend,
   removeGroupMember,
   readMessage,
+  rejectGroupMember,
   recallMessage,
   removeReaction,
   searchUserByEmail,
@@ -1156,13 +1158,20 @@ export function ChatPage() {
     );
 
     const memberSet = new Set(activeGroupMembers);
-    const idsToAdd = uniqueUserIds.filter((userId) => !memberSet.has(userId));
+    const pendingMemberSet = new Set(
+      (groupSettingsMap[activeConversationId]?.pendingParticipants ?? [])
+        .map((item) => item.userId?.trim())
+        .filter(Boolean),
+    );
+    const idsToAdd = uniqueUserIds.filter(
+      (userId) => !memberSet.has(userId) && !pendingMemberSet.has(userId),
+    );
 
     if (idsToAdd.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Nhung nguoi da chon da co trong nhom"
-          : "Selected users are already in this group",
+          ? "Nhung nguoi da chon da co trong nhom hoac dang cho duyet"
+          : "Selected users are already in the group or pending approval",
       );
       return false;
     }
@@ -1184,10 +1193,16 @@ export function ChatPage() {
       }
 
       if (failedCount === 0) {
+        const requireApproval =
+          groupSettingsMap[activeConversationId]?.requireApprovalToJoin ?? false;
         setBannerMessage(
-          language === "vi"
-            ? `Da them ${successCount} thanh vien`
-            : `Added ${successCount} member(s)`,
+          requireApproval
+            ? language === "vi"
+              ? `Da gui ${successCount} yeu cau cho duyet`
+              : `Submitted ${successCount} approval request(s)`
+            : language === "vi"
+              ? `Da them ${successCount} thanh vien`
+              : `Added ${successCount} member(s)`,
         );
         return true;
       }
@@ -1535,6 +1550,37 @@ export function ChatPage() {
         [activeConversationId]: result.data,
       }));
       setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onApprovePendingGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await approveGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da duyet thanh vien vao nhom" : "Member approved",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onRejectPendingGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+    try {
+      await rejectGroupMember(activeConversationId, userId);
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da tu choi yeu cau vao nhom" : "Join request rejected",
+      );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -3744,20 +3790,29 @@ export function ChatPage() {
       try {
         const result = await joinGroupByInviteCode(inviteCode);
         const joinedConversationId = result.data.id;
+        const joinedAsMember = (result.data.participants ?? []).includes(myProfile.id);
 
         await fetchConversations({ silent: true });
 
-        hasUserOpenedConversationRef.current = true;
-        manuallyOpenedConversationIdRef.current = joinedConversationId;
-        pendingReadSyncOnOpenRef.current = true;
         setActiveTab("messages");
-        setActiveConversationId(joinedConversationId);
-
-        setBannerMessage(
-          language === "vi"
-            ? "Da tham gia nhom tu link moi"
-            : "Joined group from invite link",
-        );
+        if (joinedAsMember) {
+          hasUserOpenedConversationRef.current = true;
+          manuallyOpenedConversationIdRef.current = joinedConversationId;
+          pendingReadSyncOnOpenRef.current = true;
+          setActiveConversationId(joinedConversationId);
+          setBannerMessage(
+            language === "vi"
+              ? "Da tham gia nhom tu link moi"
+              : "Joined group from invite link",
+          );
+        } else {
+          setActiveConversationId(null);
+          setBannerMessage(
+            language === "vi"
+              ? "Yeu cau tham gia nhom da duoc gui, vui long cho truong/pho nhom duyet"
+              : "Join request submitted. Please wait for admin approval",
+          );
+        }
       } catch (error) {
         setBannerMessage(toApiErrorMessage(error));
       } finally {
@@ -5499,6 +5554,10 @@ export function ChatPage() {
     ? activeConversationForView.participants ?? []
     : [];
 
+  const activeGroupPendingMembers = activeConversationForView?.type === "group"
+    ? groupSettingsMap[activeConversationForView.id]?.pendingParticipants ?? []
+    : [];
+
   const activeGroupSettings =
     activeConversationForView?.type === "group"
       ? groupSettingsMap[activeConversationForView.id] ?? null
@@ -6089,6 +6148,7 @@ export function ChatPage() {
                 conversation={activeConversationForView}
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
+                pendingMembers={activeGroupPendingMembers}
                 friendContacts={friendContacts}
                 pinnedMessages={activePinnedBoardItems}
                 onOpenPinnedMessage={(sourceMessageId: string) => {
@@ -6147,6 +6207,12 @@ export function ChatPage() {
                 isUpdatingGroupProfile={isUpdatingGroupProfile}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
+                }}
+                onApprovePendingMember={(userId: string) => {
+                  void onApprovePendingGroupMember(userId);
+                }}
+                onRejectPendingMember={(userId: string) => {
+                  void onRejectPendingGroupMember(userId);
                 }}
                 onToggleAdmin={(userId: string, admin: boolean) => {
                   void onToggleGroupAdmin(userId, admin);

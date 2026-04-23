@@ -59,6 +59,9 @@ public class ConversationDocument {
     @Field("pinned_messages")
     private List<PinnedMessageItem> pinnedMessages;
 
+    @Field("pending_members")
+    private List<PendingGroupMemberItem> pendingMembers;
+
     @Field("last_message")
     private String lastMessage;
 
@@ -225,6 +228,14 @@ public class ConversationDocument {
 
     public void setPinnedMessages(List<PinnedMessageItem> pinnedMessages) {
         this.pinnedMessages = pinnedMessages;
+    }
+
+    public List<PendingGroupMemberItem> getPendingMembers() {
+        return pendingMembers == null ? Collections.emptyList() : pendingMembers;
+    }
+
+    public void setPendingMembers(List<PendingGroupMemberItem> pendingMembers) {
+        this.pendingMembers = pendingMembers;
     }
 
     public String getLastMessage() {

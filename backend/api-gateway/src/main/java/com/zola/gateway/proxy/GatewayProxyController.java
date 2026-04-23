@@ -425,6 +425,36 @@ public class GatewayProxyController {
         );
     }
 
+    @PostMapping("/chat/conversations/{conversationId}/approve-member")
+    public ApiResponse<Object> approvePendingGroupMember(
+        @PathVariable("conversationId") String conversationId,
+        @Valid @RequestBody GroupMemberRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/approve-member",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/reject-member")
+    public ApiResponse<Object> rejectPendingGroupMember(
+        @PathVariable("conversationId") String conversationId,
+        @Valid @RequestBody GroupMemberRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/reject-member",
+            body,
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @PostMapping("/chat/conversations/{conversationId}/leave")
     public ApiResponse<Object> leaveGroupConversation(
         @PathVariable("conversationId") String conversationId,

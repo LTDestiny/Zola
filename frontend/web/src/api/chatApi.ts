@@ -127,6 +127,11 @@ export type MessageItem = {
 };
 
 export type GroupSettings = {
+  pendingParticipants?: Array<{
+    userId: string;
+    requestedByUserId?: string | null;
+    requestedAt?: string | null;
+  }>;
   pinnedMessages?: Array<{
     sourceMessageId: string;
     title: string;
@@ -379,6 +384,22 @@ export async function addGroupMember(conversationId: string, userId: string) {
 export async function removeGroupMember(conversationId: string, userId: string) {
   const response = await httpClient.post<ApiResponse<ConversationItem>>(
     `/api/v1/chat/conversations/${conversationId}/remove-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function approveGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/approve-member`,
+    { userId },
+  );
+  return response.data;
+}
+
+export async function rejectGroupMember(conversationId: string, userId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/reject-member`,
     { userId },
   );
   return response.data;
