@@ -1016,6 +1016,20 @@ export function ChatPage() {
     }
   }, [groupPreferenceMap]);
 
+  useEffect(() => {
+    if (!bannerMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setBannerMessage((current) => (current === bannerMessage ? "" : current));
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bannerMessage]);
+
   const refreshGroupSettings = useCallback(async (conversationId: string) => {
     try {
       const result = await getGroupSettings(conversationId);
@@ -3916,6 +3930,27 @@ export function ChatPage() {
         const selectedConversationId =
           useChatStore.getState().selectedConversationId ??
           activeConversationIdRef.current;
+
+        if (event.eventType === "GROUP_SETTINGS_UPDATED" && event.groupSettings) {
+          setGroupSettingsMap((prev) => ({
+            ...prev,
+            [event.conversationId]: event.groupSettings as GroupSettings,
+          }));
+          upsertConversation({
+            id: event.conversationId,
+            type: "group",
+            name: event.groupSettings.name,
+            avatar: event.groupSettings.avatar,
+            ownerId: event.groupSettings.ownerId,
+            admins: event.groupSettings.admins,
+            participants: event.groupSettings.participants,
+          });
+
+          if (typeof event.totalUnreadCount === "number") {
+            syncTotalUnread(event.totalUnreadCount);
+          }
+          return;
+        }
 
         const isTypingEvent =
           event.eventType === "TYPING" ||

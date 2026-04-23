@@ -109,6 +109,7 @@ public class ChatConversationController {
         if (result.systemMessage() != null) {
             emitUnreadSyncEvents(conversationId, result.systemMessage());
         }
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Member added", response);
     }
 
@@ -123,6 +124,7 @@ public class ChatConversationController {
         if (result.systemMessage() != null) {
             emitUnreadSyncEvents(conversationId, result.systemMessage());
         }
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Member removed", response);
     }
 
@@ -141,6 +143,7 @@ public class ChatConversationController {
         if (result.systemMessage() != null) {
             emitUnreadSyncEvents(conversationId, result.systemMessage());
         }
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Pending member approved", response);
     }
 
@@ -156,6 +159,7 @@ public class ChatConversationController {
             request.userId()
         );
         emitUnreadSyncEvents(conversationId, null);
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Pending member rejected", response);
     }
 
@@ -169,6 +173,7 @@ public class ChatConversationController {
         if (result.systemMessage() != null) {
             emitUnreadSyncEvents(conversationId, result.systemMessage());
         }
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Left group", response);
     }
 
@@ -183,6 +188,7 @@ public class ChatConversationController {
         if (result.systemMessage() != null) {
             emitUnreadSyncEvents(conversationId, result.systemMessage());
         }
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Joined group", response);
     }
 
@@ -193,6 +199,8 @@ public class ChatConversationController {
         @Valid @RequestBody GroupAdminRequest request
     ) {
         ConversationListItemResponse response = chatRealtimeService.setGroupAdmin(userId, conversationId, request.userId(), request.admin());
+        emitUnreadSyncEvents(conversationId, null);
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Group admin updated", response);
     }
 
@@ -230,6 +238,7 @@ public class ChatConversationController {
         );
 
         emitUnreadSyncEvents(conversationId, result.systemMessage());
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Group settings updated", result.settings());
     }
 
@@ -241,6 +250,7 @@ public class ChatConversationController {
     ) {
         Map<String, Object> response = chatRealtimeService.pinGroupMessage(userId, conversationId, request.sourceMessageId());
         emitUnreadSyncEvents(conversationId, null);
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Message pinned", response);
     }
 
@@ -252,6 +262,7 @@ public class ChatConversationController {
     ) {
         Map<String, Object> response = chatRealtimeService.unpinGroupMessage(userId, conversationId, messageId);
         emitUnreadSyncEvents(conversationId, null);
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
         return ApiResponse.ok("Message unpinned", response);
     }
 
@@ -567,6 +578,37 @@ public class ChatConversationController {
                 );
                 messagingTemplate.convertAndSendToUser(userId, "/queue/chat", newMessageEvent);
             }
+        }
+    }
+
+    private void emitGroupSettingsUpdatedEvent(UUID conversationId, String actorId, String... userIds) {
+        Set<String> uniqueUserIds = new LinkedHashSet<>();
+        for (String userId : userIds) {
+            if (userId == null || userId.isBlank()) {
+                continue;
+            }
+            uniqueUserIds.add(userId);
+        }
+
+        if (uniqueUserIds.isEmpty()) {
+            uniqueUserIds.addAll(chatRealtimeService.listConversationMembers(conversationId));
+        }
+
+        for (String userId : uniqueUserIds) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("eventType", "GROUP_SETTINGS_UPDATED");
+            payload.put("actorId", actorId);
+            payload.put("conversationId", conversationId.toString());
+            payload.put("typing", false);
+            payload.put("online", false);
+            payload.put("targetUserId", null);
+            payload.put("message", null);
+            payload.put("unreadCount", null);
+            payload.put("totalUnreadCount", null);
+            payload.put("lastMessage", null);
+            payload.put("lastMessageAt", null);
+            payload.put("groupSettings", chatRealtimeService.getGroupSettings(userId, conversationId));
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", payload);
         }
     }
 }
