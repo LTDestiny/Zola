@@ -1195,8 +1195,12 @@ export function ChatPage() {
       if (failedCount === 0) {
         const requireApproval =
           groupSettingsMap[activeConversationId]?.requireApprovalToJoin ?? false;
+        const actorCanApproveDirectly = Boolean(
+          groupSettingsMap[activeConversationId]?.isOwner ||
+          groupSettingsMap[activeConversationId]?.isAdmin,
+        );
         setBannerMessage(
-          requireApproval
+          requireApproval && !actorCanApproveDirectly
             ? language === "vi"
               ? `Da gui ${successCount} yeu cau cho duyet`
               : `Submitted ${successCount} approval request(s)`
