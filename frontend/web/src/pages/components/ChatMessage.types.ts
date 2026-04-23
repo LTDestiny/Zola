@@ -74,6 +74,7 @@ export interface ChatMessageProps {
   showAvatar?: boolean;
   showMeta?: boolean;
   menuPlacement?: "above" | "below";
+  onSenderClick?: (senderId: string) => void | Promise<void>;
   onSelectionMouseDown?: MouseEventHandler<HTMLDivElement>;
   onSelectionMouseEnter?: MouseEventHandler<HTMLDivElement>;
   onDelete: (messageId: string) => void | Promise<void>;

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageActions } from "./MessageActions";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, ChatMessageProps } from "./ChatMessage.types";
+import { resolveMediaUrl } from "../utils/mediaUrl";
 
 export type { ChatMessage, ChatMessageProps };
 
@@ -62,6 +63,7 @@ export function ChatMessageRow({
   showAvatar = true,
   showMeta = true,
   menuPlacement = "above",
+  onSenderClick,
   onSelectionMouseDown,
   onSelectionMouseEnter,
   onDelete,
@@ -106,6 +108,7 @@ export function ChatMessageRow({
     [isLongPressOpen, isMenuPinned, selectionModeActive],
   );
   const reactionSummary = useMemo(() => summarizeReactions(message.reactions), [message.reactions]);
+  const resolvedSenderAvatarUrl = resolveMediaUrl(senderAvatarUrl ?? null);
 
   const startLongPress = () => {
     if (selectionModeActive) {
@@ -145,28 +148,42 @@ export function ChatMessageRow({
         }}
       >
         {!isMine && showAvatar && (
-          senderAvatarUrl ? (
-            <img
-              src={senderAvatarUrl}
-              alt={senderName ?? recipientAvatar ?? "User"}
-              className="h-8 w-8 shrink-0 rounded-full object-cover"
-            />
+          resolvedSenderAvatarUrl ? (
+            <button
+              type="button"
+              onClick={() => onSenderClick?.(message.senderId)}
+              className="shrink-0 rounded-full"
+            >
+              <img
+                src={resolvedSenderAvatarUrl}
+                alt={senderName ?? recipientAvatar ?? "User"}
+                className="h-9 w-9 rounded-full object-cover object-center ring-1 ring-slate-300/25"
+              />
+            </button>
           ) : (
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-700 text-[10px] font-bold text-slate-100">
+            <button
+              type="button"
+              onClick={() => onSenderClick?.(message.senderId)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-700 text-[10px] font-bold text-slate-100"
+            >
               {recipientAvatar ?? "U"}
-            </div>
+            </button>
           )
         )}
 
-        {!isMine && !showAvatar && <div className="w-8 shrink-0" />}
+        {!isMine && !showAvatar && <div className="w-9 shrink-0" />}
 
         <div className={`relative flex flex-col ${isMine ? "items-end" : "items-start"}`}>
           <div className={`pointer-events-none absolute top-0 h-full w-56 ${isMine ? "-left-56" : "-right-56"}`} />
 
           {!isMine && showSenderName && (
-            <p className="mb-1 px-1 text-[11px] font-semibold text-slate-300">
+            <button
+              type="button"
+              onClick={() => onSenderClick?.(message.senderId)}
+              className="mb-1 px-1 text-[11px] font-semibold text-slate-300 transition hover:text-sky-300"
+            >
               {senderName ?? (language === "vi" ? "Thanh vien" : "Member")}
-            </p>
+            </button>
           )}
 
           <MessageActions

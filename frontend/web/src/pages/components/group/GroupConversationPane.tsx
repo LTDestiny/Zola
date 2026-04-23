@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Copy, FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, Search, SendHorizontal, Share2, Smile, Sparkles, Trash2, Undo2, Video, X } from "lucide-react";
-import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
-import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
-import { resolveMediaUrl } from "./utils/mediaUrl";
+import { type ConversationItem, type MessageItem, type UserProfile } from "../../../api/chatApi";
+import { MessageRenderer, type ChatMessage } from "../MessageRenderer";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
 
+// Ownership: group chat message pane. Keep group-only behavior here.
 const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
 const RECALL_WINDOW_MS = 5 * 60 * 1000;
@@ -19,7 +20,7 @@ function initials(name: string) {
     .join("");
 }
 
-type ChatProps = {
+type GroupConversationPaneProps = {
   language: "vi" | "en";
   activeConversation: ConversationItem | null;
   activeConversationOnline: boolean;
@@ -27,6 +28,10 @@ type ChatProps = {
   activeConversationPinned?: boolean;
   headerUnreadBadgeCount?: number;
   userProfileMap?: Record<string, UserProfile>;
+  onOpenUserProfile?: (userId: string) => void;
+  highlightAdminMessages?: boolean;
+  ownerUserId?: string | null;
+  adminUserIds?: string[];
   showGroupPanelToggle?: boolean;
   isGroupPanelOpen?: boolean;
   onToggleGroupPanel?: () => void;
@@ -80,6 +85,8 @@ type ChatProps = {
   onCancelUpload: (localId: string) => void;
   isSending: boolean;
   typingText: string | null;
+  allowComposer?: boolean;
+  composerDisabledMessage?: string | null;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
   onLoadOlderMessages: () => void | Promise<void>;
@@ -654,7 +661,7 @@ function isInteractiveTarget(target: EventTarget | null) {
   return Boolean(element.closest(interactiveSelector));
 }
 
-export function Chat({
+export function GroupConversationPane({
   language,
   activeConversation,
   activeConversationOnline,
@@ -662,6 +669,10 @@ export function Chat({
   activeConversationPinned = false,
   headerUnreadBadgeCount = 0,
   userProfileMap = {},
+  onOpenUserProfile,
+  highlightAdminMessages = false,
+  ownerUserId = null,
+  adminUserIds = [],
   showGroupPanelToggle = false,
   isGroupPanelOpen = true,
   onToggleGroupPanel,
@@ -694,11 +705,13 @@ export function Chat({
   onCancelUpload,
   isSending,
   typingText,
+  allowComposer = true,
+  composerDisabledMessage = null,
   hasMoreMessages,
   isLoadingMoreMessages,
   onLoadOlderMessages,
   onViewportBottomChange,
-}: ChatProps) {
+}: GroupConversationPaneProps) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -1446,6 +1459,10 @@ export function Chat({
   };
 
   const focusComposerFromChat = (target: EventTarget | null) => {
+    if (!allowComposer) {
+      return;
+    }
+
     const element = target instanceof HTMLElement ? target : null;
     if (!element) {
       return;
@@ -1840,14 +1857,28 @@ export function Chat({
                 const showAvatar = !isMine && !sameAsNext;
                 const showMeta = !sameAsNext;
                 const senderProfile = userProfileMap[message.senderId];
-                const senderDisplayName =
+                const baseSenderDisplayName =
                   senderProfile?.fullName ??
                   (message.senderId === currentUserId
                     ? language === "vi"
                       ? "Ban"
                       : "You"
                     : `User ${message.senderId.slice(0, 8)}`);
-                const senderInitial = initials(senderDisplayName);
+                const senderRoleLabel = highlightAdminMessages && !isMine
+                  ? message.senderId === ownerUserId
+                    ? language === "vi"
+                      ? "Truong nhom"
+                      : "Owner"
+                    : adminUserIds.includes(message.senderId)
+                      ? language === "vi"
+                        ? "Pho nhom"
+                        : "Admin"
+                      : ""
+                  : "";
+                const senderDisplayName = senderRoleLabel
+                  ? `${baseSenderDisplayName} • ${senderRoleLabel}`
+                  : baseSenderDisplayName;
+                const senderInitial = initials(baseSenderDisplayName);
                 const serverMessage = messages.find((item) => item.id === message.id);
                 const pollSummary = serverMessage
                   ? pollSummaries.byMessageId.get(serverMessage.id)
@@ -1901,6 +1932,7 @@ export function Chat({
                       showSenderName={shouldShowSenderName}
                       showAvatar={showAvatar}
                       showMeta={showMeta}
+                      onSenderClick={(senderId) => onOpenUserProfile?.(senderId)}
                       selectionModeActive={isMessageSelectionMode}
                       isSelected={isSelected}
                       onSelectionMouseDown={(event) => beginPointerMessageSelection(event, message.id)}
@@ -1965,7 +1997,16 @@ export function Chat({
           </div>
         )}
 
-        {pendingUploads.length > 0 && (
+        {!allowComposer && !isMessageSelectionMode && (
+          <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {composerDisabledMessage ??
+              (language === "vi"
+                ? "Ban khong the nhan tin trong nhom nay."
+                : "You cannot send messages in this group.")}
+          </div>
+        )}
+
+        {allowComposer && pendingUploads.length > 0 && (
           <div className="mb-2 space-y-1.5">
             {pendingUploads.map((item) => (
               <div key={item.localId} className="rounded-lg border border-slate-600 bg-slate-800/85 px-3 py-2">
@@ -2007,7 +2048,7 @@ export function Chat({
           </div>
         )}
 
-        {!isMessageSelectionMode && replyingTo && (
+        {allowComposer && !isMessageSelectionMode && replyingTo && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-sky-200">
@@ -2027,7 +2068,7 @@ export function Chat({
           </div>
         )}
 
-        {!isMessageSelectionMode && editingMessage && (
+        {allowComposer && !isMessageSelectionMode && editingMessage && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-amber-200">
@@ -2139,7 +2180,7 @@ export function Chat({
           </div>
         )}
 
-        {!isMessageSelectionMode && showEmojiPanel && (
+        {allowComposer && !isMessageSelectionMode && showEmojiPanel && (
           <div
             ref={emojiPanelRef}
             className="absolute bottom-[calc(100%+8px)] left-3 z-20 rounded-2xl border border-[#335b89] bg-[#102d52] p-3 shadow-2xl sm:left-4"
@@ -2159,7 +2200,7 @@ export function Chat({
           </div>
         )}
 
-        {!isMessageSelectionMode && (
+        {allowComposer && !isMessageSelectionMode && (
         <div className="grid grid-cols-[auto_1fr_auto_auto] items-end gap-1.5 rounded-2xl border border-[#335b89] bg-[#0f2747] p-1.5">
           <div className="flex items-center gap-1">
             <button
@@ -2284,7 +2325,7 @@ export function Chat({
         </div>
         )}
 
-        {!isMessageSelectionMode && showAttachMenu && (
+        {allowComposer && !isMessageSelectionMode && showAttachMenu && (
           <div ref={attachMenuRef} className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
             <button
               type="button"

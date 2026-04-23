@@ -265,8 +265,23 @@ public class GatewayProxyController {
             null,
             Map.of("X-User-Id", userId)
         );
-        emitSyncEvent(userId, "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + body.addresseeId() + "\"}");
-        emitSyncEvent(body.addresseeId().toString(), "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + userId + "\"}");
+
+        String status = null;
+        if (response.data() instanceof Map<?, ?> data) {
+            Object rawStatus = data.get("status");
+            if (rawStatus != null) {
+                status = String.valueOf(rawStatus).trim().toUpperCase();
+            }
+        }
+
+        if ("ACCEPTED".equals(status)) {
+            ensureDirectConversationForFriendship(response);
+            emitFriendshipSync(response, "FRIENDSHIP_REQUEST_ACCEPTED");
+        } else if ("PENDING".equals(status)) {
+            emitSyncEvent(userId, "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + body.addresseeId() + "\"}");
+            emitSyncEvent(body.addresseeId().toString(), "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + userId + "\"}");
+        }
+
         return response;
     }
 
@@ -275,6 +290,17 @@ public class GatewayProxyController {
         String userId = currentUserId(request);
         return getMap(
             userServiceUrl + "/api/v1/users/friendships/pending",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @GetMapping("/users/friendships/pending/sent")
+    public ApiResponse<Object> sentPendingFriendRequests(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            userServiceUrl + "/api/v1/users/friendships/pending/sent",
             null,
             null,
             Map.of("X-User-Id", userId)
@@ -314,6 +340,48 @@ public class GatewayProxyController {
         );
     }
 
+    @GetMapping("/users/friendships/blocks")
+    public ApiResponse<Object> blockedUsers(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            userServiceUrl + "/api/v1/users/friendships/blocks",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/users/friendships/block")
+    public ApiResponse<Object> blockUser(
+        @Valid @RequestBody BlockUserRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/block",
+            body,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+        emitBlockSync(response, "FRIENDSHIP_BLOCKED");
+        return response;
+    }
+
+    @DeleteMapping("/users/friendships/block/{targetUserId}")
+    public ApiResponse<Object> unblockUser(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = deleteMap(
+            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+            Map.of("targetUserId", targetUserId),
+            Map.of("X-User-Id", userId)
+        );
+        emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
+        return response;
+    }
+
     @PostMapping("/users/friendships/{friendshipId}/accept")
     public ApiResponse<Object> acceptFriendRequest(
         @PathVariable("friendshipId") String friendshipId,
@@ -343,6 +411,22 @@ public class GatewayProxyController {
             Map.of("X-User-Id", userId)
         );
         emitFriendshipSync(response, "FRIENDSHIP_REQUEST_DECLINED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/{friendshipId}/cancel")
+    public ApiResponse<Object> cancelFriendRequest(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
+            Map.of(),
+            Map.of("friendshipId", friendshipId),
+            Map.of("X-User-Id", userId)
+        );
+        emitFriendshipSync(response, "FRIENDSHIP_REQUEST_CANCELLED");
         return response;
     }
 
@@ -840,6 +924,22 @@ public class GatewayProxyController {
         emitSyncEvent(addressee, eventType, payload);
     }
 
+    private void emitBlockSync(ApiResponse<Object> response, String eventType) {
+        if (!(response.data() instanceof Map<?, ?> data)) {
+            return;
+        }
+
+        Object blockerId = data.get("blockerId");
+        Object blockedUserId = data.get("blockedUserId");
+        if (!(blockerId instanceof String blocker) || !(blockedUserId instanceof String blockedUser)) {
+            return;
+        }
+
+        String payload = "{\"blockerId\":\"" + blocker + "\",\"blockedUserId\":\"" + blockedUser + "\"}";
+        emitSyncEvent(blocker, eventType, payload);
+        emitSyncEvent(blockedUser, eventType, payload);
+    }
+
     private void ensureDirectConversationForFriendship(ApiResponse<Object> response) {
         if (!(response.data() instanceof Map<?, ?> data)) {
             return;
@@ -944,6 +1044,9 @@ public class GatewayProxyController {
     public record AddFriendRequest(@NotNull java.util.UUID addresseeId) {
     }
 
+    public record BlockUserRequest(@NotNull java.util.UUID targetUserId) {
+    }
+
     public record SendMessageRequest(
         String type,
         @NotBlank String content,
@@ -981,8 +1084,14 @@ public class GatewayProxyController {
     public record UpdateGroupSettingsRequest(
         String name,
         String avatar,
+        Boolean allowMembersEditGroupProfile,
+        Boolean allowMembersPinBoardItems,
+        Boolean allowMembersCreateNotes,
+        Boolean allowMembersCreatePolls,
+        Boolean allowMembersSendMessages,
         Boolean onlyAdminsCanMessage,
         Boolean requireApprovalToJoin,
+        Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         String transferOwnerId
     ) {

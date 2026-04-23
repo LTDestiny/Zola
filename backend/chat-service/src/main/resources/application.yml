@@ -37,6 +37,9 @@ jwt:
   issuer: zola-auth-service
 
 app:
+  services:
+    auth-url: ${AUTH_SERVICE_URL:http://auth-service:8081}
+    user-url: ${USER_SERVICE_URL:http://user-service:8082}
   chat:
     edit-window-seconds: ${CHAT_EDIT_WINDOW_SECONDS:900}
     recall-window-seconds: ${CHAT_RECALL_WINDOW_SECONDS:86400}

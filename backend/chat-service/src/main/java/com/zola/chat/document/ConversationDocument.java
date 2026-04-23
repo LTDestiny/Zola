@@ -32,8 +32,26 @@ public class ConversationDocument {
     @Field("only_admins_can_message")
     private Boolean onlyAdminsCanMessage;
 
+    @Field("allow_members_edit_group_profile")
+    private Boolean allowMembersEditGroupProfile;
+
+    @Field("allow_members_pin_board_items")
+    private Boolean allowMembersPinBoardItems;
+
+    @Field("allow_members_create_notes")
+    private Boolean allowMembersCreateNotes;
+
+    @Field("allow_members_create_polls")
+    private Boolean allowMembersCreatePolls;
+
+    @Field("allow_members_send_messages")
+    private Boolean allowMembersSendMessages;
+
     @Field("require_approval_to_join")
     private Boolean requireApprovalToJoin;
+
+    @Field("highlight_admin_messages")
+    private Boolean highlightAdminMessages;
 
     @Field("allow_member_invite")
     private Boolean allowMemberInvite;
@@ -137,12 +155,64 @@ public class ConversationDocument {
         this.onlyAdminsCanMessage = onlyAdminsCanMessage;
     }
 
+    public boolean isAllowMembersEditGroupProfile() {
+        return allowMembersEditGroupProfile == null || allowMembersEditGroupProfile;
+    }
+
+    public void setAllowMembersEditGroupProfile(Boolean allowMembersEditGroupProfile) {
+        this.allowMembersEditGroupProfile = allowMembersEditGroupProfile;
+    }
+
+    public boolean isAllowMembersPinBoardItems() {
+        return allowMembersPinBoardItems == null || allowMembersPinBoardItems;
+    }
+
+    public void setAllowMembersPinBoardItems(Boolean allowMembersPinBoardItems) {
+        this.allowMembersPinBoardItems = allowMembersPinBoardItems;
+    }
+
+    public boolean isAllowMembersCreateNotes() {
+        return allowMembersCreateNotes == null || allowMembersCreateNotes;
+    }
+
+    public void setAllowMembersCreateNotes(Boolean allowMembersCreateNotes) {
+        this.allowMembersCreateNotes = allowMembersCreateNotes;
+    }
+
+    public boolean isAllowMembersCreatePolls() {
+        return allowMembersCreatePolls == null || allowMembersCreatePolls;
+    }
+
+    public void setAllowMembersCreatePolls(Boolean allowMembersCreatePolls) {
+        this.allowMembersCreatePolls = allowMembersCreatePolls;
+    }
+
+    public boolean isAllowMembersSendMessages() {
+        if (allowMembersSendMessages != null) {
+            return allowMembersSendMessages;
+        }
+        return !Boolean.TRUE.equals(onlyAdminsCanMessage);
+    }
+
+    public void setAllowMembersSendMessages(Boolean allowMembersSendMessages) {
+        this.allowMembersSendMessages = allowMembersSendMessages;
+        this.onlyAdminsCanMessage = Boolean.FALSE.equals(allowMembersSendMessages) ? true : Boolean.FALSE;
+    }
+
     public boolean isRequireApprovalToJoin() {
         return Boolean.TRUE.equals(requireApprovalToJoin);
     }
 
     public void setRequireApprovalToJoin(Boolean requireApprovalToJoin) {
         this.requireApprovalToJoin = requireApprovalToJoin;
+    }
+
+    public boolean isHighlightAdminMessages() {
+        return Boolean.TRUE.equals(highlightAdminMessages);
+    }
+
+    public void setHighlightAdminMessages(Boolean highlightAdminMessages) {
+        this.highlightAdminMessages = highlightAdminMessages;
     }
 
     public boolean isAllowMemberInvite() {

@@ -185,8 +185,15 @@ public class ChatConversationController {
             conversationId,
             request.name(),
             request.avatar(),
-            request.onlyAdminsCanMessage(),
+            request.allowMembersEditGroupProfile(),
+            request.allowMembersPinBoardItems(),
+            request.allowMembersCreateNotes(),
+            request.allowMembersCreatePolls(),
+            request.allowMembersSendMessages() != null
+                ? request.allowMembersSendMessages()
+                : (request.onlyAdminsCanMessage() == null ? null : !request.onlyAdminsCanMessage()),
             request.requireApprovalToJoin(),
+            request.highlightAdminMessages(),
             request.allowMemberInvite(),
             request.transferOwnerId()
         );
@@ -420,8 +427,14 @@ public class ChatConversationController {
     public record UpdateGroupSettingsRequest(
         String name,
         String avatar,
+        Boolean allowMembersEditGroupProfile,
+        Boolean allowMembersPinBoardItems,
+        Boolean allowMembersCreateNotes,
+        Boolean allowMembersCreatePolls,
+        Boolean allowMembersSendMessages,
         Boolean onlyAdminsCanMessage,
         Boolean requireApprovalToJoin,
+        Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         String transferOwnerId
     ) {

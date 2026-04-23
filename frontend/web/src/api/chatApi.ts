@@ -18,6 +18,10 @@ export type UserProfile = {
   avatarUrl: string | null;
   gender: string | null;
   birthdate: string | null;
+  hideBirthdate?: boolean | null;
+  hideEmail?: boolean | null;
+  hidePhone?: boolean | null;
+  allowStrangerMessages?: boolean | null;
   isOnline?: boolean | null;
   lastSeenAt?: string | null;
 };
@@ -28,6 +32,10 @@ export type UpdateUserProfileInput = {
   avatarUrl?: string | null;
   gender?: string | null;
   birthdate?: string | null;
+  hideBirthdate?: boolean | null;
+  hideEmail?: boolean | null;
+  hidePhone?: boolean | null;
+  allowStrangerMessages?: boolean | null;
 };
 
 export type ConversationItem = {
@@ -99,6 +107,19 @@ export type FriendContactItem = {
   userId: string;
 };
 
+export type BlockedUserItem = {
+  userId: string;
+};
+
+export type FriendshipStatusPayload = {
+  friendshipId?: string;
+  status: string;
+  requesterId?: string;
+  addresseeId?: string;
+  blockedByMe?: boolean;
+  blockedByPeer?: boolean;
+};
+
 export type UserPresenceItem = {
   userId: string;
   online: boolean;
@@ -133,8 +154,14 @@ export type GroupSettings = {
   ownerId: string | null;
   admins: string[];
   participants: string[];
+  allowMembersEditGroupProfile: boolean;
+  allowMembersPinBoardItems: boolean;
+  allowMembersCreateNotes: boolean;
+  allowMembersCreatePolls: boolean;
+  allowMembersSendMessages: boolean;
   onlyAdminsCanMessage: boolean;
   requireApprovalToJoin: boolean;
+  highlightAdminMessages: boolean;
   allowMemberInvite: boolean;
   inviteCode?: string | null;
   isOwner: boolean;
@@ -144,8 +171,14 @@ export type GroupSettings = {
 export type UpdateGroupSettingsInput = {
   name?: string;
   avatar?: string | null;
+  allowMembersEditGroupProfile?: boolean;
+  allowMembersPinBoardItems?: boolean;
+  allowMembersCreateNotes?: boolean;
+  allowMembersCreatePolls?: boolean;
+  allowMembersSendMessages?: boolean;
   onlyAdminsCanMessage?: boolean;
   requireApprovalToJoin?: boolean;
+  highlightAdminMessages?: boolean;
   allowMemberInvite?: boolean;
   transferOwnerId?: string;
 };
@@ -230,7 +263,7 @@ export async function getUsersPresence(userIds: string[]) {
 }
 
 export async function getFriendshipStatus(targetUserId: string) {
-  const response = await httpClient.get<ApiResponse<{ status: string }>>(
+  const response = await httpClient.get<ApiResponse<FriendshipStatusPayload>>(
     "/api/v1/users/friendships/status",
     {
       params: { targetUserId },
@@ -252,6 +285,13 @@ export async function getPendingFriendRequests() {
   const response = await httpClient.get<
     ApiResponse<PendingFriendRequestItem[]>
   >("/api/v1/users/friendships/pending");
+  return response.data;
+}
+
+export async function getSentPendingFriendRequests() {
+  const response = await httpClient.get<
+    ApiResponse<PendingFriendRequestItem[]>
+  >("/api/v1/users/friendships/pending/sent");
   return response.data;
 }
 
@@ -277,6 +317,28 @@ export async function getFriends() {
   return response.data;
 }
 
+export async function getBlockedUsers() {
+  const response = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
+    "/api/v1/users/friendships/blocks",
+  );
+  return response.data;
+}
+
+export async function blockUser(targetUserId: string) {
+  const response = await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+    "/api/v1/users/friendships/block",
+    { targetUserId },
+  );
+  return response.data;
+}
+
+export async function unblockUser(targetUserId: string) {
+  const response = await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
+    `/api/v1/users/friendships/block/${targetUserId}`,
+  );
+  return response.data;
+}
+
 export async function acceptFriendRequest(friendshipId: string) {
   const response = await httpClient.post<
     ApiResponse<{ friendshipId: string; status: string }>
@@ -288,6 +350,13 @@ export async function declineFriendRequest(friendshipId: string) {
   const response = await httpClient.post<
     ApiResponse<{ friendshipId: string; status: string }>
   >(`/api/v1/users/friendships/${friendshipId}/decline`, {});
+  return response.data;
+}
+
+export async function cancelFriendRequest(friendshipId: string) {
+  const response = await httpClient.post<
+    ApiResponse<{ friendshipId: string; status: string }>
+  >(`/api/v1/users/friendships/${friendshipId}/cancel`, {});
   return response.data;
 }
 

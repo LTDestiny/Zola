@@ -6,10 +6,50 @@
   --shadow-card: 0 10px 24px rgba(33, 59, 94, 0.08);
 }
 
+:root {
+  --color-zola-page: #09111d;
+  --color-zola-sidebar: #0d1b2d;
+  --color-zola-surface: #142841;
+  --color-zola-surface-muted: #eff5fd;
+  --color-zola-panel: #11243a;
+  --color-zola-panel-hover: #18324f;
+  --color-zola-panel-strong: #1f4f82;
+  --color-zola-panel-soft: #ebf3ff;
+  --color-zola-accent: #2a86ff;
+  --color-zola-accent-soft: #67b6ff;
+  --color-zola-accent-muted: rgba(42, 134, 255, 0.16);
+  --color-zola-border: rgba(148, 184, 228, 0.22);
+  --color-zola-border-strong: rgba(148, 184, 228, 0.16);
+  --color-zola-card-border: #d7e4f5;
+  --color-zola-card-bg: #f8fbff;
+  --color-zola-card-muted: #eef5ff;
+  --color-zola-text: #0f2138;
+  --color-zola-text-soft: #5f7592;
+  --color-zola-success: #14b87a;
+  --color-zola-warning: #f59e0b;
+  --color-zola-danger: #ef5d68;
+}
+
 @layer base {
+  html {
+    color-scheme: light;
+  }
+
   body {
-    @apply m-0 bg-zola-sky text-slate-800 antialiased;
+    @apply m-0 text-slate-800 antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(73, 153, 255, 0.12), transparent 26%),
+      linear-gradient(180deg, #f4f8ff 0%, #e7eef9 100%);
     font-family: "Inter", "Roboto", "Segoe UI", "Tahoma", sans-serif;
+  }
+
+  * {
+    scrollbar-color: rgba(107, 149, 198, 0.5) transparent;
+  }
+
+  ::selection {
+    background: rgba(42, 134, 255, 0.2);
+    color: #06213f;
   }
 
   button,
@@ -43,6 +83,12 @@
   button:disabled,
   input:disabled {
     cursor: not-allowed;
+  }
+
+  input,
+  textarea,
+  select {
+    accent-color: var(--color-zola-accent);
   }
 }
 

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { Pin, Search, UserPlus, UsersRound } from "lucide-react";
+import { ChevronLeft, CircleAlert, Pin, Search, UserPlus, UsersRound } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHAT LIST COMPONENT - With presence indicators
@@ -17,9 +17,13 @@ export interface ChatListItem {
     isPinned?: boolean;
     presenceLabel?: string;
     peerId?: string;
+    variant?: "default" | "stranger-inbox";
+    tagLabel?: string;
+    sortTimeMs?: number;
 }
 
 export interface ChatListProps {
+    language: "vi" | "en";
     chats: ChatListItem[];
     selectedChatId: string | null;
     searchText: string;
@@ -27,6 +31,11 @@ export interface ChatListProps {
     onSelectChat: (chatId: string) => void;
     onAddFriend: () => void;
     onCreateGroup: () => void;
+    title?: string;
+    subtitle?: string;
+    showBackButton?: boolean;
+    onBack?: () => void;
+    showPrimaryActions?: boolean;
 }
 
 // ─── PRESENCE BADGE ─────────────────────────────────────────────────────────────
@@ -61,17 +70,29 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
     const hasUnread = chat.unreadCount > 0;
     const isGroupChat = (chat.presenceLabel ?? "").toLowerCase().includes("thanh vien")
         || (chat.presenceLabel ?? "").toLowerCase().includes("members");
+    const isStrangerInbox = chat.variant === "stranger-inbox";
+
+    const itemClass = isStrangerInbox
+        ? isActive
+            ? "bg-[linear-gradient(135deg,rgba(249,115,22,0.26),rgba(251,191,36,0.18))] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.7)]"
+            : "bg-[linear-gradient(135deg,rgba(249,115,22,0.12),rgba(251,191,36,0.08))] hover:bg-[linear-gradient(135deg,rgba(249,115,22,0.18),rgba(251,191,36,0.12))] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.25)]"
+        : isActive
+            ? "bg-[var(--color-zola-panel-strong)] shadow-[inset_0_0_0_1px_rgba(104,192,255,0.5)]"
+            : "hover:bg-[var(--color-zola-panel-hover)]";
 
     return (
         <button
             type="button"
             onClick={onSelect}
-            className={`mb-1.5 flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-all duration-200 hover:bg-[#14365f] ${isActive ? "bg-[#165082] shadow-[inset_0_0_0_1px_rgba(93,177,255,0.55)]" : ""
-                }`}
+            className={`mb-1.5 flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-all duration-200 ${itemClass}`}
         >
             {/* Avatar with presence badge */}
-            <div className="relative h-12 w-12 shrink-0 rounded-full ring-1 ring-white/10">
-                {chat.avatarUrl ? (
+            <div className={`relative h-12 w-12 shrink-0 rounded-full ${isStrangerInbox ? "ring-1 ring-amber-300/30 bg-[linear-gradient(135deg,rgba(249,115,22,0.24),rgba(251,191,36,0.2))]" : "ring-1 ring-white/10"}`}>
+                {isStrangerInbox ? (
+                    <div className="grid h-12 w-12 place-items-center rounded-full text-amber-100">
+                        <CircleAlert size={20} />
+                    </div>
+                ) : chat.avatarUrl ? (
                     <img
                         src={chat.avatarUrl}
                         alt={chat.name}
@@ -82,7 +103,7 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
                         {chat.avatar}
                     </div>
                 )}
-                {!isGroupChat && <PresenceBadge online={chat.isOnline} />}
+                {!isGroupChat && !isStrangerInbox && <PresenceBadge online={chat.isOnline} />}
             </div>
 
             {/* Content */}
@@ -94,24 +115,29 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
                         <p className={`truncate font-semibold ${hasUnread ? "text-slate-100" : "text-slate-200"}`}>
                             {chat.name}
                         </p>
+                        {chat.tagLabel && (
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${isStrangerInbox ? "bg-amber-200/12 text-amber-200" : "bg-sky-200/12 text-sky-200"}`}>
+                                {chat.tagLabel}
+                            </span>
+                        )}
                     </div>
-                    <span className={`shrink-0 text-xs ${hasUnread ? "text-sky-300" : "text-slate-400"}`}>{chat.timestamp}</span>
+                    <span className={`shrink-0 text-xs ${isStrangerInbox ? "text-amber-100/90" : hasUnread ? "text-sky-300" : "text-slate-400"}`}>{chat.timestamp}</span>
                 </div>
 
                 {/* Presence label for groups or offline direct chats */}
                 {chat.presenceLabel && (isGroupChat || !chat.isOnline) && (
-                    <p className="mb-1 text-[11px] text-slate-400/90">
+                    <p className={`mb-1 text-[11px] ${isStrangerInbox ? "text-amber-100/80" : "text-slate-400/90"}`}>
                         {chat.presenceLabel}
                     </p>
                 )}
 
                 {/* Last message and unread badge row */}
                 <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm ${hasUnread ? "font-semibold text-slate-100" : "text-slate-400/90"}`}>
+                    <p className={`truncate text-sm ${isStrangerInbox ? "font-medium text-amber-50/95" : hasUnread ? "font-semibold text-slate-100" : "text-slate-400/90"}`}>
                         {chat.lastMessage}
                     </p>
                     {hasUnread && (
-                        <span className="shrink-0 rounded-full bg-[#1f8cff] px-2 text-xs font-medium text-white shadow-[0_0_0_1px_rgba(255,255,255,0.1)]">
+                        <span className={`shrink-0 rounded-full px-2 text-xs font-medium text-white shadow-[0_0_0_1px_rgba(255,255,255,0.1)] ${isStrangerInbox ? "bg-amber-500" : "bg-[var(--color-zola-accent)]"}`}>
                             {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
                         </span>
                     )}
@@ -124,6 +150,7 @@ const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemPr
 // ─── MAIN CHAT LIST ─────────────────────────────────────────────────────────────
 
 export function ChatList({
+    language,
     chats,
     selectedChatId,
     searchText,
@@ -131,6 +158,11 @@ export function ChatList({
     onSelectChat,
     onAddFriend,
     onCreateGroup,
+    title,
+    subtitle,
+    showBackButton = false,
+    onBack,
+    showPrimaryActions = true,
 }: ChatListProps) {
     const [viewMode, setViewMode] = useState<"all" | "unread">("all");
 
@@ -143,32 +175,58 @@ export function ChatList({
     }, [chats, viewMode]);
 
     return (
-        <aside className="flex h-screen w-[20.5rem] shrink-0 flex-col border-r border-[#153760] bg-[#0e2341]">
+        <aside className="flex h-screen w-[20.5rem] shrink-0 flex-col border-r border-[var(--color-zola-border-strong)] bg-[var(--color-zola-surface)]">
             <div className="flex items-center justify-between px-4 pb-3 pt-5">
-                <h2 className="text-[1.9rem] font-bold tracking-tight text-white">Chats</h2>
-                <div className="flex items-center gap-1.5">
-                    <button
-                        type="button"
-                        onClick={onAddFriend}
-                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[#14365f] hover:text-white"
-                        title="Add friend"
-                        aria-label="Add friend"
-                    >
-                        <UserPlus size={18} />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onCreateGroup}
-                        className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[#14365f] hover:text-white"
-                        title="Create group"
-                        aria-label="Create group"
-                    >
-                        <UsersRound size={18} />
-                    </button>
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        {showBackButton && (
+                            <button
+                                type="button"
+                                onClick={onBack}
+                                className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
+                                title={language === "vi" ? "Quay lai" : "Back"}
+                                aria-label={language === "vi" ? "Quay lai" : "Back"}
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+                        )}
+                        <div className="min-w-0">
+                            <h2 className="truncate text-[1.9rem] font-bold tracking-tight text-white">
+                                {title ?? (language === "vi" ? "Tin nhan" : "Chats")}
+                            </h2>
+                            {subtitle && (
+                                <p className="mt-0.5 truncate text-xs text-slate-400">
+                                    {subtitle}
+                                </p>
+                            )}
+                        </div>
+                    </div>
                 </div>
+                {showPrimaryActions && (
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={onAddFriend}
+                            className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
+                            title={language === "vi" ? "Them ban" : "Add friend"}
+                            aria-label={language === "vi" ? "Them ban" : "Add friend"}
+                        >
+                            <UserPlus size={18} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onCreateGroup}
+                            className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
+                            title={language === "vi" ? "Tao nhom" : "Create group"}
+                            aria-label={language === "vi" ? "Tao nhom" : "Create group"}
+                        >
+                            <UsersRound size={18} />
+                        </button>
+                    </div>
+                )}
             </div>
 
-            <div className="sticky top-0 z-10 bg-[#0e2341] px-4 pb-3">
+            <div className="sticky top-0 z-10 bg-[var(--color-zola-surface)] px-4 pb-3">
                 <div className="relative">
                     <Search
                         size={15}
@@ -178,8 +236,8 @@ export function ChatList({
                         type="text"
                         value={searchText}
                         onChange={(event) => onSearchTextChange(event.target.value)}
-                        placeholder="Search"
-                        className="h-10 w-full rounded-full border border-[#264f7f] bg-[#0a1b34] pl-9 pr-3 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-[#3da2ff]"
+                        placeholder={language === "vi" ? "Tim kiem" : "Search"}
+                        className="h-10 w-full rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] pl-9 pr-3 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
                     />
                 </div>
 
@@ -187,16 +245,16 @@ export function ChatList({
                     <button
                         type="button"
                         onClick={() => setViewMode("all")}
-                        className={`rounded-full px-3 py-1 ${viewMode === "all" ? "bg-[#1f8cff] text-white" : "bg-[#142a48] text-slate-300 hover:bg-[#1a355a]"}`}
+                        className={`rounded-full px-3 py-1 ${viewMode === "all" ? "bg-[var(--color-zola-accent)] text-white" : "bg-[var(--color-zola-panel-hover)] text-slate-300 hover:bg-[var(--color-zola-panel-strong)]"}`}
                     >
-                        All
+                        {language === "vi" ? "Tat ca" : "All"}
                     </button>
                     <button
                         type="button"
                         onClick={() => setViewMode("unread")}
-                        className={`rounded-full px-3 py-1 ${viewMode === "unread" ? "bg-[#1f8cff] text-white" : "bg-[#142a48] text-slate-300 hover:bg-[#1a355a]"}`}
+                        className={`rounded-full px-3 py-1 ${viewMode === "unread" ? "bg-[var(--color-zola-accent)] text-white" : "bg-[var(--color-zola-panel-hover)] text-slate-300 hover:bg-[var(--color-zola-panel-strong)]"}`}
                     >
-                        Unread
+                        {language === "vi" ? "Chua doc" : "Unread"}
                     </button>
                 </div>
             </div>
@@ -204,7 +262,9 @@ export function ChatList({
             <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
                 {displayChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                        <p className="text-sm">No conversations yet</p>
+                        <p className="text-sm">
+                            {language === "vi" ? "Chua co hoi thoai nao" : "No conversations yet"}
+                        </p>
                     </div>
                 ) : (
                     displayChats.map((chat) => (

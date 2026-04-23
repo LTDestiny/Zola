@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import {
+  ChevronRight,
+  CircleAlert,
+  LogOut,
+  MoreHorizontal,
+  Search,
+  UserRoundPlus,
+  Users,
+  UsersRound,
+} from "lucide-react";
 import {
   acceptFriendRequest,
   addReaction,
   addGroupMember,
   addFriend,
+  blockUser as blockUserRequest,
+  cancelFriendRequest,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -15,12 +26,14 @@ import {
   editMessage,
   forwardMessage,
   getConversations,
+  getBlockedUsers,
   getFriends,
   getFriendshipStatus,
   getGroupSettings,
   getMessages,
   getMyProfile,
   getPendingFriendRequests,
+  getSentPendingFriendRequests,
   getPendingFriendRequestsUnreadCount,
   getUserSummary,
   leaveGroupConversation,
@@ -37,8 +50,10 @@ import {
   sendMessage,
   setGroupAdmin,
   toApiErrorMessage,
+  unblockUser as unblockUserRequest,
   updateMyProfile,
   updateGroupSettings,
+  type FriendshipStatusPayload,
   type ConversationItem,
   type FriendContactItem,
   type GroupSettings,
@@ -56,7 +71,6 @@ import {
 } from "../api/chatRealtime";
 import { clearAuthTokens, getAccessToken, getSessionId } from "../auth/token";
 import { useLanguage } from "../i18n/language";
-import { Chat } from "./chat";
 import { AddFriendModal } from "./components/AddFriendModal";
 import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
@@ -80,6 +94,9 @@ import {
   CallManager,
   type CallLifecycleEvent,
 } from "./call/CallManager";
+import { DirectConversationPane } from "./components/direct/DirectConversationPane";
+import { GroupConversationPane } from "./components/group/GroupConversationPane";
+import { UserProfilePreviewModal } from "./components/UserProfilePreviewModal";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -127,7 +144,85 @@ function toPolicyViolationMessage(
   return fallback;
 }
 
+function isReceiverRejectingMessage(error: unknown) {
+  const message = toApiErrorMessage(error).toLowerCase();
+  return (
+    message.includes("does not accept messages from strangers") ||
+    message.includes("does not want to receive messages") ||
+    (message.includes("does not accept") && message.includes("messages"))
+  );
+}
+
+function isMessagingBlockedError(error: unknown) {
+  const message = toApiErrorMessage(error).toLowerCase();
+  return message.includes("blocked between these users") || message.includes("blocked");
+}
+
+function resolveBlockedState(
+  payload: FriendshipStatusPayload | null | undefined,
+) {
+  return {
+    blockedByMe: Boolean(payload?.blockedByMe),
+    blockedByPeer: Boolean(payload?.blockedByPeer),
+  };
+}
+
 type ChatTab = MiniNavTab;
+type MessageWorkspaceView = "default" | "stranger-inbox";
+type ContactsView = "friends" | "groups" | "requests" | "group-invites";
+
+const STRANGER_INBOX_ID = "__stranger_inbox__";
+
+function normalizePendingRequestItems(
+  items: PendingFriendRequestItem[] | null | undefined,
+  currentUserId: string | null | undefined,
+  mode: "incoming" | "sent",
+) {
+  const normalizedCurrentUserId = String(currentUserId ?? "").trim();
+  const uniqueById = new Map<string, PendingFriendRequestItem>();
+
+  (items ?? []).forEach((item) => {
+    if (!item?.friendshipId) {
+      return;
+    }
+
+    const status = String(item.status ?? "").trim().toUpperCase();
+    if (status !== "PENDING") {
+      return;
+    }
+
+    const requesterId = String(item.requesterId ?? "").trim();
+    const addresseeId = String(item.addresseeId ?? "").trim();
+    if (!requesterId || !addresseeId || requesterId === addresseeId) {
+      return;
+    }
+
+    if (
+      mode === "incoming" &&
+      normalizedCurrentUserId &&
+      addresseeId !== normalizedCurrentUserId
+    ) {
+      return;
+    }
+
+    if (
+      mode === "sent" &&
+      normalizedCurrentUserId &&
+      requesterId !== normalizedCurrentUserId
+    ) {
+      return;
+    }
+
+    uniqueById.set(String(item.friendshipId), {
+      ...item,
+      requesterId,
+      addresseeId,
+      status,
+    });
+  });
+
+  return Array.from(uniqueById.values());
+}
 
 type PendingUploadItem = {
   localId: string;
@@ -230,6 +325,7 @@ type CreateGroupPollInput = {
 
 const GROUP_PREFERENCE_STORAGE_KEY = "zola_group_preferences_v1";
 const HIDDEN_CHAT_PIN_STORAGE_KEY = "zola_hidden_chat_pin_v1";
+const BANNER_AUTO_HIDE_MS = 2000;
 
 function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
   const rawType = (message.type ?? "TEXT").toUpperCase();
@@ -477,6 +573,10 @@ export function ChatPage() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [profileGender, setProfileGender] = useState("");
   const [profileBirthdate, setProfileBirthdate] = useState("");
+  const [profileHideBirthdate, setProfileHideBirthdate] = useState(false);
+  const [profileHideEmail, setProfileHideEmail] = useState(false);
+  const [profileHidePhone, setProfileHidePhone] = useState(false);
+  const [profileAllowStrangerMessages, setProfileAllowStrangerMessages] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isDeletingProfile, setIsDeletingProfile] = useState(false);
 
@@ -551,10 +651,17 @@ export function ChatPage() {
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [friendEmail, setFriendEmail] = useState("");
   const [friendProfile, setFriendProfile] = useState<UserProfile | null>(null);
+  const [previewUserProfile, setPreviewUserProfile] = useState<UserProfile | null>(null);
+  const [previewUserFriendshipStatus, setPreviewUserFriendshipStatus] = useState("NONE");
+  const [isUserPreviewOpen, setIsUserPreviewOpen] = useState(false);
+  const [isLoadingUserPreview, setIsLoadingUserPreview] = useState(false);
   const [friendshipStatus, setFriendshipStatus] = useState("NONE");
   const [isSearchingFriend, setIsSearchingFriend] = useState(false);
   const [isSubmittingFriend, setIsSubmittingFriend] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState<
+    PendingFriendRequestItem[]
+  >([]);
+  const [sentPendingFriendRequests, setSentPendingFriendRequests] = useState<
     PendingFriendRequestItem[]
   >([]);
   const [
@@ -562,12 +669,23 @@ export function ChatPage() {
     setPendingFriendRequestsUnreadCount,
   ] = useState(0);
   const [friendContacts, setFriendContacts] = useState<FriendContactItem[]>([]);
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [blockedByPeerUserIds, setBlockedByPeerUserIds] = useState<string[]>([]);
+  const friendUserIdSet = useMemo(
+    () => new Set(friendContacts.map((item) => item.userId)),
+    [friendContacts],
+  );
   const [userProfileMap, setUserProfileMap] = useState<
     Record<string, UserProfile>
+  >({});
+  const [peerRejectedMessageUserIds, setPeerRejectedMessageUserIds] = useState<
+    Record<string, true>
   >({});
   const [processingFriendshipId, setProcessingFriendshipId] = useState<
     string | null
   >(null);
+  const [isUpdatingPeerRelationship, setIsUpdatingPeerRelationship] = useState(false);
+  const [activeDirectFriendshipStatus, setActiveDirectFriendshipStatus] = useState("NONE");
   const [isAddingGroupMembers, setIsAddingGroupMembers] = useState(false);
   const [isUpdatingGroupProfile, setIsUpdatingGroupProfile] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
@@ -599,6 +717,9 @@ export function ChatPage() {
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("messages");
+  const [activeMessageWorkspaceView, setActiveMessageWorkspaceView] = useState<MessageWorkspaceView>("default");
+  const [contactsView, setContactsView] = useState<ContactsView>("friends");
+  const [contactsSearchQuery, setContactsSearchQuery] = useState("");
   const [isChatViewportAtBottom, setIsChatViewportAtBottom] = useState(true);
   const [userPresenceMap, setUserPresenceMap] = useState<
     Record<string, UserPresenceState>
@@ -642,6 +763,9 @@ export function ChatPage() {
   const unansweredCallTimerRef = useRef<number | null>(null);
   const groupCallSoloTimerRef = useRef<number | null>(null);
   const callManagerRef = useRef(new CallManager());
+  const bannerAutoHideTimeoutRef = useRef<number | null>(null);
+  const privacyAutoSaveTimeoutRef = useRef<number | null>(null);
+  const hasHydratedPrivacyStateRef = useRef(false);
 
   const transitionCallState = useCallback(
     (event: CallLifecycleEvent, callId?: string) => {
@@ -1265,8 +1389,14 @@ export function ChatPage() {
   const onUpdateActiveGroupSettings = async (input: {
     name?: string;
     avatar?: string | null;
+    allowMembersEditGroupProfile?: boolean;
+    allowMembersPinBoardItems?: boolean;
+    allowMembersCreateNotes?: boolean;
+    allowMembersCreatePolls?: boolean;
+    allowMembersSendMessages?: boolean;
     onlyAdminsCanMessage?: boolean;
     requireApprovalToJoin?: boolean;
+    highlightAdminMessages?: boolean;
     allowMemberInvite?: boolean;
     transferOwnerId?: string;
     successMessageVi?: string;
@@ -1505,6 +1635,21 @@ export function ChatPage() {
       return;
     }
 
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canPinBoardItems = Boolean(
+      activeSettings?.isOwner ||
+      activeSettings?.isAdmin ||
+      activeSettings?.allowMembersPinBoardItems,
+    );
+    if (!canPinBoardItems) {
+      setBannerMessage(
+        language === "vi"
+          ? "Chi truong/pho nhom moi duoc ghim tin nhan"
+          : "Only owner/admin can pin messages",
+      );
+      return;
+    }
+
     if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
@@ -1597,6 +1742,21 @@ export function ChatPage() {
       return;
     }
 
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateNotes = Boolean(
+      activeSettings?.isOwner ||
+      activeSettings?.isAdmin ||
+      activeSettings?.allowMembersCreateNotes,
+    );
+    if (!canCreateNotes) {
+      setBannerMessage(
+        language === "vi"
+          ? "Chi truong/pho nhom moi duoc tao ghi chu"
+          : "Only owner/admin can create notes",
+      );
+      return;
+    }
+
     const trimmed = noteText.trim();
     if (!trimmed) {
       return;
@@ -1648,7 +1808,10 @@ export function ChatPage() {
     const activeSettings = groupSettingsMap[activeConversationId] ?? null;
     const isCurrentOwner = Boolean(activeSettings?.isOwner);
     const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
-    if (!isCurrentOwner && !isCurrentAdmin) {
+    const canCreatePolls = Boolean(
+      isCurrentOwner || isCurrentAdmin || activeSettings?.allowMembersCreatePolls,
+    );
+    if (!canCreatePolls) {
       setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
       return false;
     }
@@ -1740,6 +1903,21 @@ export function ChatPage() {
 
   const onCreateGroupReminder = async (input: { title: string; when?: string | null }) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
+      return false;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateReminders = Boolean(
+      activeSettings?.isOwner ||
+      activeSettings?.isAdmin ||
+      activeSettings?.allowMembersCreateNotes,
+    );
+    if (!canCreateReminders) {
+      setBannerMessage(
+        language === "vi"
+          ? "Chi truong/pho nhom moi duoc tao nhac hen"
+          : "Only owner/admin can create reminders",
+      );
       return false;
     }
 
@@ -3491,41 +3669,149 @@ export function ChatPage() {
     myProfile?.id,
   ]);
 
-  const sidebarChats = useMemo<ChatListItem[]>(() => {
-    return filteredConversations.map((conversation) => {
-      const displayName = getConversationDisplayName(conversation);
-      const isGroupConversation = conversation.type === "group";
-      const presence = isGroupConversation
-        ? undefined
-        : getPresenceForUser(resolvePeerUserId(conversation));
-      const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thanh vien" : "members"}`;
-      return {
-        id: conversation.id,
-        name: displayName,
-        avatar: initials(displayName),
-        avatarUrl: resolveMediaUrl(conversation.avatar ?? null) ?? undefined,
-        timestamp: conversation.lastMessageAt
-          ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }).format(new Date(conversation.lastMessageAt))
-          : "--:--",
-        lastMessage: formatConversationLastPreview(conversation),
-        unreadCount: conversation.unreadCount ?? 0,
-        isPinned: Boolean(groupPreferenceMap[conversation.id]?.pinned),
-        isOnline: isGroupConversation ? false : presence?.online ?? false,
-        presenceLabel: isGroupConversation ? groupPresenceLabel : toPresenceLabel(presence),
-      };
-    });
+  const formatSidebarTimestamp = useCallback((value: string | null) => {
+    if (!value) {
+      return "--:--";
+    }
+
+    return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }, [language]);
+
+  const toSidebarChatItem = useCallback((
+    conversation: ConversationItem,
+    variant: ChatListItem["variant"] = "default",
+  ): ChatListItem => {
+    const displayName = getConversationDisplayName(conversation);
+    const isGroupConversation = conversation.type === "group";
+    const peerUserId = !isGroupConversation ? resolvePeerUserId(conversation) : null;
+    const peerProfile = peerUserId ? userProfileMap[peerUserId] : null;
+    const presence = isGroupConversation ? undefined : getPresenceForUser(peerUserId);
+    const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thanh vien" : "members"}`;
+    const timestampMs = conversation.lastMessageAt ? Date.parse(conversation.lastMessageAt) : 0;
+
+    return {
+      id: conversation.id,
+      name: displayName,
+      avatar: initials(displayName),
+      avatarUrl: resolveMediaUrl(
+        isGroupConversation
+          ? conversation.avatar ?? null
+          : peerProfile?.avatarUrl ?? conversation.avatar ?? null,
+      ) ?? undefined,
+      timestamp: formatSidebarTimestamp(conversation.lastMessageAt),
+      lastMessage: formatConversationLastPreview(conversation),
+      unreadCount: conversation.unreadCount ?? 0,
+      isPinned: Boolean(groupPreferenceMap[conversation.id]?.pinned),
+      isOnline: isGroupConversation ? false : presence?.online ?? false,
+      presenceLabel: isGroupConversation ? groupPresenceLabel : toPresenceLabel(presence),
+      peerId: peerUserId ?? undefined,
+      variant,
+      tagLabel:
+        variant === "stranger-inbox"
+          ? language === "vi"
+            ? "Nguoi la"
+            : "Stranger"
+          : undefined,
+      sortTimeMs: Number.isFinite(timestampMs) ? timestampMs : 0,
+    };
   }, [
-    filteredConversations,
+    formatConversationLastPreview,
+    formatSidebarTimestamp,
+    groupPreferenceMap,
     language,
+    myProfile?.id,
     presenceTick,
     userPresenceMap,
     userProfileMap,
-    groupPreferenceMap,
-    myProfile?.id,
+  ]);
+
+  const strangerConversations = useMemo(() => {
+    return filteredConversations.filter((conversation) => {
+      if (conversation.type === "group") {
+        return false;
+      }
+      const peerUserId = resolvePeerUserId(conversation);
+      return Boolean(peerUserId && !friendUserIdSet.has(peerUserId));
+    });
+  }, [filteredConversations, friendUserIdSet]);
+
+  const strangerConversationIdSet = useMemo(
+    () => new Set(strangerConversations.map((conversation) => conversation.id)),
+    [strangerConversations],
+  );
+
+  const regularConversations = useMemo(
+    () => filteredConversations.filter((conversation) => !strangerConversationIdSet.has(conversation.id)),
+    [filteredConversations, strangerConversationIdSet],
+  );
+
+  const defaultSidebarChats = useMemo(
+    () => regularConversations.map((conversation) => toSidebarChatItem(conversation)),
+    [regularConversations, toSidebarChatItem],
+  );
+
+  const strangerSidebarChats = useMemo(
+    () => strangerConversations.map((conversation) => toSidebarChatItem(conversation, "stranger-inbox")),
+    [strangerConversations, toSidebarChatItem],
+  );
+
+  const strangerInboxEntry = useMemo<ChatListItem | null>(() => {
+    const latestStrangerConversation = strangerConversations[0];
+    if (!latestStrangerConversation) {
+      return null;
+    }
+
+    const latestPreview = formatConversationLastPreview(latestStrangerConversation);
+    const sortTimeMs = latestStrangerConversation.lastMessageAt
+      ? Date.parse(latestStrangerConversation.lastMessageAt)
+      : 0;
+
+    return {
+      id: STRANGER_INBOX_ID,
+      name: language === "vi" ? "Tin nhan tu nguoi la" : "Stranger messages",
+      avatar: "TL",
+      avatarUrl: null,
+      timestamp: formatSidebarTimestamp(latestStrangerConversation.lastMessageAt),
+      lastMessage: latestPreview,
+      unreadCount: strangerConversations.reduce(
+        (sum, conversation) => sum + Math.max(0, conversation.unreadCount ?? 0),
+        0,
+      ),
+      isPinned: false,
+      isOnline: false,
+      presenceLabel:
+        language === "vi"
+          ? `${strangerConversations.length} hoi thoai chua co trong danh ba`
+          : `${strangerConversations.length} conversations outside your contacts`,
+      variant: "stranger-inbox",
+      tagLabel: language === "vi" ? "Can luu y" : "Review",
+      sortTimeMs: Number.isFinite(sortTimeMs) ? sortTimeMs : 0,
+    };
+  }, [
     formatConversationLastPreview,
+    formatSidebarTimestamp,
+    language,
+    strangerConversations,
+  ]);
+
+  const sidebarChats = useMemo<ChatListItem[]>(() => {
+    if (activeMessageWorkspaceView === "stranger-inbox") {
+      return strangerSidebarChats;
+    }
+
+    const nextItems = strangerInboxEntry
+      ? [...defaultSidebarChats, strangerInboxEntry]
+      : [...defaultSidebarChats];
+
+    return nextItems.sort((left, right) => (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0));
+  }, [
+    activeMessageWorkspaceView,
+    defaultSidebarChats,
+    strangerInboxEntry,
+    strangerSidebarChats,
   ]);
 
   const fetchConversations = async (options?: { silent?: boolean }) => {
@@ -3651,16 +3937,35 @@ export function ChatPage() {
 
   const fetchFriendshipData = async () => {
     try {
-      const [pendingResult, friendsResult, unreadResult] = await Promise.all([
+      const [pendingResult, sentPendingResult, friendsResult, unreadResult, blockedResult] = await Promise.all([
         getPendingFriendRequests(),
+        getSentPendingFriendRequests(),
         getFriends(),
         getPendingFriendRequestsUnreadCount(),
+        getBlockedUsers(),
       ]);
 
-      const pending = pendingResult.data ?? [];
+      const currentUserId = myUserIdRef.current;
+      const pending = normalizePendingRequestItems(
+        pendingResult.data ?? [],
+        currentUserId,
+        "incoming",
+      );
+      const sentPending = normalizePendingRequestItems(
+        sentPendingResult.data ?? [],
+        currentUserId,
+        "sent",
+      );
       const friends = friendsResult.data ?? [];
+      const blocked = blockedResult.data ?? [];
       setPendingFriendRequests(pending);
+      setSentPendingFriendRequests(sentPending);
       setFriendContacts(friends);
+      setBlockedUserIds(
+        blocked
+          .map((item) => String(item.userId ?? "").trim())
+          .filter(Boolean),
+      );
       setPendingFriendRequestsUnreadCount(
         Math.max(0, unreadResult.data?.count ?? 0),
       );
@@ -3668,6 +3973,7 @@ export function ChatPage() {
       const ids = Array.from(
         new Set([
           ...pending.map((item) => item.requesterId),
+          ...sentPending.map((item) => item.addresseeId),
           ...friends.map((item) => item.userId),
         ]),
       );
@@ -3785,12 +4091,96 @@ export function ChatPage() {
   }, []);
 
   useEffect(() => {
+    if (!bannerMessage) {
+      if (bannerAutoHideTimeoutRef.current) {
+        window.clearTimeout(bannerAutoHideTimeoutRef.current);
+        bannerAutoHideTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (bannerAutoHideTimeoutRef.current) {
+      window.clearTimeout(bannerAutoHideTimeoutRef.current);
+    }
+
+    bannerAutoHideTimeoutRef.current = window.setTimeout(() => {
+      setBannerMessage("");
+      bannerAutoHideTimeoutRef.current = null;
+    }, BANNER_AUTO_HIDE_MS);
+
+    return () => {
+      if (bannerAutoHideTimeoutRef.current) {
+        window.clearTimeout(bannerAutoHideTimeoutRef.current);
+        bannerAutoHideTimeoutRef.current = null;
+      }
+    };
+  }, [bannerMessage]);
+
+  useEffect(() => {
     setProfileFullName(myProfile?.fullName ?? "");
     setProfilePhone(myProfile?.phone ?? "");
     setProfileAvatarUrl(myProfile?.avatarUrl ?? "");
     setProfileGender((myProfile?.gender ?? "").toUpperCase());
     setProfileBirthdate(myProfile?.birthdate ?? "");
+    setProfileHideBirthdate(Boolean(myProfile?.hideBirthdate));
+    setProfileHideEmail(Boolean(myProfile?.hideEmail));
+    setProfileHidePhone(Boolean(myProfile?.hidePhone));
+    setProfileAllowStrangerMessages(myProfile?.allowStrangerMessages !== false);
+    hasHydratedPrivacyStateRef.current = true;
+
+    if (myProfile?.id) {
+      setUserProfileMap((prev) => ({
+        ...prev,
+        [myProfile.id]: myProfile,
+      }));
+    }
   }, [myProfile]);
+
+  useEffect(() => {
+    if (!hasHydratedPrivacyStateRef.current || !myProfile?.id) {
+      return;
+    }
+
+    if (privacyAutoSaveTimeoutRef.current) {
+      window.clearTimeout(privacyAutoSaveTimeoutRef.current);
+    }
+
+    privacyAutoSaveTimeoutRef.current = window.setTimeout(() => {
+      void (async () => {
+        try {
+          setIsSavingProfile(true);
+          const result = await updateMyProfile({
+            fullName: profileFullName.trim() || myProfile.fullName || "User",
+            phone: profilePhone.trim() || null,
+            avatarUrl: profileAvatarUrl.trim() || null,
+            gender: profileGender.trim() || null,
+            birthdate: profileBirthdate.trim() || null,
+            hideBirthdate: profileHideBirthdate,
+            hideEmail: profileHideEmail,
+            hidePhone: profileHidePhone,
+            allowStrangerMessages: profileAllowStrangerMessages,
+          });
+          setMyProfile(result.data);
+        } catch (error) {
+          setBannerMessage(toApiErrorMessage(error));
+        } finally {
+          setIsSavingProfile(false);
+        }
+      })();
+    }, 350);
+
+    return () => {
+      if (privacyAutoSaveTimeoutRef.current) {
+        window.clearTimeout(privacyAutoSaveTimeoutRef.current);
+        privacyAutoSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    profileHideBirthdate,
+    profileHideEmail,
+    profileHidePhone,
+    profileAllowStrangerMessages,
+  ]);
 
   useEffect(() => {
     const accessToken = getAccessToken();
@@ -4121,12 +4511,127 @@ export function ChatPage() {
       },
       onSyncEvent: (event) => {
         if (event.eventType.startsWith("FRIENDSHIP_")) {
+          if (
+            event.eventType === "FRIENDSHIP_BLOCKED" ||
+            event.eventType === "FRIENDSHIP_UNBLOCKED"
+          ) {
+            try {
+              const payload = event.payload ? JSON.parse(event.payload) : null;
+              const blockerId = payload?.blockerId as string | undefined;
+              const blockedUserId = payload?.blockedUserId as string | undefined;
+              const myUserId = myUserIdRef.current;
+              const activeConversationId = activeConversationIdRef.current;
+
+              if (blockerId && blockedUserId && myUserId) {
+                const isBlockedEvent = event.eventType === "FRIENDSHIP_BLOCKED";
+                const counterpartyUserId =
+                  blockerId === myUserId
+                    ? blockedUserId
+                    : blockedUserId === myUserId
+                      ? blockerId
+                      : null;
+
+                if (counterpartyUserId) {
+                  if (blockerId === myUserId) {
+                    setBlockedUserIds((prev) =>
+                      isBlockedEvent
+                        ? prev.includes(counterpartyUserId)
+                          ? prev
+                          : [...prev, counterpartyUserId]
+                        : prev.filter((userId) => userId !== counterpartyUserId),
+                    );
+                  }
+
+                  if (blockedUserId === myUserId) {
+                    setBlockedByPeerUserIds((prev) =>
+                      isBlockedEvent
+                        ? prev.includes(counterpartyUserId)
+                          ? prev
+                          : [...prev, counterpartyUserId]
+                        : prev.filter((userId) => userId !== counterpartyUserId),
+                    );
+                  }
+
+                  if (activeConversationId) {
+                    const currentConversation = useChatStore
+                      .getState()
+                      .conversations.find((conversation) => conversation.id === activeConversationId);
+                    const activePeerUserId =
+                      currentConversation && currentConversation.type !== "group"
+                        ? resolvePeerUserId(currentConversation)
+                        : null;
+
+                    if (activePeerUserId === counterpartyUserId) {
+                      if (isBlockedEvent) {
+                        setActiveDirectFriendshipStatus("BLOCKED");
+                      }
+
+                      const noticeText =
+                        blockerId === myUserId
+                          ? isBlockedEvent
+                            ? language === "vi"
+                              ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+                              : "You blocked this user. Neither side can send messages right now."
+                            : language === "vi"
+                              ? "Ban da bo chan nguoi dung nay."
+                              : "You unblocked this user."
+                          : isBlockedEvent
+                            ? language === "vi"
+                              ? "Nguoi dung nay da chan ban. Ca hai hien khong the nhan tin cho nhau."
+                              : "This user blocked you. Neither side can send messages right now."
+                            : language === "vi"
+                              ? "Nguoi dung nay da bo chan ban."
+                              : "This user unblocked you.";
+
+                      const nowIso = new Date().toISOString();
+                      setMessages((prev) => {
+                        const latest = prev[prev.length - 1];
+                        if (
+                          latest &&
+                          latest.type === "SYSTEM" &&
+                          latest.content === noticeText
+                        ) {
+                          return prev;
+                        }
+
+                        return [
+                          ...prev,
+                          {
+                            id: `local-sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                            conversationId: activeConversationId,
+                            senderId: counterpartyUserId,
+                            receiverId: null,
+                            type: "SYSTEM",
+                            content: noticeText,
+                            createdAt: nowIso,
+                            updatedAt: nowIso,
+                            deletedForUsers: [],
+                            deliveredTo: [],
+                            seenBy: [],
+                            reactions: [],
+                            reactionEntries: [],
+                            recalled: false,
+                            edited: false,
+                          },
+                        ];
+                      });
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Ignore malformed block sync payloads and reconcile from API below.
+            }
+          }
+
           void fetchFriendshipData();
           if (
             event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED" ||
-            event.eventType === "FRIENDSHIP_CHAT_READY"
+            event.eventType === "FRIENDSHIP_CHAT_READY" ||
+            event.eventType === "FRIENDSHIP_BLOCKED" ||
+            event.eventType === "FRIENDSHIP_UNBLOCKED"
           ) {
-            void fetchConversations();
+            void fetchConversations({ silent: true });
           }
           return;
         }
@@ -4136,6 +4641,19 @@ export function ChatPage() {
           try {
             const payload = event.payload ? JSON.parse(event.payload) : null;
             const updatedUserId = payload?.userId as string | undefined;
+            if (updatedUserId) {
+              void (async () => {
+                try {
+                  const summary = await getUserSummary(updatedUserId);
+                  setUserProfileMap((prev) => ({
+                    ...prev,
+                    [updatedUserId]: summary.data,
+                  }));
+                } catch {
+                  // Ignore transient summary refresh errors.
+                }
+              })();
+            }
             if (!updatedUserId || updatedUserId === myUserIdRef.current) {
               void (async () => {
                 try {
@@ -4209,6 +4727,14 @@ export function ChatPage() {
       if (refreshConversationsTimeoutRef.current) {
         window.clearTimeout(refreshConversationsTimeoutRef.current);
         refreshConversationsTimeoutRef.current = null;
+      }
+      if (bannerAutoHideTimeoutRef.current) {
+        window.clearTimeout(bannerAutoHideTimeoutRef.current);
+        bannerAutoHideTimeoutRef.current = null;
+      }
+      if (privacyAutoSaveTimeoutRef.current) {
+        window.clearTimeout(privacyAutoSaveTimeoutRef.current);
+        privacyAutoSaveTimeoutRef.current = null;
       }
       realtimeClientRef.current?.disconnect();
       realtimeClientRef.current = null;
@@ -4430,9 +4956,186 @@ export function ChatPage() {
     void markRead();
   }, [activeTab, pendingFriendRequestsUnreadCount]);
 
+  const activeDirectPeerIdForActions =
+    activeConversation && activeConversation.type !== "group"
+      ? resolvePeerUserId(activeConversation)
+      : null;
+  const canComposeDirectForActions = Boolean(
+    !activeDirectPeerIdForActions ||
+      (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
+        !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
+        !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
+  );
+
+  useEffect(() => {
+    if (!activeDirectPeerIdForActions || activeConversation?.type === "group") {
+      setActiveDirectFriendshipStatus("NONE");
+      return;
+    }
+
+    if (blockedUserIds.includes(activeDirectPeerIdForActions)) {
+      setActiveDirectFriendshipStatus("BLOCKED");
+      return;
+    }
+
+    if (blockedByPeerUserIds.includes(activeDirectPeerIdForActions)) {
+      setActiveDirectFriendshipStatus("BLOCKED");
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await getFriendshipStatus(activeDirectPeerIdForActions);
+        if (!cancelled) {
+          const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
+          setBlockedUserIds((prev) => {
+            const hasUser = prev.includes(activeDirectPeerIdForActions);
+            if (blockedByMe) {
+              return hasUser ? prev : [...prev, activeDirectPeerIdForActions];
+            }
+            return hasUser ? prev.filter((userId) => userId !== activeDirectPeerIdForActions) : prev;
+          });
+          setBlockedByPeerUserIds((prev) => {
+            const hasUser = prev.includes(activeDirectPeerIdForActions);
+            if (blockedByPeer) {
+              return hasUser ? prev : [...prev, activeDirectPeerIdForActions];
+            }
+            return hasUser ? prev.filter((userId) => userId !== activeDirectPeerIdForActions) : prev;
+          });
+          setActiveDirectFriendshipStatus(
+            normalizeFriendshipStatus(result.data?.status ?? "NONE"),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setActiveDirectFriendshipStatus("NONE");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversation?.type, activeDirectPeerIdForActions, blockedByPeerUserIds, blockedUserIds]);
+
+  const appendInlineSystemNotice = useCallback((text: string) => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId || !text.trim()) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const noticeMessage: MessageItem = {
+      id: `local-system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      conversationId,
+      senderId: activeDirectPeerIdForActions ?? myProfile?.id ?? "system",
+      receiverId: null,
+      type: "SYSTEM",
+      content: text.trim(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      recalled: false,
+      edited: false,
+      deletedForUsers: [],
+      deliveredTo: [],
+      seenBy: [],
+      reactions: [],
+      reactionEntries: [],
+    };
+
+    setMessages((prev) => {
+      const latest = prev[prev.length - 1];
+      if (
+        latest &&
+        latest.type === "SYSTEM" &&
+        latest.content === noticeMessage.content
+      ) {
+        return prev;
+      }
+      return [...prev, noticeMessage];
+    });
+  }, [activeDirectPeerIdForActions, myProfile?.id]);
+
+  const handleDirectMessageRestrictionError = useCallback((error: unknown) => {
+    if (!isReceiverRejectingMessage(error) || !activeDirectPeerIdForActions) {
+      return false;
+    }
+
+    setPeerRejectedMessageUserIds((prev) => ({
+      ...prev,
+      [activeDirectPeerIdForActions]: true,
+    }));
+
+    appendInlineSystemNotice(
+      language === "vi"
+        ? "Nguoi dung hien khong muon nhan tin."
+        : "This user currently does not want to receive messages.",
+    );
+    return true;
+  }, [activeDirectPeerIdForActions, appendInlineSystemNotice, language]);
+
+  const handleDirectMessageBlockedError = useCallback((error: unknown) => {
+    if (!isMessagingBlockedError(error) || !activeDirectPeerIdForActions) {
+      return false;
+    }
+
+    if (!blockedUserIds.includes(activeDirectPeerIdForActions)) {
+      setBlockedByPeerUserIds((prev) =>
+        prev.includes(activeDirectPeerIdForActions)
+          ? prev
+          : [...prev, activeDirectPeerIdForActions],
+      );
+    }
+
+    appendInlineSystemNotice(
+      language === "vi"
+        ? "Tin nhan giua hai ben da bi chan. Ca hai hien khong the nhan tin cho nhau."
+        : "Messaging is blocked between both users right now.",
+    );
+    return true;
+  }, [activeDirectPeerIdForActions, appendInlineSystemNotice, blockedUserIds, language]);
+
+  const appendCurrentDirectRestrictionNotice = useCallback(() => {
+    if (activeDirectPeerIdForActions && blockedUserIds.includes(activeDirectPeerIdForActions)) {
+      appendInlineSystemNotice(
+        language === "vi"
+          ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+          : "You blocked this user. Neither side can send messages right now.",
+      );
+      return;
+    }
+
+    if (activeDirectPeerIdForActions && blockedByPeerUserIds.includes(activeDirectPeerIdForActions)) {
+      appendInlineSystemNotice(
+        language === "vi"
+          ? "Nguoi dung nay da chan ban. Ca hai hien khong the nhan tin cho nhau."
+          : "This user blocked you. Neither side can send messages right now.",
+      );
+      return;
+    }
+
+    appendInlineSystemNotice(
+      language === "vi"
+        ? "Nguoi dung hien khong muon nhan tin."
+        : "This user currently does not want to receive messages.",
+    );
+  }, [
+    activeDirectPeerIdForActions,
+    appendInlineSystemNotice,
+    blockedByPeerUserIds,
+    blockedUserIds,
+    language,
+  ]);
+
   const onSendMessage = async (options?: { parentMessageId?: string | null }) => {
     const content = draftMessage.trim();
     if (!content || !activeConversationId || isSending) return;
+
+    if (activeConversation?.type !== "group" && !canComposeDirectForActions) {
+      appendCurrentDirectRestrictionNotice();
+      return;
+    }
 
     // Stop typing indicator immediately when sending
     onTypingSendMessage();
@@ -4454,6 +5157,12 @@ export function ChatPage() {
       setDraftMessage("");
       await fetchConversations();
     } catch (error) {
+      if (handleDirectMessageBlockedError(error)) {
+        return;
+      }
+      if (handleDirectMessageRestrictionError(error)) {
+        return;
+      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsSending(false);
@@ -4463,6 +5172,11 @@ export function ChatPage() {
   const onQuickSendText = async (text: string) => {
     const content = text.trim();
     if (!content || !activeConversationId || isSending) {
+      return;
+    }
+
+    if (activeConversation?.type !== "group" && !canComposeDirectForActions) {
+      appendCurrentDirectRestrictionNotice();
       return;
     }
 
@@ -4484,6 +5198,12 @@ export function ChatPage() {
       setDraftMessage("");
       await fetchConversations();
     } catch (error) {
+      if (handleDirectMessageBlockedError(error)) {
+        return;
+      }
+      if (handleDirectMessageRestrictionError(error)) {
+        return;
+      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsSending(false);
@@ -4615,6 +5335,13 @@ export function ChatPage() {
         return;
       }
 
+      if (handleDirectMessageBlockedError(error) || handleDirectMessageRestrictionError(error)) {
+        setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
+        delete uploadFileRegistryRef.current[localId];
+        delete uploadAbortControllersRef.current[localId];
+        return;
+      }
+
       setPendingUploads((prev) =>
         prev.map((item) =>
           item.localId === localId
@@ -4632,6 +5359,11 @@ export function ChatPage() {
 
   const onSendFiles = async (files: File[], caption: string) => {
     if (!activeConversationId || files.length === 0) {
+      return;
+    }
+
+    if (activeConversation?.type !== "group" && !canComposeDirectForActions) {
+      appendCurrentDirectRestrictionNotice();
       return;
     }
 
@@ -5006,10 +5738,18 @@ export function ChatPage() {
     try {
       setIsSubmittingFriend(true);
       const result = await addFriend(friendProfile.id);
-      setFriendshipStatus(normalizeFriendshipStatus(result.data.status));
+      const nextStatus = normalizeFriendshipStatus(result.data.status);
+      setFriendshipStatus(nextStatus);
+      setPreviewUserFriendshipStatus(nextStatus);
       await fetchFriendshipData();
       setBannerMessage(
-        language === "vi" ? "Da gui loi moi ket ban" : "Friend request sent",
+        nextStatus === "ACCEPTED"
+          ? language === "vi"
+            ? "Da ket ban thanh cong"
+            : "Friendship accepted"
+          : language === "vi"
+            ? "Da gui loi moi ket ban"
+            : "Friend request sent",
       );
       setIsAddFriendOpen(false);
     } catch (error) {
@@ -5086,6 +5826,9 @@ export function ChatPage() {
         (item) => item.friendshipId === friendshipId,
       );
       if (accepted?.requesterId) {
+        setBlockedUserIds((prev) =>
+          prev.filter((userId) => userId !== accepted.requesterId),
+        );
         const conversation = await createDirectConversation(
           accepted.requesterId,
         );
@@ -5123,6 +5866,22 @@ export function ChatPage() {
     }
   };
 
+  const onCancelFriendRequest = async (friendshipId: string) => {
+    try {
+      setProcessingFriendshipId(friendshipId);
+      await cancelFriendRequest(friendshipId);
+      setActiveDirectFriendshipStatus("NONE");
+      await fetchFriendshipData();
+      setBannerMessage(
+        language === "vi" ? "Da huy loi moi ket ban" : "Friend request cancelled",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setProcessingFriendshipId(null);
+    }
+  };
+
   const onRemoveFriend = async (friendshipId: string) => {
     try {
       setProcessingFriendshipId(friendshipId);
@@ -5142,6 +5901,155 @@ export function ChatPage() {
     }
   };
 
+  const onBlockUser = async (targetUserId: string) => {
+    if (!targetUserId) {
+      return;
+    }
+
+    setIsUpdatingPeerRelationship(true);
+    try {
+      const result = await blockUserRequest(targetUserId);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
+      const hasIncomingPendingRequestWithTarget = pendingFriendRequests.some(
+        (item) => item.requesterId === targetUserId,
+      );
+
+      setBlockedUserIds((prev) =>
+        blockedByMe
+          ? prev.includes(targetUserId)
+            ? prev
+            : [...prev, targetUserId]
+          : prev.filter((id) => id !== targetUserId),
+      );
+      setBlockedByPeerUserIds((prev) =>
+        blockedByPeer
+          ? prev.includes(targetUserId)
+            ? prev
+            : [...prev, targetUserId]
+          : prev.filter((id) => id !== targetUserId),
+      );
+      setPeerRejectedMessageUserIds((prev) => {
+        const next = { ...prev };
+        delete next[targetUserId];
+        return next;
+      });
+      setPendingFriendRequests((prev) =>
+        prev.filter(
+          (item) =>
+            item.requesterId !== targetUserId && item.addresseeId !== targetUserId,
+        ),
+      );
+      setSentPendingFriendRequests((prev) =>
+        prev.filter(
+          (item) =>
+            item.requesterId !== targetUserId && item.addresseeId !== targetUserId,
+        ),
+      );
+      setFriendContacts((prev) =>
+        prev.filter((item) => item.userId !== targetUserId),
+      );
+      setPendingFriendRequestsUnreadCount((prev) =>
+        hasIncomingPendingRequestWithTarget ? Math.max(0, prev - 1) : prev,
+      );
+
+      if (activeDirectPeerIdForActions === targetUserId) {
+        setActiveDirectFriendshipStatus("BLOCKED");
+        appendInlineSystemNotice(
+          language === "vi"
+            ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+            : "You blocked this user. Neither side can send messages right now.",
+        );
+      }
+
+      if (previewUserProfile?.id === targetUserId) {
+        setPreviewUserFriendshipStatus("BLOCKED");
+      }
+
+      await Promise.all([fetchFriendshipData(), fetchConversations({ silent: true })]);
+      setBannerMessage(
+        language === "vi" ? "Da chan nguoi dung" : "User blocked",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsUpdatingPeerRelationship(false);
+    }
+  };
+
+  const onUnblockUser = async (targetUserId: string) => {
+    if (!targetUserId) {
+      return;
+    }
+
+    setIsUpdatingPeerRelationship(true);
+    try {
+      const result = await unblockUserRequest(targetUserId);
+      const { blockedByPeer } = resolveBlockedState(result.data);
+
+      setBlockedUserIds((prev) => prev.filter((id) => id !== targetUserId));
+      setBlockedByPeerUserIds((prev) =>
+        blockedByPeer
+          ? prev.includes(targetUserId)
+            ? prev
+            : [...prev, targetUserId]
+          : prev.filter((id) => id !== targetUserId),
+      );
+      setActiveDirectFriendshipStatus((prev) =>
+        prev === "BLOCKED" ? (blockedByPeer ? "BLOCKED" : "NONE") : prev,
+      );
+      if (previewUserProfile?.id === targetUserId) {
+        setPreviewUserFriendshipStatus(blockedByPeer ? "BLOCKED" : "NONE");
+      }
+      await Promise.all([fetchFriendshipData(), fetchConversations({ silent: true })]);
+      setBannerMessage(
+        language === "vi" ? "Da bo chan nguoi dung" : "User unblocked",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsUpdatingPeerRelationship(false);
+    }
+  };
+
+  const onAddFriendToUser = async (targetUserId: string) => {
+    if (!targetUserId) {
+      return;
+    }
+
+    if (blockedUserIds.includes(targetUserId)) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban dang chan nguoi nay. Vui long bo chan truoc."
+          : "You blocked this user. Please unblock first.",
+      );
+      return;
+    }
+
+    setIsUpdatingPeerRelationship(true);
+    try {
+      const result = await addFriend(targetUserId);
+      const nextStatus = normalizeFriendshipStatus(result.data.status);
+      setActiveDirectFriendshipStatus(nextStatus);
+      if (previewUserProfile?.id === targetUserId) {
+        setPreviewUserFriendshipStatus(nextStatus);
+      }
+      await fetchFriendshipData();
+      setBannerMessage(
+        nextStatus === "ACCEPTED"
+          ? language === "vi"
+            ? "Da ket ban thanh cong"
+            : "Friendship accepted"
+          : language === "vi"
+            ? "Da gui loi moi ket ban"
+            : "Friend request sent",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsUpdatingPeerRelationship(false);
+    }
+  };
+
   const onOpenFriendConversation = async (friendUserId: string) => {
     try {
       const conversation = await createDirectConversation(friendUserId);
@@ -5149,6 +6057,11 @@ export function ChatPage() {
       hasUserOpenedConversationRef.current = true;
       manuallyOpenedConversationIdRef.current = conversation.data.id;
       pendingReadSyncOnOpenRef.current = true;
+      setActiveMessageWorkspaceView(
+        friendUserId && !friendUserIdSet.has(friendUserId)
+          ? "stranger-inbox"
+          : "default",
+      );
       setActiveConversationId(conversation.data.id);
       setActiveTab("messages");
 
@@ -5164,6 +6077,78 @@ export function ChatPage() {
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onActivateConversation = (conversationId: string) => {
+    const currentConversation = useChatStore
+      .getState()
+      .conversations.find((conversation) => conversation.id === conversationId);
+    const peerUserId =
+      currentConversation && currentConversation.type !== "group"
+        ? resolvePeerUserId(currentConversation)
+        : null;
+
+    hasUserOpenedConversationRef.current = true;
+    manuallyOpenedConversationIdRef.current = conversationId;
+    pendingReadSyncOnOpenRef.current = true;
+    setActiveMessageWorkspaceView(
+      peerUserId && !friendUserIdSet.has(peerUserId)
+        ? "stranger-inbox"
+        : "default",
+    );
+    setActiveConversationId(conversationId);
+    setActiveTab("messages");
+
+    if (currentConversation && (currentConversation.unreadCount ?? 0) > 0) {
+      markConversationReadLocal(conversationId);
+      void markConversationRead(conversationId).catch(() => {
+        // Keep local unread cleared even if backend sync retries later.
+      });
+    }
+  };
+
+  const onOpenUserPreview = async (userId: string) => {
+    if (!userId) {
+      return;
+    }
+
+    const normalizedMyId = myProfile?.id ?? null;
+    setIsUserPreviewOpen(true);
+    setIsLoadingUserPreview(true);
+
+    try {
+      if (normalizedMyId && userId === normalizedMyId && myProfile) {
+        setPreviewUserProfile(myProfile);
+        setPreviewUserFriendshipStatus("ACCEPTED");
+        return;
+      }
+
+      const cachedProfile = userProfileMap[userId];
+      if (cachedProfile) {
+        setPreviewUserProfile(cachedProfile);
+      }
+
+      const [summaryResult, statusResult] = await Promise.all([
+        getUserSummary(userId),
+        normalizedMyId ? getFriendshipStatus(userId) : Promise.resolve({ data: { status: "NONE" } }),
+      ]);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
+
+      setPreviewUserProfile(summaryResult.data);
+      setUserProfileMap((prev) => ({
+        ...prev,
+        [userId]: summaryResult.data,
+      }));
+      setPreviewUserFriendshipStatus(
+        blockedByMe || blockedByPeer || blockedUserIds.includes(userId)
+          ? "BLOCKED"
+          : normalizeFriendshipStatus(statusResult.data.status),
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    } finally {
+      setIsLoadingUserPreview(false);
     }
   };
 
@@ -5198,6 +6183,10 @@ export function ChatPage() {
         avatarUrl: profileAvatarUrl.trim() || null,
         gender: profileGender.trim() || null,
         birthdate: profileBirthdate.trim() || null,
+        hideBirthdate: profileHideBirthdate,
+        hideEmail: profileHideEmail,
+        hidePhone: profileHidePhone,
+        allowStrangerMessages: profileAllowStrangerMessages,
       });
       setMyProfile(result.data);
       setBannerMessage(
@@ -5246,6 +6235,10 @@ export function ChatPage() {
         avatarUrl: uploadedAvatarUrl,
         gender: profileGender.trim() || null,
         birthdate: profileBirthdate.trim() || null,
+        hideBirthdate: profileHideBirthdate,
+        hideEmail: profileHideEmail,
+        hidePhone: profileHidePhone,
+        allowStrangerMessages: profileAllowStrangerMessages,
       });
       setMyProfile(updatedProfile.data);
       setBannerMessage(
@@ -5397,6 +6390,148 @@ export function ChatPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [friendContacts, userProfileMap, userPresenceMap, presenceTick]);
 
+  const normalizedContactsSearchQuery = contactsSearchQuery.trim().toLowerCase();
+
+  const filteredContactUsers = useMemo(() => {
+    if (!normalizedContactsSearchQuery) {
+      return contactUsers;
+    }
+
+    return contactUsers.filter((user) => {
+      const haystacks = [
+        user.name,
+        user.email ?? "",
+        user.id,
+      ];
+      return haystacks.some((value) =>
+        value.toLowerCase().includes(normalizedContactsSearchQuery),
+      );
+    });
+  }, [contactUsers, normalizedContactsSearchQuery]);
+
+  const groupedContactUsers = useMemo(() => {
+    const groups = new Map<string, typeof filteredContactUsers>();
+
+    filteredContactUsers.forEach((user) => {
+      const firstCharacter = user.name.trim().charAt(0).toUpperCase();
+      const groupKey = /^[A-ZÀ-Ỹ]$/i.test(firstCharacter) ? firstCharacter : "#";
+      const currentItems = groups.get(groupKey) ?? [];
+      groups.set(groupKey, [...currentItems, user]);
+    });
+
+    return Array.from(groups.entries()).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+  }, [filteredContactUsers]);
+
+  const blockedUserIdSet = useMemo(
+    () => new Set(blockedUserIds),
+    [blockedUserIds],
+  );
+
+  const blockedByPeerUserIdSet = useMemo(
+    () => new Set(blockedByPeerUserIds),
+    [blockedByPeerUserIds],
+  );
+
+  useEffect(() => {
+    if (!previewUserProfile?.id) {
+      return;
+    }
+
+    if (
+      blockedUserIdSet.has(previewUserProfile.id) ||
+      blockedByPeerUserIdSet.has(previewUserProfile.id)
+    ) {
+      setPreviewUserFriendshipStatus("BLOCKED");
+      return;
+    }
+
+    if (previewUserFriendshipStatus === "BLOCKED") {
+      setPreviewUserFriendshipStatus("NONE");
+    }
+  }, [
+    blockedByPeerUserIdSet,
+    blockedUserIdSet,
+    previewUserFriendshipStatus,
+    previewUserProfile?.id,
+  ]);
+
+  useEffect(() => {
+    setPeerRejectedMessageUserIds((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      Object.keys(next).forEach((userId) => {
+        if (friendUserIdSet.has(userId)) {
+          delete next[userId];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [friendUserIdSet]);
+
+  const joinedGroupContacts = useMemo(() => {
+    return conversations
+      .filter((conversation) => conversation.type === "group")
+      .map((conversation) => ({
+        id: conversation.id,
+        name: getConversationDisplayName(conversation),
+        avatarUrl: conversation.avatar ?? null,
+        memberCount: conversation.participants?.length ?? 0,
+        unreadCount: Math.max(0, conversation.unreadCount ?? 0),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [conversations]);
+
+  const filteredJoinedGroupContacts = useMemo(() => {
+    if (!normalizedContactsSearchQuery) {
+      return joinedGroupContacts;
+    }
+
+    return joinedGroupContacts.filter((group) =>
+      [group.name, `${group.memberCount}`].some((value) =>
+        String(value).toLowerCase().includes(normalizedContactsSearchQuery),
+      ),
+    );
+  }, [joinedGroupContacts, normalizedContactsSearchQuery]);
+
+  const filteredPendingFriendRequests = useMemo(() => {
+    if (!normalizedContactsSearchQuery) {
+      return pendingFriendRequests;
+    }
+
+    return pendingFriendRequests.filter((request) => {
+      const profile = userProfileMap[request.requesterId];
+      const haystacks = [
+        profile?.fullName ?? "",
+        profile?.email ?? "",
+        request.requesterId,
+      ];
+      return haystacks.some((value) =>
+        value.toLowerCase().includes(normalizedContactsSearchQuery),
+      );
+    });
+  }, [normalizedContactsSearchQuery, pendingFriendRequests, userProfileMap]);
+
+  const filteredSentPendingFriendRequests = useMemo(() => {
+    if (!normalizedContactsSearchQuery) {
+      return sentPendingFriendRequests;
+    }
+
+    return sentPendingFriendRequests.filter((request) => {
+      const profile = userProfileMap[request.addresseeId];
+      const haystacks = [
+        profile?.fullName ?? "",
+        profile?.email ?? "",
+        request.addresseeId,
+      ];
+      return haystacks.some((value) =>
+        value.toLowerCase().includes(normalizedContactsSearchQuery),
+      );
+    });
+  }, [normalizedContactsSearchQuery, sentPendingFriendRequests, userProfileMap]);
+
   const unreadFromConversations = conversations.reduce(
     (sum, item) => sum + Math.max(0, item.unreadCount ?? 0),
     0,
@@ -5414,6 +6549,110 @@ export function ChatPage() {
       name: getConversationDisplayName(activeConversation),
     }
     : null;
+
+  const activeDirectPeerUserId =
+    activeConversationForView && activeConversationForView.type !== "group"
+      ? resolvePeerUserId(activeConversationForView)
+      : null;
+
+  const isActiveDirectPeerFriend = Boolean(
+    activeDirectPeerUserId && friendUserIdSet.has(activeDirectPeerUserId),
+  );
+  const isActiveDirectPeerBlockedByMe = Boolean(
+    activeDirectPeerUserId && blockedUserIdSet.has(activeDirectPeerUserId),
+  );
+  const isActiveDirectPeerBlockedByPeer = Boolean(
+    activeDirectPeerUserId && blockedByPeerUserIdSet.has(activeDirectPeerUserId),
+  );
+  const isActiveDirectPeerRejectingMessages = Boolean(
+    activeDirectPeerUserId && peerRejectedMessageUserIds[activeDirectPeerUserId],
+  );
+  const canComposeDirectMessage =
+    !isActiveDirectPeerBlockedByMe &&
+    !isActiveDirectPeerBlockedByPeer &&
+    !isActiveDirectPeerRejectingMessages;
+  const isActiveDirectPeerStranger = Boolean(
+    activeConversationForView &&
+      activeConversationForView.type !== "group" &&
+      activeDirectPeerUserId &&
+      !friendUserIdSet.has(activeDirectPeerUserId),
+  );
+  const activeIncomingPendingFriendRequest = activeDirectPeerUserId
+    ? pendingFriendRequests.find(
+      (item) =>
+        item.requesterId === activeDirectPeerUserId &&
+        normalizeFriendshipStatus(item.status) === "PENDING",
+    ) ?? null
+    : null;
+  const activeSentPendingFriendRequest = activeDirectPeerUserId
+    ? sentPendingFriendRequests.find(
+      (item) =>
+        item.addresseeId === activeDirectPeerUserId &&
+        normalizeFriendshipStatus(item.status) === "PENDING",
+    ) ?? null
+    : null;
+  const directStrangerActionMode: "add-or-block" | "incoming-request" | "outgoing-request" | null =
+    !activeConversationForView ||
+      activeConversationForView.type === "group" ||
+      !activeDirectPeerUserId ||
+      isActiveDirectPeerFriend ||
+      isActiveDirectPeerBlockedByMe ||
+      isActiveDirectPeerBlockedByPeer
+      ? null
+      : activeIncomingPendingFriendRequest
+        ? "incoming-request"
+        : activeSentPendingFriendRequest || normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
+          ? "outgoing-request"
+          : "add-or-block";
+  const activeDirectRelationshipBadgeLabel =
+    !activeConversationForView || activeConversationForView.type === "group"
+      ? null
+      : isActiveDirectPeerBlockedByMe || isActiveDirectPeerBlockedByPeer
+        ? language === "vi"
+          ? "Da chan"
+          : "Blocked"
+        : isActiveDirectPeerFriend
+          ? language === "vi"
+            ? "Ban be"
+            : "Friends"
+          : directStrangerActionMode === "incoming-request"
+            ? language === "vi"
+              ? "Cho ban xac nhan"
+              : "Awaiting your approval"
+            : directStrangerActionMode === "outgoing-request"
+              ? language === "vi"
+                ? "Da gui loi moi"
+                : "Request sent"
+              : language === "vi"
+                ? "Nguoi la"
+                : "Stranger";
+  const isProcessingActivePeerFriendship = Boolean(
+    (activeIncomingPendingFriendRequest &&
+      processingFriendshipId === activeIncomingPendingFriendRequest.friendshipId) ||
+      (activeSentPendingFriendRequest &&
+        processingFriendshipId === activeSentPendingFriendRequest.friendshipId),
+  );
+
+  useEffect(() => {
+    if (
+      activeMessageWorkspaceView !== "stranger-inbox" ||
+      !activeConversationForView ||
+      activeConversationForView.type === "group" ||
+      !activeDirectPeerUserId
+    ) {
+      return;
+    }
+
+    if (friendUserIdSet.has(activeDirectPeerUserId)) {
+      setActiveMessageWorkspaceView("default");
+    }
+  }, [
+    activeConversationForView?.id,
+    activeConversationForView?.type,
+    activeDirectPeerUserId,
+    activeMessageWorkspaceView,
+    friendUserIdSet,
+  ]);
 
   const activeConversationPinned = activeConversationForView
     ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
@@ -5473,6 +6712,87 @@ export function ChatPage() {
   const headerUnreadBadgeCount = activeConversationForView
     ? Math.max(Math.max(0, activeConversationForView.unreadCount ?? 0), globalUnreadCount)
     : globalUnreadCount;
+  const isStrangerWorkspaceActive = activeMessageWorkspaceView === "stranger-inbox";
+  const strangerWorkspaceSubtitle =
+    language === "vi"
+      ? "Cac cuoc tro chuyen ngoai danh ba se duoc tach rieng tai day."
+      : "Conversations outside your contacts are separated here.";
+  const contactMenuItems = [
+    {
+      key: "friends" as const,
+      label: language === "vi" ? "Danh sach ban be" : "Friend list",
+      count: contactUsers.length,
+      icon: Users,
+    },
+    {
+      key: "groups" as const,
+      label: language === "vi" ? "Danh sach nhom va cong dong" : "Groups and communities",
+      count: joinedGroupContacts.length,
+      icon: UsersRound,
+    },
+    {
+      key: "requests" as const,
+      label: language === "vi" ? "Loi moi ket ban" : "Friend requests",
+      count: pendingFriendRequests.length + sentPendingFriendRequests.length,
+      icon: UserRoundPlus,
+    },
+    {
+      key: "group-invites" as const,
+      label: language === "vi" ? "Loi moi vao nhom va cong dong" : "Group invites",
+      count: 0,
+      icon: CircleAlert,
+    },
+  ];
+
+  const activeDirectConversationNotice =
+    !activeConversationForView || activeConversationForView.type === "group"
+      ? null
+      : isActiveDirectPeerBlockedByMe
+        ? {
+            tone: "danger" as const,
+            title: language === "vi" ? "Ban da chan nguoi nay" : "You blocked this user",
+            description:
+              language === "vi"
+                ? "Ca hai hien khong the nhan tin cho nhau cho toi khi ban bo chan."
+                : "Neither side can send messages until you unblock this user.",
+          }
+        : isActiveDirectPeerBlockedByPeer
+          ? {
+              tone: "danger" as const,
+              title: language === "vi" ? "Ban da bi chan" : "You were blocked",
+              description:
+                language === "vi"
+                  ? "Nguoi dung nay da chan ban. Cuoc tro chuyen duoc giu lai de ban xem lich su."
+                  : "This user blocked you. The conversation stays visible for history only.",
+            }
+          : directStrangerActionMode === "incoming-request"
+            ? {
+                tone: "info" as const,
+                title: language === "vi" ? "Loi moi ket ban moi" : "New friend request",
+                description:
+                  language === "vi"
+                    ? "Nguoi nay da gui loi moi ket ban cho ban. Ban co the xac nhan, tu choi hoac chan."
+                    : "This person sent you a friend request. You can accept, decline, or block them.",
+              }
+            : directStrangerActionMode === "outgoing-request"
+              ? {
+                  tone: "info" as const,
+                  title: language === "vi" ? "Dang cho phan hoi" : "Waiting for reply",
+                  description:
+                    language === "vi"
+                      ? "Ban da gui loi moi ket ban. Trong luc cho xac nhan, ban van co the huy loi moi hoac chan."
+                      : "You already sent a friend request. While waiting, you can cancel it or block this user.",
+                }
+              : isActiveDirectPeerStranger
+                ? {
+                    tone: "warning" as const,
+                    title: language === "vi" ? "Nguoi la" : "Stranger",
+                    description:
+                      language === "vi"
+                        ? "Day la nguoi chua co trong danh ba. Hay ket ban neu ban muon tiep tuc tro chuyen an toan hon."
+                        : "This person is outside your contacts. Add them first if you want a safer, more familiar chat flow.",
+                  }
+                : null;
 
   const onChangeTab = (tab: ChatTab) => {
     // ═══════════════════════════════════════════════════════════════════════
@@ -5484,9 +6804,28 @@ export function ChatPage() {
     if (tab === "messages" && activeTab !== "messages") {
       hasUserOpenedConversationRef.current = false;
       manuallyOpenedConversationIdRef.current = null;
+      setActiveMessageWorkspaceView("default");
       setActiveConversationId(null);
     }
+    if (tab !== "messages") {
+      setActiveMessageWorkspaceView("default");
+    }
     setActiveTab(tab);
+  };
+
+  const onOpenStrangerInbox = () => {
+    hasUserOpenedConversationRef.current = false;
+    manuallyOpenedConversationIdRef.current = null;
+    setActiveMessageWorkspaceView("stranger-inbox");
+    setActiveConversationId(null);
+    setActiveTab("messages");
+  };
+
+  const onBackToDefaultMessageWorkspace = () => {
+    hasUserOpenedConversationRef.current = false;
+    manuallyOpenedConversationIdRef.current = null;
+    setActiveMessageWorkspaceView("default");
+    setActiveConversationId(null);
   };
 
   const activeConversationPresence = activeConversation && activeConversation.type !== "group"
@@ -5503,6 +6842,25 @@ export function ChatPage() {
     activeConversationForView?.type === "group"
       ? groupSettingsMap[activeConversationForView.id] ?? null
       : null;
+
+  const canComposeGroupMessage = (() => {
+    if (activeConversationForView?.type !== "group") {
+      return true;
+    }
+
+    const currentUserId = myProfile?.id ?? null;
+    if (!currentUserId || !activeGroupSettings) {
+      return true;
+    }
+
+    const isOwner = activeGroupSettings.ownerId === currentUserId;
+    const isAdmin = (activeGroupSettings.admins ?? []).includes(currentUserId);
+    if (isOwner || isAdmin) {
+      return true;
+    }
+
+    return activeGroupSettings.allowMembersSendMessages !== false;
+  })();
 
   const activeGroupPreference =
     activeConversationForView?.type === "group"
@@ -5542,6 +6900,24 @@ export function ChatPage() {
       (!activeCall || activeCall.callId !== activeGroupCallNotice.callId),
   );
 
+  const typingIndicatorText = typingDisplayName
+    ? `${typingDisplayName} ${language === "vi" ? "dang go..." : "is typing..."}`
+    : null;
+
+  const activeGroupMemberLabel = `${activeGroupMembers.length} ${
+    language === "vi" ? "thanh vien" : "members"
+  }`;
+
+  const activeGroupCallNoticeDescription = activeGroupCallNotice
+    ? language === "vi"
+      ? `${activeGroupCallNotice.initiatorDisplayName} dang trong cuoc goi ${
+          activeGroupCallNotice.mode === "video" ? "video" : "thoai"
+        } nhom`
+      : `${activeGroupCallNotice.initiatorDisplayName} is in an active ${
+          activeGroupCallNotice.mode === "video" ? "video" : "voice"
+        } group call`
+    : "";
+
   const incomingCallView: IncomingCallView | null = incomingCall
     ? {
       callId: incomingCall.callId,
@@ -5551,291 +6927,630 @@ export function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0d1521] text-slate-100">
+    <div className="flex h-screen overflow-hidden bg-[var(--color-zola-page)] text-slate-100">
       <Sidebar
+        language={language}
         active={activeTab}
+        showChatList={activeTab === "messages"}
+        chatListTitle={
+          isStrangerWorkspaceActive
+            ? language === "vi"
+              ? "Tin nhan tu nguoi la"
+              : "Stranger messages"
+            : undefined
+        }
+        chatListSubtitle={
+          isStrangerWorkspaceActive ? strangerWorkspaceSubtitle : undefined
+        }
+        chatListShowBackButton={isStrangerWorkspaceActive}
+        onChatListBack={onBackToDefaultMessageWorkspace}
+        chatListShowPrimaryActions={!isStrangerWorkspaceActive}
         messageBadge={messageBadge}
         contactsBadge={contactsBadge}
         chats={sidebarChats}
-        selectedChatId={activeConversationId}
+        selectedChatId={
+          isStrangerWorkspaceActive && !activeConversationId
+            ? STRANGER_INBOX_ID
+            : activeConversationId
+        }
         searchText={searchText}
         onTabChange={onChangeTab}
         onSearchTextChange={setSearchText}
         onSelectChat={(conversationId) => {
-          hasUserOpenedConversationRef.current = true;
-          manuallyOpenedConversationIdRef.current = conversationId;
-          pendingReadSyncOnOpenRef.current = true;
-          setActiveConversationId(conversationId);
-
-          // ═══════════════════════════════════════════════════════════════════════
-          // FIX: Clear unread IMMEDIATELY when user clicks on a conversation
-          // This ensures the UI updates instantly without waiting for messages to load
-          // The API call syncs with backend; realtime will notify other tabs
-          // ═══════════════════════════════════════════════════════════════════════
-          const currentConversation = useChatStore
-            .getState()
-            .conversations.find((c) => c.id === conversationId);
-          if (currentConversation && (currentConversation.unreadCount ?? 0) > 0) {
-            // 1. Clear unread locally (synchronous - UI updates immediately)
-            markConversationReadLocal(conversationId);
-            // 2. Sync with backend (async - don't block the click)
-            void markConversationRead(conversationId).catch(() => {
-              // Silently handle - local state is already cleared, backend will sync on next refresh
-            });
+          if (conversationId === STRANGER_INBOX_ID) {
+            onOpenStrangerInbox();
+            return;
           }
+          onActivateConversation(conversationId);
         }}
         onAddFriend={() => setIsAddFriendOpen(true)}
         onCreateGroup={() => setIsCreateGroupOpen(true)}
       />
 
       {activeTab !== "messages" && (
-        <aside className="w-[320px] shrink-0 border-r border-slate-200 bg-white">
+        <aside className="min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)]">
           {activeTab === "contacts" && (
-            <div className="flex h-full flex-col">
-              <div className="border-b border-slate-200 p-4">
-                <h2 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Loi moi ket ban" : "Friend Requests"}
-                </h2>
-              </div>
-
-              <div className="space-y-2 border-b border-slate-200 p-3">
-                {pendingFriendRequests.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-                    {language === "vi"
-                      ? "Chua co loi moi. Dung nut Them ban de tim theo email."
-                      : "No pending request. Use New Message to search by email."}
+            <div className="mx-auto flex h-full w-full max-w-[1500px] gap-5 p-5">
+              <aside className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
+                <div className="border-b border-white/6 px-4 pb-3 pt-4">
+                  <div className="relative">
+                    <Search
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                    />
+                    <input
+                      type="text"
+                      value={contactsSearchQuery}
+                      onChange={(event) => setContactsSearchQuery(event.target.value)}
+                      placeholder={language === "vi" ? "Tim danh ba" : "Search contacts"}
+                      className="h-11 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
+                    />
                   </div>
-                ) : (
-                  pendingFriendRequests.map((request) => {
-                    const profile = userProfileMap[request.requesterId];
-                    const displayName =
-                      profile?.fullName ??
-                      `User ${request.requesterId.slice(0, 8)}`;
-                    const displayEmail = profile?.email ?? request.requesterId;
+                </div>
 
+                <div className="space-y-1.5 px-2 py-3">
+                  {contactMenuItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = contactsView === item.key;
                     return (
-                      <div
-                        key={request.friendshipId}
-                        className="rounded-xl border border-slate-200 bg-white p-3"
-                      >
-                        <div className="mb-2 flex items-center gap-3">
-                          <div className="grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
-                            {initials(displayName)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">
-                              {displayName}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {displayEmail}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={
-                              processingFriendshipId === request.friendshipId
-                            }
-                            onClick={() =>
-                              void onAcceptFriendRequest(request.friendshipId)
-                            }
-                            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Chap nhan" : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              processingFriendshipId === request.friendshipId
-                            }
-                            onClick={() =>
-                              void onDeclineFriendRequest(request.friendshipId)
-                            }
-                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                          >
-                            {language === "vi" ? "Tu choi" : "Decline"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="p-4 pb-2">
-                <h2 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Tat ca ban be" : "All Friends"}
-                </h2>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {contactUsers.map((user) => (
-                  <div
-                    key={user.sortKey}
-                    className="mb-1 flex cursor-pointer items-center justify-between rounded-xl p-3 transition-all duration-200 hover:bg-slate-50"
-                    onClick={() => void onOpenFriendConversation(user.id)}
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
-                        {initials(user.name)}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm text-slate-700">
-                          {user.name}
-                        </p>
-                        <p
-                          className={`text-[11px] ${user.isOnline ? "text-emerald-600" : "text-slate-400"}`}
-                        >
-                          {user.presenceLabel}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="ml-3 flex items-center gap-2">
-                      <span className="max-w-25 truncate text-xs text-slate-400">
-                        {user.email ?? ""}
-                      </span>
                       <button
+                        key={item.key}
                         type="button"
-                        disabled={processingFriendshipId === user.friendshipId}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void onRemoveFriend(user.friendshipId);
-                        }}
-                        className="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 transition-all duration-200 hover:bg-rose-50 disabled:opacity-50"
+                        onClick={() => setContactsView(item.key)}
+                        className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition ${
+                          isActive
+                            ? "bg-[rgba(42,134,255,0.20)] text-white shadow-[inset_0_0_0_1px_rgba(82,168,255,0.35)]"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        }`}
                       >
-                        {language === "vi" ? "Xoa" : "Remove"}
+                        <span
+                          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                            isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-white/5 text-slate-400"
+                          }`}
+                        >
+                          <Icon size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{item.label}</span>
+                          <span className="mt-0.5 block text-[11px] text-slate-500">
+                            {item.key === "friends"
+                              ? language === "vi"
+                                ? "Quan ly ban be va mo ho so nhanh."
+                                : "Manage friends and open profiles quickly."
+                              : item.key === "groups"
+                                ? language === "vi"
+                                  ? "Nhom va cong dong ban dang tham gia."
+                                  : "Groups and communities you joined."
+                                : item.key === "requests"
+                                  ? language === "vi"
+                                    ? "Loi moi den va loi moi ban da gui."
+                                    : "Incoming and sent friendship requests."
+                                  : language === "vi"
+                                    ? "Danh muc cho loi moi nhom sau nay."
+                                    : "Reserved for future group invites."}
+                          </span>
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                            isActive ? "bg-white/10 text-slate-100" : "bg-white/5 text-slate-400"
+                          }`}
+                        >
+                          {item.count}
+                        </span>
                       </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-auto border-t border-white/6 px-4 py-4 text-xs text-slate-500">
+                  {language === "vi"
+                    ? "Danh ba duoc dong bo theo du lieu ban be, nhom va loi moi hien tai."
+                    : "Contacts are synced from your current friends, groups, and request data."}
+                </div>
+              </aside>
+
+              <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
+                <div className="border-b border-white/6 px-6 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-300">
+                          {contactsView === "friends" ? (
+                            <Users size={18} />
+                          ) : contactsView === "groups" ? (
+                            <UsersRound size={18} />
+                          ) : contactsView === "requests" ? (
+                            <UserRoundPlus size={18} />
+                          ) : (
+                            <CircleAlert size={18} />
+                          )}
+                        </span>
+                        <h2 className="text-2xl font-semibold text-slate-100">
+                          {contactsView === "friends"
+                            ? language === "vi"
+                              ? "Danh sach ban be"
+                              : "Friend list"
+                            : contactsView === "groups"
+                              ? language === "vi"
+                                ? "Danh sach nhom va cong dong"
+                                : "Groups and communities"
+                              : contactsView === "requests"
+                                ? language === "vi"
+                                  ? "Loi moi ket ban"
+                                  : "Friend requests"
+                                : language === "vi"
+                                  ? "Loi moi vao nhom va cong dong"
+                                  : "Group invites"}
+                        </h2>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {contactsView === "friends"
+                          ? language === "vi"
+                            ? `Ban be (${filteredContactUsers.length})`
+                            : `Friends (${filteredContactUsers.length})`
+                          : contactsView === "groups"
+                            ? language === "vi"
+                              ? `Nhom va cong dong (${filteredJoinedGroupContacts.length})`
+                              : `Groups and communities (${filteredJoinedGroupContacts.length})`
+                            : contactsView === "requests"
+                              ? language === "vi"
+                                ? `${filteredPendingFriendRequests.length} loi moi den, ${filteredSentPendingFriendRequests.length} loi moi da gui`
+                                : `${filteredPendingFriendRequests.length} incoming, ${filteredSentPendingFriendRequests.length} sent`
+                              : language === "vi"
+                                ? "Danh muc nay da san sang cho realtime."
+                                : "This area is ready for realtime invite data."}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                        {language === "vi"
+                          ? contactsView === "friends"
+                            ? "Sap xep A-Z"
+                            : contactsView === "groups"
+                              ? "Theo ten nhom"
+                              : contactsView === "requests"
+                                ? "Dung theo trang thai"
+                                : "Cho du lieu realtime"
+                          : contactsView === "friends"
+                            ? "Sorted A-Z"
+                            : contactsView === "groups"
+                              ? "By group name"
+                              : contactsView === "requests"
+                                ? "Status overview"
+                                : "Realtime ready"}
+                      </span>
+                      <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                        {normalizedContactsSearchQuery
+                          ? language === "vi"
+                            ? `Dang loc: "${contactsSearchQuery}"`
+                            : `Filtered: "${contactsSearchQuery}"`
+                          : language === "vi"
+                            ? "Tat ca"
+                            : "All"}
+                      </span>
                     </div>
                   </div>
-                ))}
-                {contactUsers.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-                    {language === "vi" ? "Chua co ban be" : "No friends yet"}
-                  </div>
-                )}
-              </div>
+                </div>
+
+                <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                  {contactsView === "friends" && (
+                    <div className="space-y-6">
+                      {groupedContactUsers.length === 0 ? (
+                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-200">
+                            {language === "vi" ? "Chua co ban be phu hop." : "No matching friends yet."}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {language === "vi"
+                              ? "Thu doi tu khoa tim kiem hoac gui them loi moi ket ban."
+                              : "Try another search keyword or send more friend requests."}
+                          </p>
+                        </div>
+                      ) : (
+                        groupedContactUsers.map(([letter, users]) => (
+                          <div key={letter}>
+                            <p className="mb-3 px-2 text-lg font-semibold text-slate-300">{letter}</p>
+                            <div className="space-y-2">
+                              {users.map((user) => {
+                                const avatarUrl = resolveMediaUrl(userProfileMap[user.id]?.avatarUrl ?? null);
+                                return (
+                                  <div
+                                    key={user.sortKey}
+                                    className="flex items-center gap-4 rounded-[22px] border border-white/8 bg-[#1b2027] px-4 py-3 transition hover:border-sky-400/30 hover:bg-[#202731]"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void onOpenUserPreview(user.id);
+                                      }}
+                                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                                    >
+                                      {avatarUrl ? (
+                                        <img
+                                          src={avatarUrl}
+                                          alt={user.name}
+                                          className="h-12 w-12 rounded-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="grid h-12 w-12 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-100">
+                                          {initials(user.name)}
+                                        </div>
+                                      )}
+                                      <div className="min-w-0">
+                                        <p className="truncate text-lg font-semibold text-slate-100">{user.name}</p>
+                                        <p className={`text-xs ${user.isOnline ? "text-emerald-300" : "text-slate-400"}`}>
+                                          {user.presenceLabel}
+                                        </p>
+                                      </div>
+                                    </button>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void onOpenFriendConversation(user.id)}
+                                        className="rounded-full bg-[var(--color-zola-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[#4b9dff]"
+                                      >
+                                        {language === "vi" ? "Nhan tin" : "Message"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void onOpenUserPreview(user.id);
+                                        }}
+                                        className="grid h-10 w-10 place-items-center rounded-full border border-white/8 text-slate-400 hover:bg-white/5 hover:text-white"
+                                        title={language === "vi" ? "Them thao tac" : "More actions"}
+                                      >
+                                        <MoreHorizontal size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {contactsView === "groups" && (
+                    <div className="space-y-2">
+                      {filteredJoinedGroupContacts.length === 0 ? (
+                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-200">
+                            {language === "vi" ? "Chua co nhom phu hop." : "No matching groups yet."}
+                          </p>
+                        </div>
+                      ) : (
+                        filteredJoinedGroupContacts.map((group) => {
+                          const avatarUrl = resolveMediaUrl(group.avatarUrl);
+                          return (
+                            <button
+                              key={group.id}
+                              type="button"
+                              onClick={() => onActivateConversation(group.id)}
+                              className="flex w-full items-center gap-4 rounded-[22px] border border-white/8 bg-[#1b2027] px-4 py-3 text-left transition hover:border-sky-400/30 hover:bg-[#202731]"
+                            >
+                              {avatarUrl ? (
+                                <img
+                                  src={avatarUrl}
+                                  alt={group.name}
+                                  className="h-12 w-12 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="grid h-12 w-12 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-100">
+                                  {initials(group.name)}
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-lg font-semibold text-slate-100">{group.name}</p>
+                                  {group.unreadCount > 0 && (
+                                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      {group.unreadCount > 9 ? "9+" : group.unreadCount}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="mt-1 text-xs text-slate-400">
+                                  {language === "vi"
+                                    ? `${group.memberCount} thanh vien`
+                                    : `${group.memberCount} members`}
+                                </p>
+                              </div>
+                              <span className="grid h-10 w-10 place-items-center rounded-full border border-white/8 text-slate-400">
+                                <ChevronRight size={16} />
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {contactsView === "requests" && (
+                    <div className="grid gap-5 xl:grid-cols-2">
+                      <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
+                        <div className="border-b border-white/6 px-5 py-4">
+                          <h3 className="text-sm font-semibold text-slate-100">
+                            {language === "vi" ? "Loi moi ket ban den" : "Incoming requests"}
+                          </h3>
+                        </div>
+                        <div className="space-y-3 p-4">
+                          {filteredPendingFriendRequests.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
+                              {language === "vi"
+                                ? "Khong co loi moi ket ban nao phu hop."
+                                : "No incoming friend requests match the current filter."}
+                            </div>
+                          ) : (
+                            filteredPendingFriendRequests.map((request) => {
+                              const profile = userProfileMap[request.requesterId];
+                              const displayName = profile?.fullName ?? `User ${request.requesterId.slice(0, 8)}`;
+                              const avatarUrl = resolveMediaUrl(profile?.avatarUrl ?? null);
+                              return (
+                                <div
+                                  key={request.friendshipId}
+                                  className="rounded-2xl border border-white/8 bg-[#171b21] p-4"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    {avatarUrl ? (
+                                      <img
+                                        src={avatarUrl}
+                                        alt={displayName}
+                                        className="h-12 w-12 rounded-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="grid h-12 w-12 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-100">
+                                        {initials(displayName)}
+                                      </div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void onOpenUserPreview(request.requesterId);
+                                      }}
+                                      className="min-w-0 flex-1 text-left"
+                                    >
+                                      <p className="truncate text-sm font-semibold text-slate-100">{displayName}</p>
+                                      <p className="truncate text-xs text-slate-400">
+                                        {profile?.email ?? request.requesterId}
+                                      </p>
+                                    </button>
+                                  </div>
+                                  <div className="mt-4 flex gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={processingFriendshipId === request.friendshipId}
+                                      onClick={() => void onAcceptFriendRequest(request.friendshipId)}
+                                      className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                                    >
+                                      {language === "vi" ? "Chap nhan" : "Accept"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={processingFriendshipId === request.friendshipId}
+                                      onClick={() => void onDeclineFriendRequest(request.friendshipId)}
+                                      className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
+                                    >
+                                      {language === "vi" ? "Tu choi" : "Decline"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
+                        <div className="border-b border-white/6 px-5 py-4">
+                          <h3 className="text-sm font-semibold text-slate-100">
+                            {language === "vi" ? "Loi moi da gui" : "Sent requests"}
+                          </h3>
+                        </div>
+                        <div className="space-y-3 p-4">
+                          {filteredSentPendingFriendRequests.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
+                              {language === "vi"
+                                ? "Khong co loi moi da gui nao phu hop."
+                                : "No sent friend requests match the current filter."}
+                            </div>
+                          ) : (
+                            filteredSentPendingFriendRequests.map((request) => {
+                              const profile = userProfileMap[request.addresseeId];
+                              const displayName = profile?.fullName ?? `User ${request.addresseeId.slice(0, 8)}`;
+                              const avatarUrl = resolveMediaUrl(profile?.avatarUrl ?? null);
+                              return (
+                                <div
+                                  key={request.friendshipId}
+                                  className="rounded-2xl border border-white/8 bg-[#171b21] p-4"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    {avatarUrl ? (
+                                      <img
+                                        src={avatarUrl}
+                                        alt={displayName}
+                                        className="h-12 w-12 rounded-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="grid h-12 w-12 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-100">
+                                        {initials(displayName)}
+                                      </div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void onOpenUserPreview(request.addresseeId);
+                                      }}
+                                      className="min-w-0 flex-1 text-left"
+                                    >
+                                      <p className="truncate text-sm font-semibold text-slate-100">{displayName}</p>
+                                      <p className="truncate text-xs text-slate-400">
+                                        {profile?.email ?? request.addresseeId}
+                                      </p>
+                                    </button>
+                                  </div>
+                                  <div className="mt-4 flex gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={processingFriendshipId === request.friendshipId}
+                                      onClick={() => void onCancelFriendRequest(request.friendshipId)}
+                                      className="flex-1 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+                                    >
+                                      {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void onOpenFriendConversation(request.addresseeId)}
+                                      className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5"
+                                    >
+                                      {language === "vi" ? "Mo chat" : "Open chat"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </section>
+                    </div>
+                  )}
+
+                  {contactsView === "group-invites" && (
+                    <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
+                      <p className="text-sm font-semibold text-slate-200">
+                        {language === "vi"
+                          ? "Hien tai chua co loi moi vao nhom va cong dong."
+                          : "There are no group or community invites right now."}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {language === "vi"
+                          ? "Phan nay da san sang de noi voi du lieu realtime khi backend ho tro."
+                          : "This section is ready to connect to realtime invite data when the backend exposes it."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </section>
             </div>
           )}
 
           {activeTab === "profile" && (
-            <div className="p-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                {profileAvatarUrl ? (
-                  <img
-                    src={profileAvatarUrl}
-                    alt="avatar"
-                    className="mb-3 h-14 w-14 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="mb-3 grid h-14 w-14 place-items-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
-                    {initials(myProfile?.fullName ?? "User")}
+            <div className="mx-auto max-w-5xl space-y-4 p-6">
+              <div className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+                <div className="h-36 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_35%),linear-gradient(135deg,_#1d4ed8,_#0f172a_70%)]" />
+                <div className="relative px-5 pb-5">
+                  <div className="-mt-12 flex items-end gap-4">
+                    {resolveMediaUrl(profileAvatarUrl || myProfile?.avatarUrl || null) ? (
+                      <img
+                        src={resolveMediaUrl(profileAvatarUrl || myProfile?.avatarUrl || null) ?? undefined}
+                        alt="avatar"
+                        className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-lg"
+                      />
+                    ) : (
+                      <div className="grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-indigo-100 text-2xl font-bold text-indigo-700 shadow-lg">
+                        {initials(myProfile?.fullName ?? "User")}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1 pb-2">
+                      <h2 className="truncate text-2xl font-semibold text-slate-900">
+                        {myProfile?.fullName ?? "User"}
+                      </h2>
+                      <p className="truncate text-sm text-slate-500">
+                        {myProfile?.email ?? "-"}
+                      </p>
+                    </div>
                   </div>
-                )}
-                <h2 className="text-base font-semibold text-slate-800">
-                  {myProfile?.fullName ?? "User"}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {myProfile?.email ?? "-"}
-                </p>
+                </div>
               </div>
 
-              <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi" ? "Email" : "Email"}
-                  <input
-                    type="text"
-                    value={myProfile?.email ?? ""}
-                    readOnly
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500"
-                  />
-                </label>
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="grid grid-cols-1 gap-3">
+                  <label className="block text-xs font-semibold text-slate-500">
+                    {language === "vi" ? "Ho ten day du" : "Full name"}
+                    <input
+                      type="text"
+                      value={profileFullName}
+                      onChange={(event) => setProfileFullName(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                    />
+                  </label>
 
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi" ? "Ho ten" : "Full name"}
-                  <input
-                    type="text"
-                    value={profileFullName}
-                    onChange={(event) => setProfileFullName(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  />
-                </label>
+                  <label className="block text-xs font-semibold text-slate-500">
+                    {language === "vi" ? "Email" : "Email"}
+                    <input
+                      type="text"
+                      value={myProfile?.email ?? ""}
+                      readOnly
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm text-slate-500"
+                    />
+                  </label>
 
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi" ? "So dien thoai" : "Phone"}
-                  <input
-                    type="text"
-                    value={profilePhone}
-                    onChange={(event) => setProfilePhone(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  />
-                </label>
+                  <label className="block text-xs font-semibold text-slate-500">
+                    {language === "vi" ? "So dien thoai" : "Phone"}
+                    <input
+                      type="text"
+                      value={profilePhone}
+                      onChange={(event) => setProfilePhone(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                    />
+                  </label>
 
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi"
-                    ? "Avatar (upload S3)"
-                    : "Avatar (upload S3)"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) =>
-                      void onSelectProfileAvatar(
-                        event.target.files?.[0] ?? null,
-                      )
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  />
-                  {profileAvatarUrl && (
-                    <a
-                      href={profileAvatarUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-1 block truncate text-[11px] font-normal text-indigo-600 hover:text-indigo-700"
-                    >
-                      {profileAvatarUrl}
-                    </a>
-                  )}
-                </label>
+                  <label className="block text-xs font-semibold text-slate-500">
+                    {language === "vi" ? "Anh dai dien" : "Avatar"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) =>
+                        void onSelectProfileAvatar(
+                          event.target.files?.[0] ?? null,
+                        )
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                    />
+                  </label>
 
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi" ? "Gioi tinh" : "Gender"}
-                  <select
-                    value={profileGender}
-                    onChange={(event) => setProfileGender(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  >
-                    <option value="">
-                      {language === "vi" ? "Khong chon" : "Not set"}
-                    </option>
-                    <option value="MALE">
-                      {language === "vi" ? "Nam" : "Male"}
-                    </option>
-                    <option value="FEMALE">
-                      {language === "vi" ? "Nu" : "Female"}
-                    </option>
-                    <option value="OTHER">
-                      {language === "vi" ? "Khac" : "Other"}
-                    </option>
-                  </select>
-                </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-semibold text-slate-500">
+                      {language === "vi" ? "Gioi tinh" : "Gender"}
+                      <select
+                        value={profileGender}
+                        onChange={(event) => setProfileGender(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                      >
+                        <option value="">
+                          {language === "vi" ? "Khong chon" : "Not set"}
+                        </option>
+                        <option value="MALE">
+                          {language === "vi" ? "Nam" : "Male"}
+                        </option>
+                        <option value="FEMALE">
+                          {language === "vi" ? "Nu" : "Female"}
+                        </option>
+                        <option value="OTHER">
+                          {language === "vi" ? "Khac" : "Other"}
+                        </option>
+                      </select>
+                    </label>
 
-                <label className="block text-xs font-semibold text-slate-500">
-                  {language === "vi" ? "Ngay sinh" : "Birthdate"}
-                  <input
-                    type="date"
-                    value={profileBirthdate}
-                    onChange={(event) =>
-                      setProfileBirthdate(event.target.value)
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                  />
-                </label>
+                    <label className="block text-xs font-semibold text-slate-500">
+                      {language === "vi" ? "Ngay sinh" : "Birthdate"}
+                      <input
+                        type="date"
+                        value={profileBirthdate}
+                        onChange={(event) => setProfileBirthdate(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                      />
+                    </label>
+                  </div>
+                </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => void onSaveProfile()}
                     disabled={isSavingProfile || isUploadingAvatar}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
                   >
                     {isUploadingAvatar
                       ? language === "vi"
@@ -5854,7 +7569,7 @@ export function ChatPage() {
                     type="button"
                     onClick={() => void onDeleteProfile()}
                     disabled={isDeletingProfile}
-                    className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 disabled:opacity-50"
+                    className="rounded-xl border border-rose-300 px-4 py-2.5 text-xs font-semibold text-rose-600 disabled:opacity-50"
                   >
                     {isDeletingProfile
                       ? language === "vi"
@@ -5869,8 +7584,8 @@ export function ChatPage() {
             </div>
           )}
 
-          {activeTab === "calls" && (
-            <div className="h-full overflow-y-auto p-5">
+          {(activeTab as string) === "calls" && (
+            <div className="mx-auto h-full max-w-5xl overflow-y-auto p-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-base font-semibold text-slate-800">
                   {language === "vi" ? "Cuoc goi" : "Calls"}
@@ -5968,23 +7683,116 @@ export function ChatPage() {
           )}
 
           {activeTab === "settings" && (
-            <div className="p-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-base font-semibold text-slate-800">
+            <div className="mx-auto max-w-4xl p-6">
+              <div className="rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+                <h2 className="text-base font-semibold text-slate-100">
                   {language === "vi" ? "Cai dat" : "Settings"}
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-300">
                   {language === "vi"
-                    ? "Tuy chinh tai khoan va ung dung"
-                    : "Customize account and app preferences"}
+                    ? "Tuy chinh quyen rieng tu, tin nhan va bao ve tai khoan"
+                    : "Customize privacy, messaging, and account protection"}
                 </p>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-800">
+              <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+                <h3 className="text-sm font-semibold text-slate-100">
+                  {language === "vi" ? "Quyen rieng tu thong tin" : "Profile privacy"}
+                </h3>
+                <div className="mt-3 space-y-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">
+                        {language === "vi" ? "An ngay thang nam sinh" : "Hide birthdate"}
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        {language === "vi"
+                          ? "Nguoi khac se khong xem duoc ngay sinh cua ban."
+                          : "Other users will not be able to see your birthdate."}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={profileHideBirthdate}
+                      onChange={(event) => setProfileHideBirthdate(event.target.checked)}
+                      className="h-4 w-4 accent-sky-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">
+                        {language === "vi" ? "An email" : "Hide email"}
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        {language === "vi"
+                          ? "Chi hien email cho chinh ban."
+                          : "Only you will be able to see your email."}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={profileHideEmail}
+                      onChange={(event) => setProfileHideEmail(event.target.checked)}
+                      className="h-4 w-4 accent-sky-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">
+                        {language === "vi" ? "An so dien thoai" : "Hide phone"}
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        {language === "vi"
+                          ? "Nguoi khac se khong xem duoc so dien thoai cua ban."
+                          : "Other users will not be able to see your phone number."}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={profileHidePhone}
+                      onChange={(event) => setProfileHidePhone(event.target.checked)}
+                      className="h-4 w-4 accent-sky-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">
+                        {language === "vi" ? "Cho phep nhan tin tu nguoi la" : "Allow stranger messages"}
+                      </p>
+                      <p className="text-[11px] text-slate-300">
+                        {language === "vi"
+                          ? "Tat di neu ban chi muon nguoi da ket ban moi duoc nhan tin."
+                          : "Turn this off if only friends should be allowed to message you."}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={profileAllowStrangerMessages}
+                      onChange={(event) => setProfileAllowStrangerMessages(event.target.checked)}
+                      className="h-4 w-4 accent-sky-500"
+                    />
+                  </label>
+                </div>
+
+                <p className="mt-4 text-[11px] text-slate-300">
+                  {isSavingProfile
+                    ? language === "vi"
+                      ? "Dang luu cai dat..."
+                      : "Saving settings..."
+                    : language === "vi"
+                      ? "Cai dat rieng tu se duoc luu tu dong sau khi ban bat/tat."
+                      : "Privacy settings are saved automatically after each toggle."}
+                </p>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+                <h3 className="text-sm font-semibold text-slate-100">
                   {language === "vi" ? "Ma PIN an cuoc tro chuyen" : "Hidden conversation PIN"}
                 </h3>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-300">
                   {language === "vi"
                     ? hiddenConversationPin
                       ? "Nhap PIN trong o Search de hien lai cuoc tro chuyen da an"
@@ -6001,7 +7809,7 @@ export function ChatPage() {
                     value={settingsPinDraft}
                     onChange={(event) => setSettingsPinDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
                     placeholder={language === "vi" ? "PIN moi (4-8 so)" : "New PIN (4-8 digits)"}
-                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700"
+                    className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
                   />
                   <input
                     type="password"
@@ -6009,7 +7817,7 @@ export function ChatPage() {
                     value={settingsPinConfirmDraft}
                     onChange={(event) => setSettingsPinConfirmDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
                     placeholder={language === "vi" ? "Nhap lai PIN" : "Confirm PIN"}
-                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-700"
+                    className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
                   />
                 </div>
 
@@ -6017,7 +7825,7 @@ export function ChatPage() {
                   <button
                     type="button"
                     onClick={onSaveHiddenConversationPin}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                    className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
                   >
                     {hiddenConversationPin
                       ? language === "vi"
@@ -6032,7 +7840,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={onRemoveHiddenConversationPin}
-                      className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                      className="rounded-lg border border-rose-300/60 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15"
                     >
                       {language === "vi" ? "Xoa PIN" : "Remove PIN"}
                     </button>
@@ -6044,7 +7852,7 @@ export function ChatPage() {
                 <Link
                   to="/login"
                   onClick={() => clearAuthTokens()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 py-2 text-sm text-slate-100 transition-all duration-200 hover:bg-[#12355b]"
                 >
                   <LogOut size={16} />
                   <span>{language === "vi" ? "Dang xuat" : "Logout"}</span>
@@ -6055,20 +7863,14 @@ export function ChatPage() {
         </aside>
       )}
 
-      <main className="min-w-0 flex-1 bg-[#0f1724]">
+      <main className={activeTab === "messages" ? "min-w-0 flex-1 bg-[#0f1724]" : "hidden"}>
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
             {showJoinGroupCallNotice && activeGroupCallNotice && (
               <div className="z-20 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 sm:px-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-emerald-100">
-                    {language === "vi"
-                      ? `${activeGroupCallNotice.initiatorDisplayName} dang trong cuoc goi ${
-                          activeGroupCallNotice.mode === "video" ? "video" : "thoai"
-                        } nhom`
-                      : `${activeGroupCallNotice.initiatorDisplayName} is in an active ${
-                          activeGroupCallNotice.mode === "video" ? "video" : "voice"
-                        } group call`}
+                    {activeGroupCallNoticeDescription}
                   </div>
                   <button
                     type="button"
@@ -6106,12 +7908,9 @@ export function ChatPage() {
                 onCreateBoardNote={(noteText: string, pinToTop: boolean) => {
                   void onCreateGroupBoardNote(noteText, pinToTop);
                 }}
-                onCreatePoll={(input: CreateGroupPollInput) => {
-                  return onCreateGroupPoll(input);
-                }}
-                onCreateReminder={(input: { title: string; when?: string | null }) => {
-                  return onCreateGroupReminder(input);
-                }}
+                onCreatePoll={(input: CreateGroupPollInput) => onCreateGroupPoll(input)}
+                onCreateReminder={(input: { title: string; when?: string | null }) =>
+                  onCreateGroupReminder(input)}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 currentUserId={myProfile?.id ?? null}
@@ -6125,26 +7924,24 @@ export function ChatPage() {
                 onUpdateSettings={(payload: {
                   name?: string;
                   avatar?: string | null;
+                  allowMembersEditGroupProfile?: boolean;
+                  allowMembersPinBoardItems?: boolean;
+                  allowMembersCreateNotes?: boolean;
+                  allowMembersCreatePolls?: boolean;
+                  allowMembersSendMessages?: boolean;
                   onlyAdminsCanMessage?: boolean;
                   requireApprovalToJoin?: boolean;
+                  highlightAdminMessages?: boolean;
                   allowMemberInvite?: boolean;
                   transferOwnerId?: string;
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
                 }}
-                onAddMembers={(userIds: string[]) => {
-                  return onAddGroupMembers(userIds);
-                }}
+                onAddMembers={(userIds: string[]) => onAddGroupMembers(userIds)}
                 isAddingMembers={isAddingGroupMembers}
-                onSaveGroupName={(nextName: string) => {
-                  return onSaveActiveGroupName(nextName);
-                }}
-                onSelectGroupAvatar={(file: File | null) => {
-                  return onSelectActiveGroupAvatar(file);
-                }}
-                onClearGroupAvatar={() => {
-                  return onClearActiveGroupAvatar();
-                }}
+                onSaveGroupName={(nextName: string) => onSaveActiveGroupName(nextName)}
+                onSelectGroupAvatar={(file: File | null) => onSelectActiveGroupAvatar(file)}
+                onClearGroupAvatar={() => onClearActiveGroupAvatar()}
                 isUpdatingGroupProfile={isUpdatingGroupProfile}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
@@ -6159,7 +7956,11 @@ export function ChatPage() {
                 onDeleteGroup={() => {
                   void onDeleteActiveGroup();
                 }}
-                onPreferenceChange={(patch: { muted?: boolean; pinned?: boolean; hidden?: boolean }) => {
+                onPreferenceChange={(patch: {
+                  muted?: boolean;
+                  pinned?: boolean;
+                  hidden?: boolean;
+                }) => {
                   if (activeConversationForView?.id) {
                     updateGroupPreference(activeConversationForView.id, patch);
                   }
@@ -6176,14 +7977,17 @@ export function ChatPage() {
                   void onSendGroupTemplateMessage(type);
                 }}
               >
-                <Chat
+                <GroupConversationPane
                   language={language}
                   activeConversation={activeConversationForView}
                   activeConversationOnline={false}
-                  activeConversationPresenceLabel={`${activeGroupMembers.length} ${language === "vi" ? "thanh vien" : "members"}`}
+                  activeConversationPresenceLabel={activeGroupMemberLabel}
                   activeConversationPinned={activeConversationPinned}
                   headerUnreadBadgeCount={headerUnreadBadgeCount}
                   userProfileMap={userProfileMap}
+                  highlightAdminMessages={Boolean(activeGroupSettings?.highlightAdminMessages)}
+                  ownerUserId={activeGroupSettings?.ownerId ?? null}
+                  adminUserIds={activeGroupSettings?.admins ?? []}
                   showGroupPanelToggle
                   isGroupPanelOpen={isGroupPanelOpen}
                   onToggleGroupPanel={() => {
@@ -6224,7 +8028,9 @@ export function ChatPage() {
                   onClosePollMessage={(targetMessage) => {
                     void onCloseGroupPoll(targetMessage);
                   }}
-                  canManageGroupPoll={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)}
+                  canManageGroupPoll={Boolean(
+                    activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin,
+                  )}
                   pinnedMessages={activePinnedBoardItems}
                   latestPinnedSummary={latestPinnedSummary}
                   scrollToMessageRequest={scrollToMessageRequest}
@@ -6232,25 +8038,60 @@ export function ChatPage() {
                   onRetryUpload={onRetryUpload}
                   onCancelUpload={onCancelUpload}
                   isSending={isSending}
-                  typingText={typingDisplayName ? `${typingDisplayName} ${language === "vi" ? "dang go..." : "is typing..."}` : null}
+                  typingText={typingIndicatorText}
+                  allowComposer={canComposeGroupMessage}
+                  composerDisabledMessage={
+                    language === "vi"
+                      ? "Quan tri vien da tat quyen nhan tin cua thanh vien trong nhom nay."
+                      : "Admins disabled messaging for members in this group."
+                  }
                   hasMoreMessages={Boolean(nextCursor)}
                   isLoadingMoreMessages={isLoadingMoreMessages}
                   onLoadOlderMessages={onLoadOlderMessages}
                   onViewportBottomChange={setIsChatViewportAtBottom}
+                  onOpenUserProfile={(userId) => {
+                    void onOpenUserPreview(userId);
+                  }}
                 />
               </GroupChat>
+            ) : isStrangerWorkspaceActive && !activeConversationForView ? (
+              <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#0f1724] p-6 text-center sm:p-12">
+                <div className="absolute inset-0 z-0">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.18),rgba(15,23,36,0.94)_55%)]" />
+                  <div className="absolute left-[-8%] top-[-10%] h-[42%] w-[38%] rounded-full bg-amber-500/15 blur-[130px]" />
+                  <div className="absolute bottom-[-10%] right-[-10%] h-[44%] w-[40%] rounded-full bg-orange-500/15 blur-[140px]" />
+                </div>
+
+                <div className="relative z-10 max-w-xl rounded-3xl border border-amber-300/25 bg-slate-900/55 p-8 shadow-2xl backdrop-blur">
+                  <div className="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-2xl bg-[linear-gradient(135deg,rgba(249,115,22,0.9),rgba(245,158,11,0.92))] text-white shadow-lg shadow-amber-950/30">
+                    <CircleAlert size={34} />
+                  </div>
+                  <h2 className="mb-3 text-3xl font-bold tracking-tight text-slate-100">
+                    {language === "vi" ? "Tin nhan tu nguoi la" : "Stranger messages"}
+                  </h2>
+                  <p className="text-sm leading-relaxed text-slate-300">
+                    {strangerSidebarChats.length > 0
+                      ? language === "vi"
+                        ? "Nhung nguoi chua co trong danh ba se duoc tach rieng tai day. Chon mot cuoc tro chuyen de xem, ket ban hoac chan ngay."
+                        : "People outside your contacts are separated here. Select a conversation to review, add them, or block them."
+                      : language === "vi"
+                        ? "Hien tai khong co tin nhan nao tu nguoi la."
+                        : "There are no stranger messages right now."}
+                  </p>
+                </div>
+              </div>
             ) : (
-              <Chat
+              <DirectConversationPane
                 language={language}
                 activeConversation={activeConversationForView}
-                activeConversationOnline={
-                  activeConversationPresence?.online ?? false
-                }
+                activeConversationOnline={activeConversationPresence?.online ?? false}
                 activeConversationPresenceLabel={toPresenceLabel(
                   activeConversationPresence,
                 )}
                 activeConversationPinned={activeConversationPinned}
                 headerUnreadBadgeCount={headerUnreadBadgeCount}
+                relationshipBadgeLabel={activeDirectRelationshipBadgeLabel}
+                conversationNotice={activeDirectConversationNotice}
                 userProfileMap={userProfileMap}
                 messages={messages}
                 myProfile={myProfile}
@@ -6258,7 +8099,6 @@ export function ChatPage() {
                 draftMessage={draftMessage}
                 onDraftChange={(value) => {
                   setDraftMessage(value);
-                  // Use debounced typing indicator
                   onTypingTextChange(value);
                 }}
                 onVoiceCall={() => {
@@ -6276,21 +8116,58 @@ export function ChatPage() {
                 onForwardMessage={onForwardMessage}
                 onForwardMessages={onForwardMessages}
                 onReactMessage={onReactMessage}
-                onVotePollMessage={undefined}
-                onClosePollMessage={undefined}
-                canManageGroupPoll={false}
-                pinnedMessages={[]}
-                latestPinnedSummary={null}
-                scrollToMessageRequest={null}
                 pendingUploads={pendingUploads}
                 onRetryUpload={onRetryUpload}
                 onCancelUpload={onCancelUpload}
                 isSending={isSending}
-                typingText={typingDisplayName ? `${typingDisplayName} ${language === "vi" ? "dang go..." : "is typing..."}` : null}
+                typingText={typingIndicatorText}
+                allowComposer={canComposeDirectMessage}
+                composerDisabledMessage={
+                  isActiveDirectPeerBlockedByMe
+                    ? language === "vi"
+                      ? "Ban da chan nguoi dung nay."
+                      : "You blocked this user."
+                    : language === "vi"
+                      ? "Nguoi dung hien khong muon nhan tin."
+                      : "This user currently does not want to receive messages."
+                }
+                showStrangerActionPrompt={directStrangerActionMode === "add-or-block"}
+                strangerActionMode={directStrangerActionMode}
+                onAddFriendForPeer={() => {
+                  if (activeDirectPeerUserId) {
+                    void onAddFriendToUser(activeDirectPeerUserId);
+                  }
+                }}
+                onAcceptFriendRequestForPeer={() => {
+                  if (activeIncomingPendingFriendRequest) {
+                    void onAcceptFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
+                  }
+                }}
+                onDeclineFriendRequestForPeer={() => {
+                  if (activeIncomingPendingFriendRequest) {
+                    void onDeclineFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
+                  }
+                }}
+                onCancelFriendRequestForPeer={() => {
+                  if (activeSentPendingFriendRequest) {
+                    void onCancelFriendRequest(activeSentPendingFriendRequest.friendshipId);
+                  }
+                }}
+                onBlockPeer={() => {
+                  if (activeDirectPeerUserId) {
+                    void onBlockUser(activeDirectPeerUserId);
+                  }
+                }}
+                isUpdatingPeerRelationship={
+                  isUpdatingPeerRelationship || isProcessingActivePeerFriendship
+                }
                 hasMoreMessages={Boolean(nextCursor)}
                 isLoadingMoreMessages={isLoadingMoreMessages}
                 onLoadOlderMessages={onLoadOlderMessages}
                 onViewportBottomChange={setIsChatViewportAtBottom}
+                onOpenUserProfile={(userId) => {
+                  void onOpenUserPreview(userId);
+                }}
               />
             )}
           </section>
@@ -6330,6 +8207,62 @@ export function ChatPage() {
         friendProfile={friendProfile}
         friendshipStatus={friendshipStatus}
         canAddFriend={canAddFriend}
+      />
+
+      <UserProfilePreviewModal
+        language={language}
+        profile={previewUserProfile}
+        isOpen={isUserPreviewOpen}
+        isCurrentUser={Boolean(previewUserProfile?.id && previewUserProfile.id === myProfile?.id)}
+        friendshipStatus={previewUserFriendshipStatus}
+        isSubmittingFriend={isSubmittingFriend || isLoadingUserPreview}
+        blockedByMe={Boolean(previewUserProfile?.id && blockedUserIdSet.has(previewUserProfile.id))}
+        blockedByPeer={Boolean(previewUserProfile?.id && blockedByPeerUserIdSet.has(previewUserProfile.id))}
+        isSubmittingBlock={isUpdatingPeerRelationship}
+        onClose={() => {
+          setIsUserPreviewOpen(false);
+          setPreviewUserProfile(null);
+          setPreviewUserFriendshipStatus("NONE");
+        }}
+        onAddFriend={() => {
+          if (previewUserProfile) {
+            setFriendProfile(previewUserProfile);
+            void onAddFriend();
+          }
+        }}
+        onMessage={() => {
+          if (previewUserProfile?.id) {
+            if (previewUserProfile.id === myProfile?.id) {
+              setActiveTab("profile");
+              setIsUserPreviewOpen(false);
+              return;
+            }
+
+            const existingConversation = conversations.find((conversation) => {
+              if (conversation.type === "group") {
+                return false;
+              }
+              return resolvePeerUserId(conversation) === previewUserProfile.id;
+            });
+
+            setIsUserPreviewOpen(false);
+            if (existingConversation) {
+              onActivateConversation(existingConversation.id);
+              return;
+            }
+            void onOpenFriendConversation(previewUserProfile.id);
+          }
+        }}
+        onBlockUser={() => {
+          if (previewUserProfile?.id) {
+            void onBlockUser(previewUserProfile.id);
+          }
+        }}
+        onUnblockUser={() => {
+          if (previewUserProfile?.id) {
+            onUnblockUser(previewUserProfile.id);
+          }
+        }}
       />
 
       <CreateGroupModal
@@ -6378,7 +8311,7 @@ export function ChatPage() {
       />
 
       {bannerMessage && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <div className="fixed bottom-4 left-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
           {bannerMessage}
         </div>
       )}

@@ -130,7 +130,7 @@ public class AuthController {
         Claims claims = parseBearer(authorization);
         UUID userId = UUID.fromString(claims.get("userId", String.class));
         UserEntity user = authService.getUserById(userId);
-        return ApiResponse.ok("Profile fetched", toProfile(user));
+        return ApiResponse.ok("Profile fetched", toProfile(user, userId));
     }
 
     @PutMapping("/profile")
@@ -142,7 +142,7 @@ public class AuthController {
         Claims claims = parseBearer(authorization);
         UUID userId = UUID.fromString(claims.get("userId", String.class));
         UserEntity user = authService.updateProfile(userId, request, clientIp(httpRequest), userAgent(httpRequest));
-        return ApiResponse.ok("Profile updated", toProfile(user));
+        return ApiResponse.ok("Profile updated", toProfile(user, userId));
     }
 
     @DeleteMapping("/profile")
@@ -158,16 +158,30 @@ public class AuthController {
 
     @GetMapping("/users/search-by-email")
     public ApiResponse<AuthDtos.UserProfileResponse> searchByEmail(@RequestHeader("Authorization") String authorization, @org.springframework.web.bind.annotation.RequestParam("email") String email) {
-        parseBearer(authorization);
+        Claims claims = parseBearer(authorization);
+        UUID requesterId = UUID.fromString(claims.get("userId", String.class));
         UserEntity user = authService.getUserByIdentifier(email);
-        return ApiResponse.ok("User found", toProfile(user));
+        return ApiResponse.ok("User found", toProfile(user, requesterId));
     }
 
     @GetMapping("/users/{id}/summary")
     public ApiResponse<AuthDtos.UserProfileResponse> userSummary(@RequestHeader("Authorization") String authorization, @PathVariable("id") UUID userId) {
-        parseBearer(authorization);
+        Claims claims = parseBearer(authorization);
+        UUID requesterId = UUID.fromString(claims.get("userId", String.class));
         UserEntity user = authService.getUserById(userId);
-        return ApiResponse.ok("User summary fetched", toProfile(user));
+        return ApiResponse.ok("User summary fetched", toProfile(user, requesterId));
+    }
+
+    @GetMapping("/internal/users/{id}/message-settings")
+    public ApiResponse<AuthDtos.MessageSettingsResponse> messageSettings(@PathVariable("id") UUID userId) {
+        UserEntity user = authService.getUserById(userId);
+        return ApiResponse.ok(
+            "Message settings fetched",
+            new AuthDtos.MessageSettingsResponse(
+                user.getId(),
+                user.getAllowStrangerMessages() == null || user.getAllowStrangerMessages()
+            )
+        );
     }
 
     private UUID resolveUserIdFromIdentifier(String identifier) {
@@ -195,17 +209,25 @@ public class AuthController {
         return userAgent == null ? "unknown" : userAgent;
     }
 
-    private AuthDtos.UserProfileResponse toProfile(UserEntity user) {
-        String birthdate = user.getBirthdate() == null ? null : user.getBirthdate().toString();
+    private AuthDtos.UserProfileResponse toProfile(UserEntity user, UUID viewerUserId) {
+        boolean isSelf = viewerUserId != null && viewerUserId.equals(user.getId());
+        boolean hideEmail = !isSelf && Boolean.TRUE.equals(user.getHideEmail());
+        boolean hidePhone = !isSelf && Boolean.TRUE.equals(user.getHidePhone());
+        boolean hideBirthdate = !isSelf && Boolean.TRUE.equals(user.getHideBirthdate());
+        String birthdate = hideBirthdate || user.getBirthdate() == null ? null : user.getBirthdate().toString();
         String lastSeenAt = user.getLastSeenAt() == null ? null : user.getLastSeenAt().toString();
         return new AuthDtos.UserProfileResponse(
             user.getId(),
             user.getFullName(),
-            user.getEmail(),
-            user.getPhone(),
+            hideEmail ? null : user.getEmail(),
+            hidePhone ? null : user.getPhone(),
             user.getAvatarUrl(),
             user.getGender(),
             birthdate,
+            Boolean.TRUE.equals(user.getHideBirthdate()),
+            Boolean.TRUE.equals(user.getHideEmail()),
+            Boolean.TRUE.equals(user.getHidePhone()),
+            user.getAllowStrangerMessages() == null || user.getAllowStrangerMessages(),
             user.getIsOnline(),
             lastSeenAt
         );

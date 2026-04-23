@@ -21,11 +21,47 @@ public interface FriendshipRepository extends JpaRepository<FriendshipEntity, UU
 		UUID reversedAddresseeId
 	);
 
-	List<FriendshipEntity> findAllByAddresseeIdAndStatus(UUID addresseeId, String status);
+	@Query("""
+		select f from FriendshipEntity f
+		where f.addresseeId = :addresseeId
+		  and upper(f.status) = upper(:status)
+	""")
+	List<FriendshipEntity> findAllByAddresseeIdAndStatus(
+		@Param("addresseeId") UUID addresseeId,
+		@Param("status") String status
+	);
 
-	List<FriendshipEntity> findAllByAddresseeIdAndStatusAndAddresseeViewedAtIsNull(UUID addresseeId, String status);
+	@Query("""
+		select f from FriendshipEntity f
+		where f.requesterId = :requesterId
+		  and upper(f.status) = upper(:status)
+	""")
+	List<FriendshipEntity> findAllByRequesterIdAndStatus(
+		@Param("requesterId") UUID requesterId,
+		@Param("status") String status
+	);
 
-	long countByAddresseeIdAndStatusAndAddresseeViewedAtIsNull(UUID addresseeId, String status);
+	@Query("""
+		select f from FriendshipEntity f
+		where f.addresseeId = :addresseeId
+		  and upper(f.status) = upper(:status)
+		  and f.addresseeViewedAt is null
+	""")
+	List<FriendshipEntity> findAllByAddresseeIdAndStatusAndAddresseeViewedAtIsNull(
+		@Param("addresseeId") UUID addresseeId,
+		@Param("status") String status
+	);
+
+	@Query("""
+		select count(f) from FriendshipEntity f
+		where f.addresseeId = :addresseeId
+		  and upper(f.status) = upper(:status)
+		  and f.addresseeViewedAt is null
+	""")
+	long countByAddresseeIdAndStatusAndAddresseeViewedAtIsNull(
+		@Param("addresseeId") UUID addresseeId,
+		@Param("status") String status
+	);
 
 	@Modifying
 	@Query("""
@@ -33,7 +69,7 @@ public interface FriendshipRepository extends JpaRepository<FriendshipEntity, UU
 		set f.addresseeViewedAt = :viewedAt,
 		    f.updatedAt = :viewedAt
 		where f.addresseeId = :addresseeId
-		  and f.status = :status
+		  and upper(f.status) = upper(:status)
 		  and f.addresseeViewedAt is null
 	""")
 	int markPendingAsViewed(
@@ -44,8 +80,22 @@ public interface FriendshipRepository extends JpaRepository<FriendshipEntity, UU
 
 	@Query("""
 		select f from FriendshipEntity f
-		where ((f.requesterId = :userId and f.status = :status)
-		   or (f.addresseeId = :userId and f.status = :status))
+		where ((f.requesterId = :userId and upper(f.status) = upper(:status))
+		   or (f.addresseeId = :userId and upper(f.status) = upper(:status)))
 	""")
 	List<FriendshipEntity> findAllByUserIdAndStatus(@Param("userId") UUID userId, @Param("status") String status);
+
+	@Query("""
+		select count(f) > 0 from FriendshipEntity f
+		where upper(f.status) = upper(:status)
+		  and (
+		      (f.requesterId = :userA and f.addresseeId = :userB)
+		   or (f.requesterId = :userB and f.addresseeId = :userA)
+		  )
+	""")
+	boolean existsAcceptedFriendshipBetweenUsers(
+		@Param("userA") UUID userA,
+		@Param("userB") UUID userB,
+		@Param("status") String status
+	);
 }

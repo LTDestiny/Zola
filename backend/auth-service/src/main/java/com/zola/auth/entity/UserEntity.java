@@ -45,6 +45,14 @@ public class UserEntity {
 
     private LocalDate birthdate;
 
+    private Boolean hideBirthdate;
+
+    private Boolean hideEmail;
+
+    private Boolean hidePhone;
+
+    private Boolean allowStrangerMessages;
+
     private Boolean isOnline;
 
     private Instant lastSeenAt;

@@ -34,6 +34,12 @@ import {
   type InAppCallStatus,
   type IncomingCallView,
 } from "@/modules/chat/components/InAppCallOverlay";
+import {
+  MOBILE_NATIVE_CALL_MEDIA_SUPPORTED,
+  MOBILE_NATIVE_CALL_UNAVAILABLE_MESSAGE,
+  MOBILE_NATIVE_CALL_UNAVAILABLE_TITLE,
+  MOBILE_NATIVE_GROUP_CALL_MESSAGE,
+} from "@/modules/chat/call/callCapability";
 import { MessageBubble } from "@/modules/chat/components/MessageBubble";
 import { MessageInput } from "@/modules/chat/components/MessageInput";
 import { PresenceBadge } from "@/modules/chat/components/PresenceBadge";
@@ -117,6 +123,10 @@ function isWithinWindow(createdAt: string | null | undefined, windowMs: number) 
   const createdAtMs = Date.parse(createdAt);
   if (Number.isNaN(createdAtMs)) return false;
   return Date.now() - createdAtMs < windowMs;
+}
+
+function showUnsupportedMobileCallAlert(message = MOBILE_NATIVE_CALL_UNAVAILABLE_MESSAGE) {
+  Alert.alert(MOBILE_NATIVE_CALL_UNAVAILABLE_TITLE, message);
 }
 
 function inferConversationType(conversation: ConversationItem): "private" | "group" {
@@ -309,6 +319,11 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   }, [clearGroupSoloTimeout, clearIncomingTimeout, clearOutgoingTimeout, conversationType, publishCallSignal]);
 
   const startOutgoingCall = useCallback((mode: InAppCallMode) => {
+    if (!MOBILE_NATIVE_CALL_MEDIA_SUPPORTED) {
+      showUnsupportedMobileCallAlert();
+      return;
+    }
+
     if (!meId) {
       Alert.alert("Thông báo", "Không xác định được người dùng hiện tại");
       return;
@@ -390,6 +405,21 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (!MOBILE_NATIVE_CALL_MEDIA_SUPPORTED) {
+      publishCallSignal(
+        incomingCall.conversationId,
+        incomingCall.peerUserId,
+        incomingCall.callId,
+        incomingCall.mode,
+        "CALL_REJECT",
+        { reason: "unsupported_platform" },
+      );
+      setIncomingCall(null);
+      clearIncomingTimeout();
+      showUnsupportedMobileCallAlert();
+      return;
+    }
+
     const now = new Date().toISOString();
     clearIncomingTimeout();
 
@@ -458,6 +488,11 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (!MOBILE_NATIVE_CALL_MEDIA_SUPPORTED) {
+      showUnsupportedMobileCallAlert(MOBILE_NATIVE_GROUP_CALL_MESSAGE);
+      return;
+    }
+
     const now = new Date().toISOString();
     const peerName =
       resolvedParticipantNameMap[groupCallNotice.initiatorUserId] ??
@@ -517,6 +552,30 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       }
 
       const actorName = resolvedParticipantNameMap[event.actorId] ?? `User ${event.actorId.slice(0, 8)}`;
+
+      if (!MOBILE_NATIVE_CALL_MEDIA_SUPPORTED) {
+        if (conversationType === "group") {
+          setGroupCallNotice({
+            callId: event.callId,
+            conversationId: event.conversationId,
+            initiatorUserId: event.actorId,
+            initiatorDisplayName: actorName,
+            mode: event.mode,
+            createdAt: event.createdAt,
+          });
+          return;
+        }
+
+        publishCallSignal(
+          event.conversationId,
+          event.actorId,
+          event.callId,
+          event.mode,
+          "CALL_REJECT",
+          { reason: "unsupported_platform" },
+        );
+        return;
+      }
 
       if (conversationType === "group") {
         setGroupCallNotice({
@@ -610,6 +669,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     ensureParticipantName,
     incomingCall?.callId,
     meId,
+    publishCallSignal,
     rejectIncomingCall,
     resolvedParticipantNameMap,
   ]);

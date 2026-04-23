@@ -84,6 +84,10 @@ public class AuthService {
                 .identityType("EMAIL")
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .fullName(request.fullName())
+                .hideBirthdate(false)
+                .hideEmail(false)
+                .hidePhone(false)
+                .allowStrangerMessages(true)
                 .isActive(true)
                 .isDeleted(false)
                 .emailVerified(false)
@@ -294,6 +298,10 @@ public class AuthService {
         user.setAvatarUrl(normalizeOptional(request.avatarUrl()));
         user.setGender(normalizeGender(request.gender()));
         user.setBirthdate(parseBirthdate(request.birthdate()));
+        user.setHideBirthdate(Boolean.TRUE.equals(request.hideBirthdate()));
+        user.setHideEmail(Boolean.TRUE.equals(request.hideEmail()));
+        user.setHidePhone(Boolean.TRUE.equals(request.hidePhone()));
+        user.setAllowStrangerMessages(request.allowStrangerMessages() == null || request.allowStrangerMessages());
         user.setUpdatedAt(Instant.now());
 
         UserEntity saved = userRepository.save(user);

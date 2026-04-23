@@ -106,8 +106,18 @@ public final class AuthDtos {
         String avatarUrl,
         String gender,
         String birthdate,
+        Boolean hideBirthdate,
+        Boolean hideEmail,
+        Boolean hidePhone,
+        Boolean allowStrangerMessages,
         Boolean isOnline,
         String lastSeenAt
+    ) {
+    }
+
+    public record MessageSettingsResponse(
+        UUID id,
+        Boolean allowStrangerMessages
     ) {
     }
 
@@ -116,7 +126,11 @@ public final class AuthDtos {
         @Size(max = 20) String phone,
         @Size(max = 1000) String avatarUrl,
         @Size(max = 10) String gender,
-        String birthdate
+        String birthdate,
+        Boolean hideBirthdate,
+        Boolean hideEmail,
+        Boolean hidePhone,
+        Boolean allowStrangerMessages
     ) {
     }
 }

@@ -27,6 +27,9 @@ import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
 import com.zola.chat.repository.ConversationRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.client.RestClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +65,10 @@ public class ChatRealtimeService {
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
+    private final RestClient restClient;
+    private final ObjectMapper objectMapper;
+    private final String authServiceBaseUrl;
+    private final String userServiceBaseUrl;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
 
@@ -78,6 +85,8 @@ public class ChatRealtimeService {
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
+        @Value("${app.services.auth-url}") String authServiceBaseUrl,
+        @Value("${app.services.user-url}") String userServiceBaseUrl,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
         @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
     ) {
@@ -87,6 +96,10 @@ public class ChatRealtimeService {
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
+        this.restClient = RestClient.builder().build();
+        this.objectMapper = new ObjectMapper();
+        this.authServiceBaseUrl = authServiceBaseUrl;
+        this.userServiceBaseUrl = userServiceBaseUrl;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
     }
@@ -129,8 +142,14 @@ public class ChatRealtimeService {
         conversation.setAdmins(new ArrayList<>(List.of(requesterId)));
         conversation.setMembers(new ArrayList<>(members));
         conversation.setParticipants(new ArrayList<>(members));
+        conversation.setAllowMembersEditGroupProfile(true);
+        conversation.setAllowMembersPinBoardItems(true);
+        conversation.setAllowMembersCreateNotes(true);
+        conversation.setAllowMembersCreatePolls(true);
+        conversation.setAllowMembersSendMessages(true);
         conversation.setOnlyAdminsCanMessage(false);
         conversation.setRequireApprovalToJoin(false);
+        conversation.setHighlightAdminMessages(true);
         conversation.setAllowMemberInvite(true);
         conversation.setInviteCode(generateUniqueInviteCode());
         conversation.setLastMessage("");
@@ -367,8 +386,13 @@ public class ChatRealtimeService {
         UUID conversationId,
         String name,
         String avatar,
-        Boolean onlyAdminsCanMessage,
+        Boolean allowMembersEditGroupProfile,
+        Boolean allowMembersPinBoardItems,
+        Boolean allowMembersCreateNotes,
+        Boolean allowMembersCreatePolls,
+        Boolean allowMembersSendMessages,
         Boolean requireApprovalToJoin,
+        Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         String transferOwnerId
     ) {
@@ -381,8 +405,9 @@ public class ChatRealtimeService {
         boolean changed = false;
 
         if (name != null || avatar != null) {
-            if (!isOwner && !isAdmin) {
-                throw new ForbiddenOperationException("Only group admin can update group info");
+            boolean canEditGroupProfile = isOwner || isAdmin || conversation.isAllowMembersEditGroupProfile();
+            if (!canEditGroupProfile) {
+                throw new ForbiddenOperationException("You do not have permission to update group name or avatar");
             }
 
             if (name != null) {
@@ -401,17 +426,48 @@ public class ChatRealtimeService {
             }
         }
 
-        if (onlyAdminsCanMessage != null || requireApprovalToJoin != null || allowMemberInvite != null || transferOwnerId != null) {
+        if (allowMembersEditGroupProfile != null
+            || allowMembersPinBoardItems != null
+            || allowMembersCreateNotes != null
+            || allowMembersCreatePolls != null
+            || allowMembersSendMessages != null) {
+            if (!isOwner && !isAdmin) {
+                throw new ForbiddenOperationException("Only owner/admin can update member permissions");
+            }
+
+            if (allowMembersEditGroupProfile != null) {
+                conversation.setAllowMembersEditGroupProfile(allowMembersEditGroupProfile);
+                changed = true;
+            }
+            if (allowMembersPinBoardItems != null) {
+                conversation.setAllowMembersPinBoardItems(allowMembersPinBoardItems);
+                changed = true;
+            }
+            if (allowMembersCreateNotes != null) {
+                conversation.setAllowMembersCreateNotes(allowMembersCreateNotes);
+                changed = true;
+            }
+            if (allowMembersCreatePolls != null) {
+                conversation.setAllowMembersCreatePolls(allowMembersCreatePolls);
+                changed = true;
+            }
+            if (allowMembersSendMessages != null) {
+                conversation.setAllowMembersSendMessages(allowMembersSendMessages);
+                changed = true;
+            }
+        }
+
+        if (requireApprovalToJoin != null || highlightAdminMessages != null || allowMemberInvite != null || transferOwnerId != null) {
             if (!isOwner) {
                 throw new ForbiddenOperationException("Only owner can update security and invitation settings");
             }
 
-            if (onlyAdminsCanMessage != null) {
-                conversation.setOnlyAdminsCanMessage(onlyAdminsCanMessage);
-                changed = true;
-            }
             if (requireApprovalToJoin != null) {
                 conversation.setRequireApprovalToJoin(requireApprovalToJoin);
+                changed = true;
+            }
+            if (highlightAdminMessages != null) {
+                conversation.setHighlightAdminMessages(highlightAdminMessages);
                 changed = true;
             }
             if (allowMemberInvite != null) {
@@ -1269,6 +1325,7 @@ public class ChatRealtimeService {
             throw new ForbiddenOperationException("Message content must not be blank");
         }
         String receiverId = resolvePeerUserId(conversation, senderId);
+        ensurePrivateMessagingAllowed(senderId, receiverId);
         Instant now = Instant.now();
 
         MessageDocument item = new MessageDocument();
@@ -1319,18 +1376,12 @@ public class ChatRealtimeService {
 
     private ChatEventResponse sendGroupMessage(String senderId, ChatSendRequest request, ConversationDocument conversation) {
         ensureGroupMember(conversation, senderId);
-        if (conversation.isOnlyAdminsCanMessage()) {
-            boolean isOwner = senderId.equals(conversation.getOwnerId());
-            boolean isAdmin = normalizeAdmins(conversation).contains(senderId);
-            if (!isOwner && !isAdmin) {
-                throw new ForbiddenOperationException("Only admins can send messages in this group");
-            }
-        }
         String normalizedType = (request.type() == null || request.type().isBlank()) ? "TEXT" : request.type().trim().toUpperCase();
         String normalizedContent = request.content() == null ? "" : request.content().trim();
         if (normalizedContent.isBlank()) {
             throw new ForbiddenOperationException("Message content must not be blank");
         }
+        ensureGroupMessagePermission(conversation, senderId, normalizedType, normalizedContent);
         Instant now = Instant.now();
 
         MessageDocument item = new MessageDocument();
@@ -1456,8 +1507,14 @@ public class ChatRealtimeService {
         payload.put("ownerId", conversation.getOwnerId());
         payload.put("admins", normalizeAdmins(conversation));
         payload.put("participants", normalizeMembers(conversation));
-        payload.put("onlyAdminsCanMessage", conversation.isOnlyAdminsCanMessage());
+        payload.put("allowMembersEditGroupProfile", conversation.isAllowMembersEditGroupProfile());
+        payload.put("allowMembersPinBoardItems", conversation.isAllowMembersPinBoardItems());
+        payload.put("allowMembersCreateNotes", conversation.isAllowMembersCreateNotes());
+        payload.put("allowMembersCreatePolls", conversation.isAllowMembersCreatePolls());
+        payload.put("allowMembersSendMessages", conversation.isAllowMembersSendMessages());
+        payload.put("onlyAdminsCanMessage", !conversation.isAllowMembersSendMessages());
         payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
+        payload.put("highlightAdminMessages", conversation.isHighlightAdminMessages());
         payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
         payload.put("inviteCode", Optional.ofNullable(conversation.getInviteCode()).orElse(""));
         payload.put("isOwner", requesterId.equals(conversation.getOwnerId()));
@@ -1496,6 +1553,138 @@ public class ChatRealtimeService {
             builder.append(INVITE_CODE_CHARS[charIndex]);
         }
         return builder.toString();
+    }
+
+    private void ensurePrivateMessagingAllowed(String senderId, String receiverId) {
+        if (isMessagingBlocked(senderId, receiverId)) {
+            throw new ForbiddenOperationException("Messages are blocked between these users");
+        }
+        if (isAcceptedFriendship(senderId, receiverId)) {
+            return;
+        }
+        if (isStrangerMessagesAllowed(receiverId)) {
+            return;
+        }
+        throw new ForbiddenOperationException("This user does not accept messages from strangers");
+    }
+
+    private boolean isAcceptedFriendship(String senderId, String receiverId) {
+        try {
+            UUID userA = UUID.fromString(senderId);
+            UUID userB = UUID.fromString(receiverId);
+            Map<?, ?> response = restClient.get()
+                .uri(
+                    userServiceBaseUrl + "/api/v1/users/friendships/internal/accepted?userA={userA}&userB={userB}",
+                    Map.of("userA", userA, "userB", userB)
+                )
+                .retrieve()
+                .body(Map.class);
+            return readNestedBoolean(response, "accepted", false);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private boolean isStrangerMessagesAllowed(String userId) {
+        try {
+            UUID targetUserId = UUID.fromString(userId);
+            Map<?, ?> response = restClient.get()
+                .uri(authServiceBaseUrl + "/api/v1/auth/internal/users/{id}/message-settings", Map.of("id", targetUserId))
+                .retrieve()
+                .body(Map.class);
+            return readNestedBoolean(response, "allowStrangerMessages", true);
+        } catch (Exception ex) {
+            return true;
+        }
+    }
+
+    private boolean isMessagingBlocked(String userAId, String userBId) {
+        try {
+            UUID userA = UUID.fromString(userAId);
+            UUID userB = UUID.fromString(userBId);
+            Map<?, ?> response = restClient.get()
+                .uri(
+                    userServiceBaseUrl + "/api/v1/users/friendships/internal/blocked?userA={userA}&userB={userB}",
+                    Map.of("userA", userA, "userB", userB)
+                )
+                .retrieve()
+                .body(Map.class);
+            return readNestedBoolean(response, "blocked", false);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private boolean readNestedBoolean(Map<?, ?> response, String key, boolean defaultValue) {
+        if (response == null) {
+            return defaultValue;
+        }
+        Object data = response.get("data");
+        if (!(data instanceof Map<?, ?> dataMap)) {
+            return defaultValue;
+        }
+        Object value = dataMap.get(key);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue) {
+            return Boolean.parseBoolean(stringValue);
+        }
+        return defaultValue;
+    }
+
+    private void ensureGroupMessagePermission(
+        ConversationDocument conversation,
+        String senderId,
+        String normalizedType,
+        String normalizedContent
+    ) {
+        boolean isOwner = senderId.equals(conversation.getOwnerId());
+        boolean isAdmin = normalizeAdmins(conversation).contains(senderId);
+        if (isOwner || isAdmin) {
+            return;
+        }
+
+        if ("POLL".equals(normalizedType) && !conversation.isAllowMembersCreatePolls()) {
+            throw new ForbiddenOperationException("Only owner/admin can create polls in this group");
+        }
+
+        if ("REMINDER".equals(normalizedType) && !conversation.isAllowMembersCreateNotes()) {
+            throw new ForbiddenOperationException("Only owner/admin can create reminders in this group");
+        }
+
+        if ("NOTE".equals(normalizedType)) {
+            String noteKind = extractJsonKind(normalizedContent);
+            if (("PIN_MESSAGE".equals(noteKind) || "UNPIN_MESSAGE".equals(noteKind))
+                && !conversation.isAllowMembersPinBoardItems()) {
+                throw new ForbiddenOperationException("Only owner/admin can pin messages or board items in this group");
+            }
+            if (!"PIN_MESSAGE".equals(noteKind)
+                && !"UNPIN_MESSAGE".equals(noteKind)
+                && !conversation.isAllowMembersCreateNotes()) {
+                throw new ForbiddenOperationException("Only owner/admin can create notes in this group");
+            }
+            return;
+        }
+
+        if (!conversation.isAllowMembersSendMessages()) {
+            throw new ForbiddenOperationException("Only owner/admin can send messages in this group");
+        }
+    }
+
+    private String extractJsonKind(String rawContent) {
+        if (rawContent == null || rawContent.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(rawContent);
+            if (root == null || !root.isObject()) {
+                return "";
+            }
+            return root.path("kind").asText("").trim().toUpperCase();
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     private void markAllMessagesAsSeenForUser(String conversationId, String userId) {

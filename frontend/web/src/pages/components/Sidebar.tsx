@@ -2,7 +2,14 @@ import { ChatList, ChatListItem } from "./ChatList";
 import { MiniNav, MiniNavTab } from "./MiniNav";
 
 export interface SidebarProps {
+  language: "vi" | "en";
   active: MiniNavTab;
+  showChatList?: boolean;
+  chatListTitle?: string;
+  chatListSubtitle?: string;
+  chatListShowBackButton?: boolean;
+  onChatListBack?: () => void;
+  chatListShowPrimaryActions?: boolean;
   messageBadge?: number;
   contactsBadge?: number;
   chats: ChatListItem[];
@@ -16,7 +23,14 @@ export interface SidebarProps {
 }
 
 export function Sidebar({
+  language,
   active,
+  showChatList = true,
+  chatListTitle,
+  chatListSubtitle,
+  chatListShowBackButton,
+  onChatListBack,
+  chatListShowPrimaryActions,
   messageBadge,
   contactsBadge,
   chats,
@@ -36,15 +50,23 @@ export function Sidebar({
         messageBadge={messageBadge}
         contactsBadge={contactsBadge}
       />
+      {showChatList && (
       <ChatList
-        chats={chats}
-        selectedChatId={selectedChatId}
-        searchText={searchText}
-        onSearchTextChange={onSearchTextChange}
-        onSelectChat={onSelectChat}
-        onAddFriend={onAddFriend}
-        onCreateGroup={onCreateGroup}
-      />
+          language={language}
+          chats={chats}
+          selectedChatId={selectedChatId}
+          searchText={searchText}
+          onSearchTextChange={onSearchTextChange}
+          onSelectChat={onSelectChat}
+          onAddFriend={onAddFriend}
+          onCreateGroup={onCreateGroup}
+          title={chatListTitle}
+          subtitle={chatListSubtitle}
+          showBackButton={chatListShowBackButton}
+          onBack={onChatListBack}
+          showPrimaryActions={chatListShowPrimaryActions}
+        />
+      )}
     </div>
   );
 }
