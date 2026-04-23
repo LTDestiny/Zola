@@ -53,10 +53,29 @@ export type ChatRealtimeEvent = {
   typing: boolean;
   online: boolean;
   targetUserId: string | null;
+  affectedUserId?: string | null;
+  membershipAction?: "ADDED" | "REMOVED" | "APPROVED" | "LEFT" | null;
+  conversationName?: string | null;
   unreadCount?: number | null;
   totalUnreadCount?: number | null;
   lastMessage?: string | null;
   lastMessageAt?: string | null;
+  conversation?: {
+    id: string;
+    type?: "private" | "group";
+    name: string;
+    avatar?: string | null;
+    lastMessage: string;
+    lastMessageSenderId?: string | null;
+    lastMessageType?: string | null;
+    lastMessageAt: string | null;
+    unreadCount: number;
+    lastReadAt?: string | null;
+    lastReadMessageId?: string | null;
+    participants: string[];
+    admins?: string[];
+    ownerId?: string | null;
+  } | null;
   groupSettings?: {
     conversationId: string;
     name: string;

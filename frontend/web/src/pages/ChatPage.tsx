@@ -462,6 +462,7 @@ export function ChatPage() {
   const setConversationList = useChatStore((state) => state.setConversations);
   const setActiveConversationId = useChatStore((state) => state.setSelectedConversationId);
   const upsertConversation = useChatStore((state) => state.upsertConversation);
+  const removeConversation = useChatStore((state) => state.removeConversation);
   const markConversationReadLocal = useChatStore((state) => state.markConversationRead);
   const syncTotalUnread = useChatStore((state) => state.syncTotalUnread);
   const lastReadSyncedMessageByConversationRef = useRef<Record<string, string>>({});
@@ -3622,30 +3623,8 @@ export function ChatPage() {
         setIsLoadingConversations(true);
       }
       const result = await getConversations();
-      const incomingItems = result.data ?? [];
+      const items = result.data ?? [];
       const activeId = activeConversationIdRef.current;
-
-      let items = incomingItems;
-      if (silent && activeId && !incomingItems.some((item) => item.id === activeId)) {
-        const existingActive = useChatStore
-          .getState()
-          .conversations.find((item) => item.id === activeId);
-        if (existingActive) {
-          items = [
-            ...incomingItems,
-            {
-              ...existingActive,
-              type: existingActive.type ?? "private",
-              avatar: existingActive.avatar ?? null,
-              unreadCount: existingActive.unreadCount ?? 0,
-              lastReadAt: existingActive.lastReadAt ?? null,
-              lastReadMessageId: existingActive.lastReadMessageId ?? null,
-              admins: existingActive.admins ?? [],
-              ownerId: existingActive.ownerId ?? null,
-            },
-          ];
-        }
-      }
 
       setConversationList(items);
 
@@ -3700,13 +3679,14 @@ export function ChatPage() {
       // Only clear selection if the selected conversation no longer exists
       // ═══════════════════════════════════════════════════════════════════════
       if (
-        !silent &&
         activeId &&
         !items.some((conversation) => conversation.id === activeId)
       ) {
         hasUserOpenedConversationRef.current = false;
         manuallyOpenedConversationIdRef.current = null;
         setActiveConversationId(null);  // Clear, don't auto-select first
+        setMessages([]);
+        setNextCursor(null);
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -3930,6 +3910,92 @@ export function ChatPage() {
         const selectedConversationId =
           useChatStore.getState().selectedConversationId ??
           activeConversationIdRef.current;
+        const currentUserId = myUserIdRef.current;
+
+        if (
+          event.eventType === "GROUP_MEMBERSHIP_UPDATED" &&
+          currentUserId &&
+          event.affectedUserId === currentUserId
+        ) {
+          const groupName =
+            event.conversation?.name ??
+            event.conversationName ??
+            (language === "vi" ? "nhom" : "group");
+
+          if (
+            event.membershipAction === "ADDED" ||
+            event.membershipAction === "APPROVED"
+          ) {
+            if (event.conversation) {
+              upsertConversation({
+                ...event.conversation,
+                type: "group",
+              });
+            }
+            if (event.groupSettings) {
+              setGroupSettingsMap((prev) => ({
+                ...prev,
+                [event.conversationId]: event.groupSettings as GroupSettings,
+              }));
+            }
+
+            const client = realtimeClientRef.current;
+            if (client && client.isConnected()) {
+              client.syncConversationSubscriptions(
+                Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
+              );
+            }
+
+            setBannerMessage(
+              event.membershipAction === "APPROVED"
+                ? language === "vi"
+                  ? `Ban da duoc duyet vao ${groupName}`
+                  : `You were approved to join ${groupName}`
+                : language === "vi"
+                  ? `Ban vua duoc them vao ${groupName}`
+                  : `You were added to ${groupName}`,
+            );
+            scheduleConversationsRefresh();
+            return;
+          }
+
+          if (
+            event.membershipAction === "REMOVED" ||
+            event.membershipAction === "LEFT"
+          ) {
+            removeConversation(event.conversationId);
+            setGroupSettingsMap((prev) => {
+              const next = { ...prev };
+              delete next[event.conversationId];
+              return next;
+            });
+
+            if (activeConversationIdRef.current === event.conversationId) {
+              setActiveConversationId(null);
+              setMessages([]);
+              setNextCursor(null);
+            }
+
+            const client = realtimeClientRef.current;
+            if (client && client.isConnected()) {
+              client.syncConversationSubscriptions(
+                conversationIdsRef.current.filter((id) => id !== event.conversationId),
+              );
+            }
+
+            setBannerMessage(
+              event.membershipAction === "LEFT"
+                ? language === "vi"
+                  ? `Ban da roi ${groupName}`
+                  : `You left ${groupName}`
+                : language === "vi"
+                  ? `Ban da bi xoa khoi ${groupName}`
+                  : `You were removed from ${groupName}`,
+            );
+            scheduleConversationsRefresh();
+            return;
+          }
+        }
 
         if (event.eventType === "GROUP_SETTINGS_UPDATED" && event.groupSettings) {
           setGroupSettingsMap((prev) => ({
@@ -4223,6 +4289,17 @@ export function ChatPage() {
           unreadCount: unreadPatch,
         });
 
+        if (
+          normalizedMessage.type?.toUpperCase() === "SYSTEM" &&
+          event.conversationId
+        ) {
+          void fetchConversations({ silent: true });
+          void refreshGroupSettings(event.conversationId);
+          if (activeConversationIdRef.current === event.conversationId) {
+            void reloadConversationMessagesWithRetry(event.conversationId);
+          }
+        }
+
         if (event.conversationId) {
           const client = realtimeClientRef.current;
           const shouldSyncSubscriptions =
@@ -4242,6 +4319,51 @@ export function ChatPage() {
             event.eventType === "FRIENDSHIP_CHAT_READY"
           ) {
             void fetchConversations();
+          }
+          return;
+        }
+
+        if (event.eventType === "GROUP_STATE_CHANGED") {
+          try {
+            const payload = event.payload ? JSON.parse(event.payload) : null;
+            const conversationId =
+              typeof payload?.conversationId === "string"
+                ? payload.conversationId
+                : null;
+            const action =
+              typeof payload?.action === "string" ? payload.action : "";
+            const affectedUserId =
+              typeof payload?.affectedUserId === "string"
+                ? payload.affectedUserId
+                : null;
+            const currentUserId = myUserIdRef.current;
+
+            if (
+              conversationId &&
+              currentUserId &&
+              affectedUserId === currentUserId &&
+              (action === "MEMBER_REMOVED" ||
+                action === "MEMBER_LEFT" ||
+                action === "GROUP_DELETED")
+            ) {
+              removeConversation(conversationId);
+              if (activeConversationIdRef.current === conversationId) {
+                setActiveConversationId(null);
+                setMessages([]);
+                setNextCursor(null);
+              }
+            }
+
+            void fetchConversations({ silent: true });
+
+            if (conversationId) {
+              void refreshGroupSettings(conversationId);
+              if (activeConversationIdRef.current === conversationId) {
+                void reloadConversationMessagesWithRetry(conversationId);
+              }
+            }
+          } catch {
+            void fetchConversations({ silent: true });
           }
           return;
         }
@@ -5508,7 +5630,47 @@ export function ChatPage() {
   const activeConversationForView = activeConversation
     ? {
       ...activeConversation,
-      name: getConversationDisplayName(activeConversation),
+      ...(activeConversation.type === "group"
+        ? {
+            participants:
+              groupSettingsMap[activeConversation.id]?.participants ??
+              activeConversation.participants,
+            admins:
+              groupSettingsMap[activeConversation.id]?.admins ??
+              activeConversation.admins,
+            ownerId:
+              groupSettingsMap[activeConversation.id]?.ownerId ??
+              activeConversation.ownerId,
+            avatar:
+              groupSettingsMap[activeConversation.id]?.avatar ??
+              activeConversation.avatar,
+            name:
+              groupSettingsMap[activeConversation.id]?.name ??
+              activeConversation.name,
+          }
+        : {}),
+      name: getConversationDisplayName(
+        activeConversation.type === "group" && groupSettingsMap[activeConversation.id]
+          ? {
+              ...activeConversation,
+              participants:
+                groupSettingsMap[activeConversation.id]?.participants ??
+                activeConversation.participants,
+              admins:
+                groupSettingsMap[activeConversation.id]?.admins ??
+                activeConversation.admins,
+              ownerId:
+                groupSettingsMap[activeConversation.id]?.ownerId ??
+                activeConversation.ownerId,
+              avatar:
+                groupSettingsMap[activeConversation.id]?.avatar ??
+                activeConversation.avatar,
+              name:
+                groupSettingsMap[activeConversation.id]?.name ??
+                activeConversation.name,
+            }
+          : activeConversation,
+      ),
     }
     : null;
 
@@ -5607,18 +5769,20 @@ export function ChatPage() {
 
   const remoteCallStreamList = useMemo(() => Object.values(remoteCallStreams), [remoteCallStreams]);
 
+  const activeGroupSettings =
+    activeConversationForView?.type === "group"
+      ? groupSettingsMap[activeConversationForView.id] ?? null
+      : null;
+
   const activeGroupMembers = activeConversationForView?.type === "group"
-    ? activeConversationForView.participants ?? []
+    ? activeGroupSettings?.participants ??
+      activeConversationForView.participants ??
+      []
     : [];
 
   const activeGroupPendingMembers = activeConversationForView?.type === "group"
     ? groupSettingsMap[activeConversationForView.id]?.pendingParticipants ?? []
     : [];
-
-  const activeGroupSettings =
-    activeConversationForView?.type === "group"
-      ? groupSettingsMap[activeConversationForView.id] ?? null
-      : null;
 
   const canComposeInActiveConversation = activeConversationForView?.type === "group"
     ? !activeGroupSettings?.onlyAdminsCanMessage ||
