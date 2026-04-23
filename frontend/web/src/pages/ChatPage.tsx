@@ -124,8 +124,8 @@ function toPolicyViolationMessage(
     rawMessage.includes("expired")
   ) {
     return language === "vi"
-      ? "Khong the thu hoi tin nhan sau 24h"
-      : "Cannot recall this message after 24 hours";
+      ? "Khong the thu hoi tin nhan sau 5p"
+      : "Cannot recall this message after 5 minutes";
   }
 
   return fallback;
@@ -569,7 +569,7 @@ export function ChatPage() {
   const [isAddingGroupMembers, setIsAddingGroupMembers] = useState(false);
   const [isUpdatingGroupProfile, setIsUpdatingGroupProfile] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
-  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [forwardMessageIds, setForwardMessageIds] = useState<string[]>([]);
   const [isForwardingMessage, setIsForwardingMessage] = useState(false);
   const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
   const [callHistory, setCallHistory] = useState<QuickCallHistoryItem[]>([]);
@@ -3886,8 +3886,8 @@ export function ChatPage() {
         ) {
           setBannerMessage(
             language === "vi"
-              ? "Khong the thu hoi tin nhan sau 24h"
-              : "Cannot recall this message after 24 hours",
+              ? "Khong the thu hoi tin nhan sau 5p"
+              : "Cannot recall this message after 5 minutes",
           );
           return;
         }
@@ -4855,8 +4855,14 @@ export function ChatPage() {
     }
   };
 
-  const onForwardMessage = async (messageId: string) => {
+  const onForwardMessages = async (messageIds: string[]) => {
     if (!activeConversationId) return;
+    const normalizedMessageIds = Array.from(
+      new Set(messageIds.map((id) => id.trim()).filter(Boolean)),
+    );
+    if (normalizedMessageIds.length === 0) {
+      return;
+    }
     const targets = conversations.filter(
       (conversation) => conversation.id !== activeConversationId,
     );
@@ -4868,8 +4874,12 @@ export function ChatPage() {
       );
       return;
     }
-    setForwardMessageId(messageId);
+    setForwardMessageIds(normalizedMessageIds);
     setIsForwardModalOpen(true);
+  };
+
+  const onForwardMessage = async (messageId: string) => {
+    await onForwardMessages([messageId]);
   };
 
   const onConfirmForwardTargets = async ({
@@ -4879,7 +4889,7 @@ export function ChatPage() {
     targetConversationIds: string[];
     targetUserIds: string[];
   }) => {
-    if (!activeConversationId || !forwardMessageId) {
+    if (!activeConversationId || forwardMessageIds.length === 0) {
       return;
     }
 
@@ -4909,23 +4919,29 @@ export function ChatPage() {
         return;
       }
 
-      const forwardOne = async (targetConversationId: string) => {
+      const forwardOne = async (
+        targetConversationId: string,
+        sourceMessageId: string,
+      ) => {
         await forwardMessage(
           activeConversationId,
-          forwardMessageId,
+          sourceMessageId,
           targetConversationId,
         );
-        return { targetConversationId, channel: "rest" as const };
+        return { targetConversationId, sourceMessageId, channel: "rest" as const };
       };
 
       const results = await Promise.allSettled(
-        uniqueTargetIds.map((targetId) => forwardOne(targetId)),
+        uniqueTargetIds.flatMap((targetId) =>
+          forwardMessageIds.map((messageId) => forwardOne(targetId, messageId)),
+        ),
       );
 
       const successItems = results.filter(
         (item) => item.status === "fulfilled",
       ) as PromiseFulfilledResult<{
         targetConversationId: string;
+        sourceMessageId: string;
         channel: "rest";
       }>[];
       const failedItems = results.filter(
@@ -4934,6 +4950,8 @@ export function ChatPage() {
       const successCount = successItems.length;
       const failedCount = failedItems.length;
       const restCount = successItems.length;
+      const forwardedMessageCount = successItems.length;
+      const forwardedTargetCount = uniqueTargetIds.length;
 
       if (successCount > 0) {
         await fetchConversations();
@@ -4960,14 +4978,14 @@ export function ChatPage() {
       if (failedCount === 0 && restCount === 0) {
         setBannerMessage(
           language === "vi"
-            ? `Da chuyen tiep den ${successCount} doi tuong`
-            : `Forwarded to ${successCount} target(s)`,
+            ? `Da chuyen tiep ${forwardedMessageCount} tin nhan den ${forwardedTargetCount} doi tuong`
+            : `Forwarded ${forwardedMessageCount} message(s) to ${forwardedTargetCount} target(s)`,
         );
       } else if (failedCount === 0 && restCount > 0) {
         setBannerMessage(
           language === "vi"
-            ? `Da chuyen tiep ${successCount} doi tuong (${restCount} qua API)`
-            : `Forwarded ${successCount} target(s) (${restCount} via API)`,
+            ? `Da chuyen tiep ${forwardedMessageCount} tin nhan den ${forwardedTargetCount} doi tuong (${restCount} qua API)`
+            : `Forwarded ${forwardedMessageCount} message(s) to ${forwardedTargetCount} target(s) (${restCount} via API)`,
         );
       } else {
         const firstError = failedItems[0]?.reason;
@@ -4980,7 +4998,7 @@ export function ChatPage() {
       }
 
       setIsForwardModalOpen(false);
-      setForwardMessageId(null);
+      setForwardMessageIds([]);
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -6169,6 +6187,12 @@ export function ChatPage() {
                 onOpenPinnedMessage={(sourceMessageId: string) => {
                   setScrollToMessageRequest({ messageId: sourceMessageId, nonce: Date.now() });
                 }}
+                onForwardMessage={(messageId: string) => {
+                  void onForwardMessage(messageId);
+                }}
+                onDeleteMessageForMe={(messageId: string) => {
+                  void onDeleteForMe(messageId);
+                }}
                 onUnpinPinnedMessage={(sourceMessageId: string) => {
                   void onUnpinGroupMessage(sourceMessageId);
                 }}
@@ -6290,6 +6314,7 @@ export function ChatPage() {
                   onRecallMessage={onRecallMessage}
                   onDeleteForMe={onDeleteForMe}
                   onForwardMessage={onForwardMessage}
+                  onForwardMessages={onForwardMessages}
                   onReactMessage={onReactMessage}
                   onPinMessage={(targetMessage) => {
                     void onPinGroupMessage(targetMessage);
@@ -6356,6 +6381,7 @@ export function ChatPage() {
                 onRecallMessage={onRecallMessage}
                 onDeleteForMe={onDeleteForMe}
                 onForwardMessage={onForwardMessage}
+                onForwardMessages={onForwardMessages}
                 onReactMessage={onReactMessage}
                 onVotePollMessage={undefined}
                 onClosePollMessage={undefined}
@@ -6435,7 +6461,7 @@ export function ChatPage() {
         onSearchUserByEmail={onSearchUserForForward}
         onClose={() => {
           setIsForwardModalOpen(false);
-          setForwardMessageId(null);
+          setForwardMessageIds([]);
         }}
         onConfirm={onConfirmForwardTargets}
       />
