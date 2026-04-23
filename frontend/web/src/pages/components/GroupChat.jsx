@@ -216,6 +216,7 @@ export function GroupChat({
       createNote: Boolean(settings?.allowMemberCreateNotes),
       createReminder: Boolean(settings?.allowMemberCreateReminders),
       createPoll: Boolean(settings?.allowMemberCreatePolls),
+      sendMessage: !Boolean(settings?.onlyAdminsCanMessage),
     }));
   }, [
     settings?.allowMemberEditGroupInfo,
@@ -223,6 +224,7 @@ export function GroupChat({
     settings?.allowMemberCreateNotes,
     settings?.allowMemberCreateReminders,
     settings?.allowMemberCreatePolls,
+    settings?.onlyAdminsCanMessage,
   ]);
 
   useEffect(() => {
@@ -2005,12 +2007,15 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.sendMessage}
-                        onChange={(event) =>
+                        disabled={!isOwner}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
                             ...prev,
-                            sendMessage: event.target.checked,
-                          }))
-                        }
+                            sendMessage: checked,
+                          }));
+                          void onUpdateSettings?.({ onlyAdminsCanMessage: !checked });
+                        }}
                       />
                     </label>
                   </div>
