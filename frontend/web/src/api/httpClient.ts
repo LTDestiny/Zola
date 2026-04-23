@@ -1,19 +1,16 @@
-import axios, { type AxiosRequestConfig } from "axios";
+import axios from "axios";
 import {
   ACCESS_EXPIRES_AT_KEY,
   ACCESS_TOKEN_KEY,
   clearAuthTokens,
 } from "../auth/token";
 
-const defaultApiBaseUrl =
-  import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8080";
-const fallbackApiBaseUrl = defaultApiBaseUrl.includes("localhost")
-  ? defaultApiBaseUrl.replace("localhost", "127.0.0.1")
-  : undefined;
+// Use relative base URL so requests always go through the same origin (Vite dev proxy or production host).
+// This fixes mobile LAN access: phone calls 192.168.x.x:5173/api/... → Vite proxies to backend.
+// Override via VITE_API_URL env var only when you need to target a different host explicitly.
+const defaultApiBaseUrl = import.meta.env.VITE_API_URL ?? "";
 
-type RetriableAxiosConfig = {
-  __retriedWithLoopback?: boolean;
-};
+type RetriableAxiosConfig = Record<string, unknown>;
 
 export const httpClient = axios.create({
   baseURL: defaultApiBaseUrl,
@@ -47,26 +44,6 @@ httpClient.interceptors.request.use((config) => {
 httpClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const config = (error?.config ?? {}) as AxiosRequestConfig &
-      RetriableAxiosConfig;
-    const isNetworkOrTimeoutError =
-      error?.code === "ECONNABORTED" || error?.code === "ERR_NETWORK";
-
-    if (
-      fallbackApiBaseUrl &&
-      isNetworkOrTimeoutError &&
-      !config.__retriedWithLoopback &&
-      typeof config.baseURL === "string" &&
-      config.baseURL.includes("localhost")
-    ) {
-      config.__retriedWithLoopback = true;
-      return httpClient.request({
-        ...config,
-        baseURL: fallbackApiBaseUrl,
-        timeout: 45000,
-      } as AxiosRequestConfig & RetriableAxiosConfig);
-    }
-
     const status = error?.response?.status as number | undefined;
     if (
       status === 401 &&

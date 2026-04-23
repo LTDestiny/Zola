@@ -127,7 +127,7 @@ export function ChatList({
     const displayChats = chats.length > 0 ? chats : [];
 
     return (
-        <aside className="flex h-screen w-80 shrink-0 flex-col border-r border-slate-200 bg-white">
+        <aside className="flex h-full w-full shrink-0 flex-col border-r border-slate-200 bg-white md:w-80">
             <div className="flex items-center justify-between px-5 pb-3 pt-5">
                 <h2 className="text-2xl font-bold text-slate-900">Chats</h2>
                 <button
@@ -156,7 +156,7 @@ export function ChatList({
                 </div>
             </div>
 
-            <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2 pb-16 md:pb-3">
                 {displayChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                         <p className="text-sm">No conversations yet</p>

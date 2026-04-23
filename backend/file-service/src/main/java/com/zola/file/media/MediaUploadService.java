@@ -8,14 +8,9 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
-import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Set;
@@ -33,7 +28,6 @@ public class MediaUploadService {
     private final long maxImageBytes;
     private final long maxVideoBytes;
     private final long maxFileBytes;
-    private volatile boolean bucketVerified;
 
     public MediaUploadService(
         S3Client s3Client,
@@ -75,8 +69,6 @@ public class MediaUploadService {
             : file.getContentType();
 
         try {
-            ensureBucketExists(storageProperties.getBucket());
-
             PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(storageProperties.getBucket())
                 .key(objectKey)
@@ -136,19 +128,7 @@ public class MediaUploadService {
     }
 
     private String buildPublicUrl(String objectKey) {
-        String encodedKey = URLEncoder.encode(objectKey, StandardCharsets.UTF_8).replace("+", "%20");
-        String endpoint = storageProperties.getPublicEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
-            endpoint = storageProperties.getEndpoint();
-        }
-        if (endpoint != null && !endpoint.isBlank()) {
-            String normalized = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
-            if (storageProperties.isPathStyle()) {
-                return normalized + "/" + storageProperties.getBucket() + "/" + encodedKey;
-            }
-            return normalized + "/" + encodedKey;
-        }
-        return "https://" + storageProperties.getBucket() + ".s3." + storageProperties.getRegion() + ".amazonaws.com/" + encodedKey;
+        return "https://" + storageProperties.getBucket() + ".s3." + storageProperties.getRegion() + ".amazonaws.com/" + objectKey;
     }
 
     private String extensionOf(String name) {
@@ -161,29 +141,6 @@ public class MediaUploadService {
 
     private String sanitizeFileName(String name) {
         return name.replaceAll("[^a-zA-Z0-9._-]", "_");
-    }
-
-    private void ensureBucketExists(String bucket) {
-        if (bucketVerified) {
-            return;
-        }
-
-        synchronized (this) {
-            if (bucketVerified) {
-                return;
-            }
-            try {
-                s3Client.headBucket(HeadBucketRequest.builder().bucket(bucket).build());
-            } catch (S3Exception ex) {
-                int status = ex.statusCode();
-                if (status == 404 || status == 400) {
-                    s3Client.createBucket(CreateBucketRequest.builder().bucket(bucket).build());
-                } else {
-                    throw ex;
-                }
-            }
-            bucketVerified = true;
-        }
     }
 
     public record UploadedMedia(

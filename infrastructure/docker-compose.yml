@@ -1,6 +1,6 @@
 services:
   kafka:
-    profiles: ["eventing"]
+    profiles: [ "eventing" ]
     image: bitnami/kafka:3.7
     ports:
       - "9092:9092"
@@ -20,31 +20,15 @@ services:
           "CMD",
           "bash",
           "-lc",
-          "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null
+            2>&1",
         ]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zolaadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-zolaadmin123}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   postgres:
-    profiles: ["local-pg-bootstrap"]
+    profiles: [ "local-pg-bootstrap" ]
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: postgres
@@ -56,7 +40,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ../backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -68,13 +52,13 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping').ok" ]
       interval: 5s
       timeout: 5s
       retries: 20
 
   db-bootstrap:
-    profiles: ["local-pg-bootstrap"]
+    profiles: [ "local-pg-bootstrap" ]
     image: postgres:15-alpine
     depends_on:
       postgres:
@@ -90,7 +74,8 @@ services:
       [
         "sh",
         "-c",
-        "chmod +x /bootstrap/postgres-bootstrap.sh && /bootstrap/postgres-bootstrap.sh",
+        "chmod +x /bootstrap/postgres-bootstrap.sh &&
+          /bootstrap/postgres-bootstrap.sh",
       ]
     restart: "no"
 
@@ -101,8 +86,7 @@ services:
         condition: service_healthy
     volumes:
       - ./bootstrap/mongo-seed.js:/bootstrap/mongo-seed.js
-    entrypoint:
-      ["mongosh", "mongodb://mongodb:27017", "/bootstrap/mongo-seed.js"]
+    entrypoint: [ "mongosh", "mongodb://mongodb:27017", "/bootstrap/mongo-seed.js" ]
     restart: "no"
 
   redis:
@@ -112,7 +96,7 @@ services:
       - "6379:6379"
 
   coturn:
-    profiles: ["realtime"]
+    profiles: [ "realtime" ]
     image: coturn/coturn
     network_mode: host
     volumes:
@@ -202,7 +186,7 @@ services:
         condition: service_started
 
   call-service:
-    profiles: ["extended"]
+    profiles: [ "extended" ]
     build:
       context: ../backend
       dockerfile: call-service/Dockerfile
@@ -225,24 +209,16 @@ services:
       dockerfile: file-service/Dockerfile
     ports:
       - "8084:8084"
+    env_file:
+      - ../.env
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
       DB_USER: ${DB_USER:-zola}
       DB_PASSWORD: ${DB_PASSWORD:-zola_pass}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
-      S3_BUCKET: ${S3_BUCKET:-zola-shared-files-dev}
-      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-zolaadmin}
-      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-zolaadmin123}
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
-      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
-      S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
-    depends_on:
-      minio:
-        condition: service_healthy
 
   ai-service:
-    profiles: ["extended"]
+    profiles: [ "extended" ]
     build:
       context: ../backend
       dockerfile: ai-service/Dockerfile
@@ -260,7 +236,7 @@ services:
         condition: service_completed_successfully
 
   notification-service:
-    profiles: ["extended"]
+    profiles: [ "extended" ]
     build:
       context: ../backend
       dockerfile: notification-service/Dockerfile
@@ -277,7 +253,7 @@ services:
         condition: service_started
 
   admin-service:
-    profiles: ["extended"]
+    profiles: [ "extended" ]
     build:
       context: ../backend
       dockerfile: admin-service/Dockerfile
@@ -290,7 +266,7 @@ services:
       DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
 
   zola-web:
-    profiles: ["web"]
+    profiles: [ "web" ]
     build:
       context: ../frontend/web
       dockerfile: Dockerfile.prod
@@ -303,4 +279,3 @@ services:
 volumes:
   postgres_data:
   mongo_data:
-  minio_data:

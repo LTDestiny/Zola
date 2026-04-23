@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
+import { ArrowLeft, FileText, Heart, ImagePlus, Info, Paperclip, Phone, SendHorizontal, Smile, Sparkles, Sticker, Video, X } from "lucide-react";
 import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
 import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
 
@@ -41,6 +41,7 @@ type ChatProps = {
   isLoadingMoreMessages: boolean;
   onLoadOlderMessages: () => void | Promise<void>;
   onViewportBottomChange?: (atBottom: boolean) => void;
+  onBack?: () => void;
 };
 
 function buildReactionSummary(reactions: string[] | undefined) {
@@ -161,6 +162,7 @@ export function Chat({
   isLoadingMoreMessages,
   onLoadOlderMessages,
   onViewportBottomChange,
+  onBack,
 }: ChatProps) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -513,9 +515,19 @@ export function Chat({
 
   return (
     <>
-      <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+      <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-3 sm:px-6">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="md:hidden grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-500 transition-colors hover:bg-gray-100"
+              aria-label="Back"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
+          <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
             {activeConversation.name.slice(0, 2).toUpperCase()}
             <span
               className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-400"}`}
@@ -559,7 +571,7 @@ export function Chat({
 
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-slate-50/30 px-4 py-6 ${isDragOverComposer ? "ring-2 ring-indigo-300 ring-inset" : ""}`}
+        className={`scrollbar-hide relative flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/30 px-4 py-6 ${isDragOverComposer ? "ring-2 ring-indigo-300 ring-inset" : ""}`}
         onScroll={() => notifyViewportBottom(messageListRef.current)}
         onDragOver={(event) => {
           event.preventDefault();

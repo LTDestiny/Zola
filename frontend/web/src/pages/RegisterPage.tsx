@@ -88,7 +88,7 @@ export function RegisterPage() {
         </button>
       </div>
 
-      <div className="text-zola-blue text-6xl font-bold leading-none tracking-tight">
+      <div className="text-zola-blue text-5xl md:text-6xl font-bold leading-none tracking-tight">
         {t("appName")}
       </div>
       <p className="text-center text-slate-600">{t("createAccountTitle")}</p>

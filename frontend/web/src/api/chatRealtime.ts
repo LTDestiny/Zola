@@ -77,7 +77,12 @@ export class ChatRealtimeClient {
     this.onError = handlers.onError;
     this.getAccessToken = handlers.getAccessToken;
 
-    const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8083/ws";
+    // Build WebSocket URL: use VITE_WS_URL if explicitly set,
+    // otherwise derive from current page origin so Vite proxy handles it transparently.
+    const wsUrl = import.meta.env.VITE_WS_URL ?? (() => {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${window.location.host}/ws`;
+    })();
     log("constructor", `WebSocket URL: ${wsUrl}`);
 
     this.client = new Client({

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BackHandler, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-const BASE_URL = 'http://192.168.10.39:5173';
+const BASE_URL = 'http://192.168.10.234:5173';
 
 export default function HomeScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,7 +46,6 @@ export default function HomeScreen() {
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
-        databaseEnabled
         geolocationEnabled
         mixedContentMode="always"
         allowFileAccess

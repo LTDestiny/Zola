@@ -8,7 +8,7 @@ spring:
   application:
     name: auth-service
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5431/${DB_NAME:zola_identity_db}
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:zola_identity_db}
     username: ${DB_USER:zola}
     password: ${DB_PASSWORD:zola_pass}
   mail:
