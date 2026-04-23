@@ -1589,17 +1589,35 @@ public class ChatRealtimeService {
 
     private ChatEventResponse sendGroupMessage(String senderId, ChatSendRequest request, ConversationDocument conversation) {
         ensureGroupMember(conversation, senderId);
-        if (conversation.isOnlyAdminsCanMessage()) {
-            boolean isOwner = senderId.equals(conversation.getOwnerId());
-            boolean isAdmin = normalizeAdmins(conversation).contains(senderId);
-            if (!isOwner && !isAdmin) {
-                throw new ForbiddenOperationException("Only admins can send messages in this group");
-            }
-        }
         String normalizedType = (request.type() == null || request.type().isBlank()) ? "TEXT" : request.type().trim().toUpperCase();
         String normalizedContent = request.content() == null ? "" : request.content().trim();
         if (normalizedContent.isBlank()) {
             throw new ForbiddenOperationException("Message content must not be blank");
+        }
+        boolean isOwner = senderId.equals(conversation.getOwnerId());
+        boolean isAdmin = normalizeAdmins(conversation).contains(senderId);
+
+        switch (normalizedType) {
+            case "NOTE" -> {
+                if (!canCreateGroupNotes(conversation, senderId)) {
+                    throw new ForbiddenOperationException("You are not allowed to create notes in this group");
+                }
+            }
+            case "REMINDER" -> {
+                if (!canCreateGroupReminders(conversation, senderId)) {
+                    throw new ForbiddenOperationException("You are not allowed to create reminders in this group");
+                }
+            }
+            case "POLL" -> {
+                if (!canCreateGroupPolls(conversation, senderId)) {
+                    throw new ForbiddenOperationException("You are not allowed to create polls in this group");
+                }
+            }
+            default -> {
+                if (conversation.isOnlyAdminsCanMessage() && !isOwner && !isAdmin) {
+                    throw new ForbiddenOperationException("Only admins can send messages in this group");
+                }
+            }
         }
         Instant now = Instant.now();
 
@@ -1770,6 +1788,24 @@ public class ChatRealtimeService {
         return actorId.equals(conversation.getOwnerId())
             || normalizeAdmins(conversation).contains(actorId)
             || conversation.isAllowMemberPinBoardItems();
+    }
+
+    private boolean canCreateGroupNotes(ConversationDocument conversation, String actorId) {
+        return actorId.equals(conversation.getOwnerId())
+            || normalizeAdmins(conversation).contains(actorId)
+            || conversation.isAllowMemberCreateNotes();
+    }
+
+    private boolean canCreateGroupReminders(ConversationDocument conversation, String actorId) {
+        return actorId.equals(conversation.getOwnerId())
+            || normalizeAdmins(conversation).contains(actorId)
+            || conversation.isAllowMemberCreateReminders();
+    }
+
+    private boolean canCreateGroupPolls(ConversationDocument conversation, String actorId) {
+        return actorId.equals(conversation.getOwnerId())
+            || normalizeAdmins(conversation).contains(actorId)
+            || conversation.isAllowMemberCreatePolls();
     }
 
     private List<PinnedMessageItem> normalizePinnedMessages(ConversationDocument conversation) {

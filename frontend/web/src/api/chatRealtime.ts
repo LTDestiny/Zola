@@ -57,6 +57,36 @@ export type ChatRealtimeEvent = {
   totalUnreadCount?: number | null;
   lastMessage?: string | null;
   lastMessageAt?: string | null;
+  groupSettings?: {
+    conversationId: string;
+    name: string;
+    avatar: string | null;
+    ownerId: string | null;
+    admins: string[];
+    participants: string[];
+    onlyAdminsCanMessage: boolean;
+    requireApprovalToJoin: boolean;
+    allowMemberInvite: boolean;
+    allowMemberEditGroupInfo?: boolean;
+    allowMemberPinBoardItems?: boolean;
+    allowMemberCreateNotes?: boolean;
+    allowMemberCreateReminders?: boolean;
+    allowMemberCreatePolls?: boolean;
+    pendingParticipants?: Array<{
+      userId: string;
+      requestedByUserId?: string | null;
+      requestedAt?: string | null;
+    }>;
+    pinnedMessages?: Array<{
+      sourceMessageId: string;
+      title: string;
+      preview: string;
+      createdAtMs: number;
+    }>;
+    inviteCode?: string | null;
+    isOwner: boolean;
+    isAdmin: boolean;
+  } | null;
   message: {
     messageId: string;
     conversationId: string;
