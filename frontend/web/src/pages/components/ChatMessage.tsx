@@ -1,4 +1,4 @@
-import { CheckCheck } from "lucide-react";
+import { CheckCheck, Pin } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageActions } from "./MessageActions";
 import { MessageBubble } from "./MessageBubble";
@@ -53,6 +53,8 @@ export function ChatMessageRow({
   message,
   isMine,
   language,
+  selectionModeActive = false,
+  isSelected = false,
   recipientAvatar,
   senderName,
   senderAvatarUrl,
@@ -60,6 +62,8 @@ export function ChatMessageRow({
   showAvatar = true,
   showMeta = true,
   menuPlacement = "above",
+  onSelectionMouseDown,
+  onSelectionMouseEnter,
   onDelete,
   onReply,
   onEdit,
@@ -98,12 +102,15 @@ export function ChatMessageRow({
   }, []);
 
   const showMenu = useMemo(
-    () => isMenuPinned || isLongPressOpen,
-    [isLongPressOpen, isMenuPinned],
+    () => !selectionModeActive && (isMenuPinned || isLongPressOpen),
+    [isLongPressOpen, isMenuPinned, selectionModeActive],
   );
   const reactionSummary = useMemo(() => summarizeReactions(message.reactions), [message.reactions]);
 
   const startLongPress = () => {
+    if (selectionModeActive) {
+      return;
+    }
     if (longPressTimerRef.current) {
       window.clearTimeout(longPressTimerRef.current);
     }
@@ -130,6 +137,9 @@ export function ChatMessageRow({
         onTouchEnd={endLongPress}
         onTouchCancel={endLongPress}
         onContextMenu={(event) => {
+          if (selectionModeActive) {
+            return;
+          }
           event.preventDefault();
           setIsMenuPinned(true);
         }}
@@ -176,13 +186,36 @@ export function ChatMessageRow({
             onToggleMore={() => setIsMenuPinned((prev) => !prev)}
           />
 
-          <MessageBubble
-            message={message}
-            isMine={isMine}
-            onVotePoll={(optionId) => onVotePoll?.(message, optionId)}
-            onClosePoll={() => onClosePoll?.(message)}
-            onCompleteSchedule={() => onCompleteSchedule?.(message)}
-          />
+          <div
+            data-message-bubble="true"
+            onMouseDown={onSelectionMouseDown}
+            onMouseEnter={onSelectionMouseEnter}
+            className={`relative rounded-[1.35rem] transition-all duration-150 ${isSelected ? "ring-2 ring-sky-300/75 shadow-[0_0_0_1px_rgba(125,211,252,0.16)]" : ""}`}
+          >
+            {isSelected && (
+              <div
+                className={`pointer-events-none absolute -top-2 z-10 inline-flex items-center rounded-full border border-sky-300/45 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-100 ${isMine ? "right-2" : "left-2"}`}
+              >
+                {language === "vi" ? "Da chon" : "Selected"}
+              </div>
+            )}
+            {message.isPinned && !message.isRecalled && (
+              <div
+                className={`pointer-events-none absolute -top-2 z-10 inline-flex items-center gap-1 rounded-full border border-amber-300/45 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-100 ${isMine ? "left-2" : "right-2"}`}
+              >
+                <Pin size={10} />
+                <span>{language === "vi" ? "Ghim" : "Pinned"}</span>
+              </div>
+            )}
+
+            <MessageBubble
+              message={message}
+              isMine={isMine}
+              onVotePoll={(optionId) => onVotePoll?.(message, optionId)}
+              onClosePoll={() => onClosePoll?.(message)}
+              onCompleteSchedule={() => onCompleteSchedule?.(message)}
+            />
+          </div>
 
           {reactionSummary.length > 0 && (
             <div className={`mt-1 flex flex-wrap gap-1 px-1 ${isMine ? "justify-end" : "justify-start"}`}>

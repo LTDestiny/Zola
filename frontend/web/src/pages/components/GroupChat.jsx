@@ -6,8 +6,10 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Download,
   ExternalLink,
   FileText,
+  Forward,
   Image as ImageIcon,
   KeyRound,
   Link as LinkIcon,
@@ -114,6 +116,8 @@ export function GroupChat({
   onDeleteGroup,
   onPreferenceChange,
   onSendTemplateMessage,
+  onForwardMessage,
+  onDeleteMessageForMe,
   children,
 }) {
   const safeMembers = members ?? [];
@@ -148,6 +152,7 @@ export function GroupChat({
   const [archiveDateFilter, setArchiveDateFilter] = useState("all");
   const [activeMemberActionId, setActiveMemberActionId] = useState(null);
   const [activeMemberActionDirection, setActiveMemberActionDirection] = useState("down");
+  const [activeMediaActionId, setActiveMediaActionId] = useState(null);
   const [openSections, setOpenSections] = useState({
     members: true,
     board: true,
@@ -179,6 +184,7 @@ export function GroupChat({
     setArchiveDateFilter("all");
     setActiveMemberActionId(null);
     setActiveMemberActionDirection("down");
+    setActiveMediaActionId(null);
     setIsHeaderEditOpen(false);
     setIsCreateNoteOpen(false);
     setIsCreatePollOpen(false);
@@ -202,6 +208,7 @@ export function GroupChat({
     const closeMemberActionMenu = () => {
       setActiveMemberActionId(null);
       setActiveMemberActionDirection("down");
+      setActiveMediaActionId(null);
     };
     document.addEventListener("click", closeMemberActionMenu);
     return () => {
@@ -501,6 +508,31 @@ export function GroupChat({
     }
   };
 
+  const copyText = async (value) => {
+    if (!value) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Ignore clipboard errors.
+    }
+  };
+
+  const downloadFile = (url, fileName) => {
+    if (!url) {
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName || "download";
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
   const openMemberPicker = () => {
     if (!canInviteMembers) {
       return;
@@ -669,6 +701,131 @@ export function GroupChat({
     setPanelView("archive");
   };
   const backToDefaultPanel = () => setPanelView("default");
+
+  const renderMediaCard = (item, variant = "preview") => {
+    const isPreviewCard = variant === "preview";
+    const frameClass = isPreviewCard ? "h-16" : "h-20";
+    const menuWidthClass = isPreviewCard ? "w-40" : "w-44";
+
+    return (
+      <div
+        key={item.id}
+        className="group relative overflow-visible"
+      >
+        <div className="overflow-hidden rounded-lg border border-slate-700 bg-[#081a33]">
+          <a
+            href={item.resolvedFileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block"
+          >
+            {item.type === "VIDEO" ? (
+              <div className={`grid ${frameClass} place-items-center bg-slate-900 text-slate-300`}>
+                <ImageIcon size={16} />
+              </div>
+            ) : (
+              <img
+                src={item.resolvedFileUrl}
+                alt={item.fileName ?? "media"}
+                className={`${frameClass} w-full object-cover`}
+              />
+            )}
+            <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-900/15 to-slate-900/0 opacity-0 transition duration-150 group-hover:opacity-100" />
+          </a>
+
+          <div className="absolute right-1 top-1 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onForwardMessage?.(item.id);
+                setActiveMediaActionId(null);
+              }}
+              className="grid h-7 w-7 place-items-center rounded-lg bg-slate-950/80 text-slate-100 shadow-lg hover:bg-sky-600"
+              title={language === "vi" ? "Chuyen tiep" : "Forward"}
+            >
+              <Forward size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setActiveMediaActionId((prev) => (prev === item.id ? null : item.id));
+              }}
+              className="grid h-7 w-7 place-items-center rounded-lg bg-slate-950/80 text-slate-100 shadow-lg hover:bg-slate-700"
+              title={language === "vi" ? "Them thao tac" : "More actions"}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          </div>
+        </div>
+
+        {activeMediaActionId === item.id && (
+          <div
+            className={`absolute right-0 top-[calc(100%+0.4rem)] z-30 ${menuWidthClass} rounded-xl border border-[#335b89] bg-[#102d52] p-1.5 shadow-2xl`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                void copyText(item.resolvedFileUrl);
+                setActiveMediaActionId(null);
+              }}
+              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
+            >
+              {language === "vi" ? "Sao chep" : "Copy"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onForwardMessage?.(item.id);
+                setActiveMediaActionId(null);
+              }}
+              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
+            >
+              {language === "vi" ? "Chia se" : "Share"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenPinnedMessage?.(item.id);
+                setActiveMediaActionId(null);
+              }}
+              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
+            >
+              {language === "vi" ? "Xem tin nhan goc" : "View original message"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                downloadFile(item.resolvedFileUrl, item.fileName);
+                setActiveMediaActionId(null);
+              }}
+              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-100 hover:bg-slate-700"
+            >
+              {language === "vi" ? "Luu ve may" : "Download"}
+            </button>
+            <div className="my-1 h-px bg-slate-700" />
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteMessageForMe?.(item.id);
+                setActiveMediaActionId(null);
+              }}
+              className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-rose-200 hover:bg-rose-500/10"
+            >
+              {language === "vi" ? "Xoa chi o phia toi" : "Delete only for me"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0">
@@ -1193,27 +1350,7 @@ export function GroupChat({
                   </p>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
-                    {previewMediaItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={item.resolvedFileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="group relative block overflow-hidden rounded-lg border border-slate-700"
-                      >
-                        {item.type === "VIDEO" ? (
-                          <div className="grid h-16 place-items-center bg-slate-900 text-slate-300">
-                            <ImageIcon size={16} />
-                          </div>
-                        ) : (
-                          <img
-                            src={item.resolvedFileUrl}
-                            alt={item.fileName ?? "media"}
-                            className="h-16 w-full object-cover"
-                          />
-                        )}
-                      </a>
-                    ))}
+                    {previewMediaItems.map((item) => renderMediaCard(item, "preview"))}
                   </div>
                 )}
                 <button
@@ -1722,17 +1859,7 @@ export function GroupChat({
                     </p>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
-                      {archiveMediaItems.map((item) => (
-                        <a key={item.id} href={item.resolvedFileUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-700">
-                          {item.type === "VIDEO" ? (
-                            <div className="grid h-16 place-items-center bg-slate-900 text-slate-300">
-                              <ImageIcon size={16} />
-                            </div>
-                          ) : (
-                            <img src={item.resolvedFileUrl} alt={item.fileName ?? "media"} className="h-16 w-full object-cover" />
-                          )}
-                        </a>
-                      ))}
+                      {archiveMediaItems.map((item) => renderMediaCard(item, "archive"))}
                     </div>
                   ))}
 

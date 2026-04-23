@@ -1,3 +1,5 @@
+import type { MouseEventHandler } from "react";
+
 export interface ChatMessage {
   id: string;
   text: string;
@@ -63,6 +65,8 @@ export interface ChatMessageProps {
   message: ChatMessage;
   isMine: boolean;
   language: "vi" | "en";
+  selectionModeActive?: boolean;
+  isSelected?: boolean;
   recipientAvatar?: string;
   senderName?: string;
   senderAvatarUrl?: string | null;
@@ -70,6 +74,8 @@ export interface ChatMessageProps {
   showAvatar?: boolean;
   showMeta?: boolean;
   menuPlacement?: "above" | "below";
+  onSelectionMouseDown?: MouseEventHandler<HTMLDivElement>;
+  onSelectionMouseEnter?: MouseEventHandler<HTMLDivElement>;
   onDelete: (messageId: string) => void | Promise<void>;
   onReply: (message: ChatMessage) => void;
   onEdit?: (messageId: string, currentText: string) => void | Promise<void>;
