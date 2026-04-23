@@ -7,6 +7,7 @@ type ChatState = {
     totalUnreadCount: number;
     setConversations: (items: ConversationItem[]) => void;
     upsertConversation: (patch: Partial<ConversationItem> & { id: string }) => void;
+    removeConversation: (conversationId: string) => void;
     setSelectedConversationId: (conversationId: string | null) => void;
     clearSelectedConversation: () => void;  // NEW: Clear selection for Welcome Screen
     markConversationRead: (conversationId: string) => void;
@@ -164,6 +165,16 @@ export const useChatStore = create<ChatState>((set) => ({
             return {
                 conversations: sorted,
                 totalUnreadCount: sumUnread(sorted),
+            };
+        });
+    },
+    removeConversation: (conversationId) => {
+        set((state) => {
+            const next = state.conversations.filter((item) => item.id !== conversationId);
+            return {
+                conversations: next,
+                selectedConversationId: state.selectedConversationId === conversationId ? null : state.selectedConversationId,
+                totalUnreadCount: sumUnread(next),
             };
         });
     },

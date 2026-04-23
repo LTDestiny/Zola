@@ -1108,6 +1108,36 @@ public class ChatRealtimeService {
         return items;
     }
 
+    public ConversationListItemResponse getConversationListItem(String userId, UUID conversationId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            ConversationEntity entity = privateConversation.get();
+            ensureMember(entity, userId);
+            String peerUserId = entity.getUser1Id().equals(userId) ? entity.getUser2Id() : entity.getUser1Id();
+            boolean online = onlineUserChecker.isOnline(peerUserId);
+            return new ConversationListItemResponse(
+                entity.getId().toString(),
+                CONVERSATION_TYPE_PRIVATE,
+                peerUserId,
+                null,
+                entity.getLastMessage() == null ? "" : entity.getLastMessage(),
+                entity.getLastMessageAt(),
+                entity.unreadCountOf(userId),
+                entity.getUser1Id().equals(userId) ? entity.getUser1LastReadAt() : entity.getUser2LastReadAt(),
+                entity.lastReadMessageIdOf(userId),
+                List.of(entity.getUser1Id(), entity.getUser2Id()),
+                List.of(),
+                null,
+                peerUserId,
+                online
+            );
+        }
+
+        ConversationDocument groupConversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(groupConversation, userId);
+        return toGroupConversationListItem(groupConversation, userId);
+    }
+
     @Transactional
     public ChatEventResponse markConversationAsRead(String userId, UUID conversationId, String explicitMessageId) {
         Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
