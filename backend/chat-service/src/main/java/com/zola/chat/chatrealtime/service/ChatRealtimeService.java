@@ -531,8 +531,8 @@ public class ChatRealtimeService {
             || allowMemberCreateReminders != null
             || allowMemberCreatePolls != null
             || transferOwnerId != null) {
-            if (!isOwner) {
-                throw new ForbiddenOperationException("Only owner can update security and invitation settings");
+            if (!isOwner && !isAdmin) {
+                throw new ForbiddenOperationException("Only owner or admin can update group settings");
             }
 
             if (onlyAdminsCanMessage != null) {
@@ -579,6 +579,9 @@ public class ChatRealtimeService {
             }
 
             if (transferOwnerId != null) {
+                if (!isOwner) {
+                    throw new ForbiddenOperationException("Only owner can transfer ownership");
+                }
                 String normalizedOwnerId = transferOwnerId.trim();
                 if (normalizedOwnerId.isBlank()) {
                     throw new IllegalArgumentException("transferOwnerId must not be blank");

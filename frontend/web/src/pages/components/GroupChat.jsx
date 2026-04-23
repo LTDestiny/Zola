@@ -200,7 +200,7 @@ export function GroupChat({
   );
   const canOpenManage = isOwner || isAdmin;
   const canInviteMembers = canOpenManage || Boolean(settings?.allowMemberInvite);
-  const canEditSecuritySettings = isOwner;
+  const canEditSecuritySettings = canOpenManage;
   const canEditGroupProfile = canOpenManage || Boolean(settings?.allowMemberEditGroupInfo);
   const canPinBoardItems = canOpenManage || Boolean(settings?.allowMemberPinBoardItems);
   const canCreateNotes = canOpenManage || Boolean(settings?.allowMemberCreateNotes);
@@ -1927,7 +1927,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.renameGroup}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -1943,7 +1943,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.pinBoardItems}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -1959,7 +1959,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createNote}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -1975,7 +1975,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createReminder}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -1991,7 +1991,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createPoll}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -2007,7 +2007,7 @@ export function GroupChat({
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.sendMessage}
-                        disabled={!isOwner}
+                        disabled={!canOpenManage}
                         onChange={(event) => {
                           const checked = event.target.checked;
                           setMemberPermissionMap((prev) => ({
@@ -2099,8 +2099,8 @@ export function GroupChat({
                   {!canEditSecuritySettings && (
                     <p className="mt-2 text-[11px] text-amber-300">
                       {language === "vi"
-                        ? "Chi truong nhom moi doi duoc cac cai dat bao mat va link moi"
-                        : "Only the owner can change security and invite-link settings"}
+                        ? "Chi truong nhom hoac pho nhom moi doi duoc cac cai dat bao mat va link moi"
+                        : "Only the owner or admins can change security and invite-link settings"}
                     </p>
                   )}
                 </div>
