@@ -87,6 +87,7 @@ export function GroupChat({
   conversation,
   isPanelOpen = true,
   members,
+  pendingMembers,
   friendContacts,
   pinnedMessages,
   onOpenPinnedMessage,
@@ -108,6 +109,8 @@ export function GroupChat({
   onClearGroupAvatar,
   isUpdatingGroupProfile,
   onRemoveMember,
+  onApprovePendingMember,
+  onRejectPendingMember,
   onToggleAdmin,
   onMentionMember,
   onLeaveGroup,
@@ -117,6 +120,7 @@ export function GroupChat({
   children,
 }) {
   const safeMembers = members ?? [];
+  const safePendingMembers = pendingMembers ?? [];
   const safeFriendContacts = friendContacts ?? [];
   const safePinnedMessages = pinnedMessages ?? [];
   const safeMessages = messages ?? [];
@@ -283,8 +287,26 @@ export function GroupChat({
     });
   }, [safeMembers, searchText, userProfileMap]);
 
+  const filteredPendingMembers = useMemo(() => {
+    const normalized = searchText.trim().toLowerCase();
+    if (!normalized) {
+      return safePendingMembers;
+    }
+    return safePendingMembers.filter((item) => {
+      const memberId = String(item?.userId ?? "");
+      const profile = userProfileMap?.[memberId];
+      const name = String(profile?.fullName ?? memberId).toLowerCase();
+      return name.includes(normalized) || memberId.toLowerCase().includes(normalized);
+    });
+  }, [safePendingMembers, searchText, userProfileMap]);
+
   const addableFriendCandidates = useMemo(() => {
     const memberSet = new Set(safeMembers);
+    const pendingMemberSet = new Set(
+      safePendingMembers
+        .map((item) => String(item?.userId ?? "").trim())
+        .filter(Boolean),
+    );
     const myId = currentUserId ?? null;
     const normalized = memberPickerSearch.trim().toLowerCase();
 
@@ -303,6 +325,7 @@ export function GroupChat({
       })
       .filter((candidate) => candidate.userId && candidate.userId !== myId)
       .filter((candidate) => !memberSet.has(candidate.userId))
+      .filter((candidate) => !pendingMemberSet.has(candidate.userId))
       .filter((candidate) => {
         if (!normalized) {
           return true;
@@ -317,7 +340,7 @@ export function GroupChat({
         );
       })
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-  }, [safeFriendContacts, safeMembers, currentUserId, memberPickerSearch, userProfileMap]);
+  }, [safeFriendContacts, safeMembers, safePendingMembers, currentUserId, memberPickerSearch, userProfileMap]);
 
   const mediaItems = useMemo(() => {
     return parsedMessages
@@ -1404,6 +1427,82 @@ export function GroupChat({
                 )}
 
                 <div ref={memberListScrollRef} className="max-h-[55vh] space-y-2.5 overflow-y-auto pr-1">
+                  {filteredPendingMembers.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300/90">
+                        {language === "vi"
+                          ? `Dang cho duyet (${filteredPendingMembers.length})`
+                          : `Pending approval (${filteredPendingMembers.length})`}
+                      </div>
+
+                      {filteredPendingMembers.map((item) => {
+                        const memberId = String(item?.userId ?? "");
+                        const profile = userProfileMap?.[memberId];
+                        const memberName = profile?.fullName ?? `User ${memberId.slice(0, 8)}`;
+                        const avatarUrl = profile?.avatarUrl ?? null;
+                        const requestedById = String(item?.requestedByUserId ?? "").trim();
+                        const requestedByProfile = requestedById ? userProfileMap?.[requestedById] : null;
+                        const requestedByName = requestedById
+                          ? requestedByProfile?.fullName ?? `User ${requestedById.slice(0, 8)}`
+                          : null;
+
+                        return (
+                          <div key={`pending-${memberId}`} className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="relative">
+                                {avatarUrl ? (
+                                  <img src={avatarUrl} alt={memberName} className="h-11 w-11 rounded-full object-cover ring-1 ring-white/10" />
+                                ) : (
+                                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[#6a4b1c] text-xs font-semibold text-slate-100">
+                                    {initials(memberName)}
+                                  </div>
+                                )}
+                                <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-amber-400 px-1.5 py-[2px] text-[9px] font-bold uppercase text-slate-900">
+                                  {language === "vi" ? "Cho duyet" : "Pending"}
+                                </span>
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[15px] font-semibold leading-5 text-slate-100">{memberName}</p>
+                                <p className="truncate pt-0.5 text-xs text-amber-100/90">
+                                  {language === "vi"
+                                    ? `${memberName} dang cho truong, pho nhom duyet vao nhom`
+                                    : `${memberName} is waiting for admin approval to join`}
+                                </p>
+                                {requestedByName && (
+                                  <p className="truncate pt-1 text-[11px] text-slate-300/90">
+                                    {language === "vi"
+                                      ? `Nguoi them: ${requestedByName}`
+                                      : `Requested by: ${requestedByName}`}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {(isOwner || isAdmin) && (
+                              <div className="mt-3 flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => onRejectPendingMember?.(memberId)}
+                                  className="rounded-lg border border-slate-500/70 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                                >
+                                  {language === "vi" ? "Tu choi" : "Reject"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onApprovePendingMember?.(memberId)}
+                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                                >
+                                  {language === "vi" ? "Dong y" : "Approve"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {filteredMembers.map((memberId) => {
                     const profile = userProfileMap?.[memberId];
                     const memberName = profile?.fullName ?? `User ${memberId.slice(0, 8)}`;

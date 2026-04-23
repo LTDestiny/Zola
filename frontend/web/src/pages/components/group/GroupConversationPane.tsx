@@ -543,6 +543,38 @@ function formatSystemMessageContent(
       : `${actor} joined via invite link`;
   }
 
+  const joinedGroupMatch = prefixed.match(/^(\S+)\s+joined the group$/i);
+  if (joinedGroupMatch) {
+    const actor = toDisplayNameFromId(joinedGroupMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da tham gia nhom`
+      : `${actor} joined the group`;
+  }
+
+  const pendingApprovalMatch = prefixed.match(/^(\S+)\s+is waiting for admin approval to join$/i);
+  if (pendingApprovalMatch) {
+    const actor = toDisplayNameFromId(pendingApprovalMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} dang cho truong, pho nhom duyet vao nhom`
+      : `${actor} is waiting for admin approval to join`;
+  }
+
+  const joinModeApprovalMatch = prefixed.match(/^(\S+)\s+changed join mode to require approval$/i);
+  if (joinModeApprovalMatch) {
+    const actor = toDisplayNameFromId(joinModeApprovalMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da thay doi hinh thuc tham gia nhom thanh can xet duyet`
+      : `${actor} changed group join mode to require approval`;
+  }
+
+  const joinModeOpenMatch = prefixed.match(/^(\S+)\s+turned off join approval$/i);
+  if (joinModeOpenMatch) {
+    const actor = toDisplayNameFromId(joinModeOpenMatch[1], language, myId, userProfileMap);
+    return language === "vi"
+      ? `${actor} da tat che do xet duyet thanh vien moi`
+      : `${actor} turned off join approval`;
+  }
+
   const leftMatch = prefixed.match(/^(\S+)\s+left the group$/i);
   if (leftMatch) {
     const actor = toDisplayNameFromId(leftMatch[1], language, myId, userProfileMap);

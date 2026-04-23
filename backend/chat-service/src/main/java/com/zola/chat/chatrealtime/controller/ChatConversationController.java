@@ -126,6 +126,39 @@ public class ChatConversationController {
         return ApiResponse.ok("Member removed", response);
     }
 
+    @PostMapping("/conversations/{conversationId}/approve-member")
+    public ApiResponse<ConversationListItemResponse> approvePendingMember(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody GroupMemberRequest request
+    ) {
+        ChatRealtimeService.GroupActionResult result = chatRealtimeService.approvePendingGroupMember(
+            userId,
+            conversationId,
+            request.userId()
+        );
+        ConversationListItemResponse response = result.conversation();
+        if (result.systemMessage() != null) {
+            emitUnreadSyncEvents(conversationId, result.systemMessage());
+        }
+        return ApiResponse.ok("Pending member approved", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/reject-member")
+    public ApiResponse<ConversationListItemResponse> rejectPendingMember(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId,
+        @Valid @RequestBody GroupMemberRequest request
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.rejectPendingGroupMember(
+            userId,
+            conversationId,
+            request.userId()
+        );
+        emitUnreadSyncEvents(conversationId, null);
+        return ApiResponse.ok("Pending member rejected", response);
+    }
+
     @PostMapping("/conversations/{conversationId}/leave")
     public ApiResponse<ConversationListItemResponse> leaveGroup(
         @RequestHeader("X-User-Id") String userId,
@@ -180,7 +213,7 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId,
         @RequestBody UpdateGroupSettingsRequest request
     ) {
-        Map<String, Object> response = chatRealtimeService.updateGroupSettings(
+        ChatRealtimeService.GroupSettingsUpdateResult result = chatRealtimeService.updateGroupSettings(
             userId,
             conversationId,
             request.name(),
@@ -203,8 +236,8 @@ public class ChatConversationController {
             request.transferOwnerId()
         );
 
-        emitUnreadSyncEvents(conversationId, null);
-        return ApiResponse.ok("Group settings updated", response);
+        emitUnreadSyncEvents(conversationId, result.systemMessage());
+        return ApiResponse.ok("Group settings updated", result.settings());
     }
 
     @PostMapping("/conversations/{conversationId}/pins")

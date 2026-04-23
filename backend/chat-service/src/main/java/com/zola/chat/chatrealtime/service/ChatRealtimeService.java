@@ -17,6 +17,7 @@ import com.zola.chat.chatrealtime.dto.MessageItemResponse;
 import com.zola.chat.chatrealtime.dto.MessagesPageResponse;
 import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.document.ConversationDocument;
+import com.zola.chat.document.PendingGroupMemberItem;
 import com.zola.chat.document.PinnedMessageItem;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
@@ -69,6 +70,12 @@ public class ChatRealtimeService {
 
     public record GroupActionResult(
         ConversationListItemResponse conversation,
+        MessagePayload systemMessage
+    ) {
+    }
+
+    public record GroupSettingsUpdateResult(
+        Map<String, Object> settings,
         MessagePayload systemMessage
     ) {
     }
@@ -140,6 +147,7 @@ public class ChatRealtimeService {
         conversation.setAllowMemberCreateReminders(false);
         conversation.setAllowMemberCreatePolls(false);
         conversation.setPinnedMessages(new ArrayList<>());
+        conversation.setPendingMembers(new ArrayList<>());
         conversation.setInviteCode(generateUniqueInviteCode());
         conversation.setLastMessage("");
         conversation.setLastMessageAt(now.toString());
@@ -167,6 +175,24 @@ public class ChatRealtimeService {
         List<String> members = new ArrayList<>(normalizeMembers(conversation));
         if (members.contains(normalizedUserId)) {
             return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
+        }
+
+        if (hasPendingMember(conversation, normalizedUserId)) {
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
+        }
+
+        if (conversation.isRequireApprovalToJoin()) {
+            addPendingMember(conversation, normalizedUserId, actorId);
+            conversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(conversation);
+
+            MessagePayload systemMessage = createGroupSystemMessage(
+                conversation,
+                actorId,
+                "[System] " + normalizedUserId + " is waiting for admin approval to join"
+            );
+
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
         }
 
         members.add(normalizedUserId);
@@ -310,6 +336,24 @@ public class ChatRealtimeService {
             return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
         }
 
+        if (hasPendingMember(conversation, actorId)) {
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
+        }
+
+        if (conversation.isRequireApprovalToJoin()) {
+            addPendingMember(conversation, actorId, actorId);
+            conversation.setUpdatedAt(Instant.now());
+            groupConversationRepository.save(conversation);
+
+            MessagePayload systemMessage = createGroupSystemMessage(
+                conversation,
+                actorId,
+                "[System] " + actorId + " is waiting for admin approval to join"
+            );
+
+            return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
+        }
+
         members.add(actorId);
         conversation.setMembers(members);
         conversation.setParticipants(members);
@@ -362,6 +406,68 @@ public class ChatRealtimeService {
     }
 
     @Transactional
+    public GroupActionResult approvePendingGroupMember(String actorId, UUID conversationId, String userId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupAdmin(conversation, actorId);
+        String normalizedUserId = userId == null ? "" : userId.trim();
+        if (normalizedUserId.isBlank()) {
+            throw new IllegalArgumentException("userId must not be blank");
+        }
+
+        findPendingMember(conversation, normalizedUserId)
+            .orElseThrow(() -> new ResourceNotFoundException("Pending member not found"));
+
+        List<String> members = new ArrayList<>(normalizeMembers(conversation));
+        if (!members.contains(normalizedUserId)) {
+            members.add(normalizedUserId);
+        }
+
+        conversation.setMembers(members);
+        conversation.setParticipants(members);
+        conversation.setPendingMembers(
+            normalizePendingMembers(conversation).stream()
+                .filter(item -> !normalizedUserId.equals(item.getUserId()))
+                .collect(Collectors.toCollection(ArrayList::new))
+        );
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+
+        markAllMessagesAsSeenForUser(conversation.getId(), normalizedUserId);
+        MessagePayload systemMessage = createGroupSystemMessage(
+            conversation,
+            actorId,
+            "[System] " + normalizedUserId + " joined the group"
+        );
+
+        return new GroupActionResult(toGroupConversationListItem(conversation, actorId), systemMessage);
+    }
+
+    @Transactional
+    public ConversationListItemResponse rejectPendingGroupMember(String actorId, UUID conversationId, String userId) {
+        ConversationDocument conversation = findGroupConversation(conversationId.toString());
+        ensureGroupAdmin(conversation, actorId);
+        String normalizedUserId = userId == null ? "" : userId.trim();
+        if (normalizedUserId.isBlank()) {
+            throw new IllegalArgumentException("userId must not be blank");
+        }
+
+        boolean removed = normalizePendingMembers(conversation).stream()
+            .anyMatch(item -> normalizedUserId.equals(item.getUserId()));
+        if (!removed) {
+            throw new ResourceNotFoundException("Pending member not found");
+        }
+
+        conversation.setPendingMembers(
+            normalizePendingMembers(conversation).stream()
+                .filter(item -> !normalizedUserId.equals(item.getUserId()))
+                .collect(Collectors.toCollection(ArrayList::new))
+        );
+        conversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(conversation);
+        return toGroupConversationListItem(conversation, actorId);
+    }
+
+    @Transactional
     public Map<String, Object> getGroupSettings(String actorId, UUID conversationId) {
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
@@ -370,7 +476,7 @@ public class ChatRealtimeService {
     }
 
     @Transactional
-    public Map<String, Object> updateGroupSettings(
+    public GroupSettingsUpdateResult updateGroupSettings(
         String actorId,
         UUID conversationId,
         String name,
@@ -392,6 +498,7 @@ public class ChatRealtimeService {
         boolean isOwner = actorId.equals(conversation.getOwnerId());
         boolean isAdmin = normalizeAdmins(conversation).contains(actorId);
         boolean changed = false;
+        MessagePayload systemMessage = null;
         boolean canEditGroupInfo = isOwner || isAdmin || conversation.isAllowMemberEditGroupInfo();
 
         if (name != null || avatar != null) {
@@ -433,8 +540,18 @@ public class ChatRealtimeService {
                 changed = true;
             }
             if (requireApprovalToJoin != null) {
+                boolean previousValue = conversation.isRequireApprovalToJoin();
                 conversation.setRequireApprovalToJoin(requireApprovalToJoin);
                 changed = true;
+                if (previousValue != requireApprovalToJoin) {
+                    systemMessage = createGroupSystemMessage(
+                        conversation,
+                        actorId,
+                        requireApprovalToJoin
+                            ? "[System] " + actorId + " changed join mode to require approval"
+                            : "[System] " + actorId + " turned off join approval"
+                    );
+                }
             }
             if (allowMemberInvite != null) {
                 conversation.setAllowMemberInvite(allowMemberInvite);
@@ -486,7 +603,7 @@ public class ChatRealtimeService {
             groupConversationRepository.save(conversation);
         }
 
-        return toGroupSettingsPayload(conversation, actorId);
+        return new GroupSettingsUpdateResult(toGroupSettingsPayload(conversation, actorId), systemMessage);
     }
 
     @Transactional
@@ -1274,6 +1391,52 @@ public class ChatRealtimeService {
             .toList();
     }
 
+    private List<PendingGroupMemberItem> normalizePendingMembers(ConversationDocument conversation) {
+        Set<String> memberIds = new LinkedHashSet<>(normalizeMembers(conversation));
+        LinkedHashMap<String, PendingGroupMemberItem> pendingByUserId = new LinkedHashMap<>();
+        for (PendingGroupMemberItem item : conversation.getPendingMembers()) {
+            if (item == null || item.getUserId() == null || item.getUserId().isBlank()) {
+                continue;
+            }
+            String userId = item.getUserId().trim();
+            if (memberIds.contains(userId)) {
+                continue;
+            }
+            PendingGroupMemberItem normalized = new PendingGroupMemberItem();
+            normalized.setUserId(userId);
+            normalized.setRequestedByUserId(
+                item.getRequestedByUserId() == null || item.getRequestedByUserId().isBlank()
+                    ? userId
+                    : item.getRequestedByUserId().trim()
+            );
+            normalized.setRequestedAt(item.getRequestedAt());
+            pendingByUserId.putIfAbsent(userId, normalized);
+        }
+        return new ArrayList<>(pendingByUserId.values());
+    }
+
+    private Optional<PendingGroupMemberItem> findPendingMember(ConversationDocument conversation, String userId) {
+        return normalizePendingMembers(conversation).stream()
+            .filter(item -> userId.equals(item.getUserId()))
+            .findFirst();
+    }
+
+    private boolean hasPendingMember(ConversationDocument conversation, String userId) {
+        return findPendingMember(conversation, userId).isPresent();
+    }
+
+    private void addPendingMember(ConversationDocument conversation, String userId, String requestedByUserId) {
+        List<PendingGroupMemberItem> pendingMembers = new ArrayList<>(normalizePendingMembers(conversation));
+        PendingGroupMemberItem pendingMember = new PendingGroupMemberItem();
+        pendingMember.setUserId(userId);
+        pendingMember.setRequestedByUserId(
+            requestedByUserId == null || requestedByUserId.isBlank() ? userId : requestedByUserId.trim()
+        );
+        pendingMember.setRequestedAt(Instant.now());
+        pendingMembers.add(pendingMember);
+        conversation.setPendingMembers(pendingMembers);
+    }
+
     private List<String> normalizeAdmins(ConversationDocument conversation) {
         LinkedHashSet<String> admins = new LinkedHashSet<>();
         if (conversation.getAdmins() != null) {
@@ -1570,6 +1733,21 @@ public class ChatRealtimeService {
         payload.put("allowMemberCreateNotes", conversation.isAllowMemberCreateNotes());
         payload.put("allowMemberCreateReminders", conversation.isAllowMemberCreateReminders());
         payload.put("allowMemberCreatePolls", conversation.isAllowMemberCreatePolls());
+        payload.put(
+            "pendingParticipants",
+            normalizePendingMembers(conversation).stream()
+                .map(item -> {
+                    Map<String, Object> pendingPayload = new LinkedHashMap<>();
+                    pendingPayload.put("userId", item.getUserId());
+                    pendingPayload.put("requestedByUserId", item.getRequestedByUserId());
+                    pendingPayload.put(
+                        "requestedAt",
+                        item.getRequestedAt() == null ? null : item.getRequestedAt().toString()
+                    );
+                    return pendingPayload;
+                })
+                .collect(Collectors.toList())
+        );
         payload.put(
             "pinnedMessages",
             normalizePinnedMessages(conversation).stream()
