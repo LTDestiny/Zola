@@ -1402,6 +1402,24 @@ export function ChatPage() {
     if (!activeConversationId) {
       return;
     }
+    const effectiveOwnerId =
+      activeGroupSettings?.ownerId ?? activeConversationForView?.ownerId ?? null;
+    const effectiveParticipants =
+      activeGroupSettings?.participants ??
+      activeConversationForView?.participants ??
+      [];
+    if (
+      myProfile?.id &&
+      effectiveOwnerId === myProfile.id &&
+      effectiveParticipants.length > 1
+    ) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban phai chuyen quyen truong nhom truoc khi roi nhom"
+          : "Transfer ownership before leaving this group",
+      );
+      return;
+    }
     try {
       await leaveGroupConversation(activeConversationId);
       await fetchConversations({ silent: true });

@@ -286,16 +286,12 @@ public class ChatRealtimeService {
             return new GroupActionResult(removed, null);
         }
 
+        if (actorId.equals(conversation.getOwnerId())) {
+            throw new ForbiddenOperationException("Owner must transfer ownership before leaving a group with other members");
+        }
+
         List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
         admins.remove(actorId);
-        String ownerId = conversation.getOwnerId();
-        if (actorId.equals(ownerId)) {
-            String nextOwner = admins.isEmpty() ? members.get(0) : admins.get(0);
-            conversation.setOwnerId(nextOwner);
-            if (!admins.contains(nextOwner)) {
-                admins.add(nextOwner);
-            }
-        }
 
         conversation.setMembers(members);
         conversation.setParticipants(members);
@@ -591,8 +587,10 @@ public class ChatRealtimeService {
                     throw new ForbiddenOperationException("New owner must be a group member");
                 }
 
+                String previousOwnerId = conversation.getOwnerId();
                 conversation.setOwnerId(normalizedOwnerId);
                 List<String> admins = new ArrayList<>(normalizeAdmins(conversation));
+                admins.remove(previousOwnerId);
                 if (!admins.contains(normalizedOwnerId)) {
                     admins.add(normalizedOwnerId);
                 }
