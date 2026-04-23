@@ -1740,7 +1740,11 @@ export function GroupChat({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void onUpdateSettings?.({ transferOwnerId: memberId });
+                                  void onUpdateSettings?.({
+                                    transferOwnerId: memberId,
+                                    successMessageVi: "Da chuyen quyen truong nhom",
+                                    successMessageEn: "Ownership transferred",
+                                  });
                                   setActiveMemberActionId(null);
                                 }}
                                 className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-indigo-200 hover:bg-slate-700"
