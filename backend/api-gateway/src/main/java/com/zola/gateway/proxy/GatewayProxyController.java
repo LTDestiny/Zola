@@ -883,7 +883,7 @@ public class GatewayProxyController {
     }
 
     private void emitFriendshipSync(ApiResponse<Object> response, String eventType) {
-        if (!(response.data() instanceof Map<?, ?> data)) {
+        if (!(response.getData() instanceof Map<?, ?> data)) {
             return;
         }
 
@@ -900,7 +900,7 @@ public class GatewayProxyController {
     }
 
     private void ensureDirectConversationForFriendship(ApiResponse<Object> response) {
-        if (!(response.data() instanceof Map<?, ?> data)) {
+        if (!(response.getData() instanceof Map<?, ?> data)) {
             return;
         }
 
@@ -920,7 +920,7 @@ public class GatewayProxyController {
             );
 
             String conversationId = null;
-            if (chatResponse != null && chatResponse.data() instanceof Map<?, ?> chatData) {
+            if (chatResponse != null && chatResponse.getData() instanceof Map<?, ?> chatData) {
                 Object id = chatData.get("id");
                 if (id instanceof String conversation) {
                     conversationId = conversation;
@@ -939,7 +939,7 @@ public class GatewayProxyController {
 
     private void emitProfileSync(ApiResponse<Object> response, String eventType, String fallbackUserId) {
         String userId = fallbackUserId;
-        if (response != null && response.data() instanceof Map<?, ?> data) {
+        if (response != null && response.getData() instanceof Map<?, ?> data) {
             Object responseUserId = data.get("id");
             if (responseUserId instanceof String id && !id.isBlank()) {
                 userId = id;
@@ -964,7 +964,7 @@ public class GatewayProxyController {
                 Map.of("X-User-Id", userId)
             );
 
-            if (!(friendsResponse.data() instanceof java.util.List<?> friends)) {
+            if (!(friendsResponse.getData() instanceof java.util.List<?> friends)) {
                 return;
             }
 
