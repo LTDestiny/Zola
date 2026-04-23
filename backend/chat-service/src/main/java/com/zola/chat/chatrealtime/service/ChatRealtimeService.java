@@ -181,7 +181,7 @@ public class ChatRealtimeService {
             return new GroupActionResult(toGroupConversationListItem(conversation, actorId), null);
         }
 
-        if (conversation.isRequireApprovalToJoin()) {
+        if (conversation.isRequireApprovalToJoin() && !actorIsOwner && !actorIsAdmin) {
             addPendingMember(conversation, normalizedUserId, actorId);
             conversation.setUpdatedAt(Instant.now());
             groupConversationRepository.save(conversation);
