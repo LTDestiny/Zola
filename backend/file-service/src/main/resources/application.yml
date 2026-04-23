@@ -29,6 +29,14 @@ storage:
   region: ${AWS_REGION:ap-southeast-1}
 
 media:
-  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
-  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:104857600}
+  # 50 MB for images, 500 MB for videos, 100 MB for documents
+  max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:52428800}
+  max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:524288000}
   max-file-bytes: ${MEDIA_MAX_FILE_BYTES:104857600}
+  # How long presigned PUT URLs are valid (minutes)
+  presign-ttl-minutes: ${MEDIA_PRESIGN_TTL_MINUTES:15}
+  cleanup:
+    # How often the orphan cleanup scheduler runs (ms) — default 1 hour
+    interval-ms: ${MEDIA_CLEANUP_INTERVAL_MS:3600000}
+    # Initial delay before first run (ms) — default 5 minutes
+    initial-delay-ms: ${MEDIA_CLEANUP_INITIAL_DELAY_MS:300000}

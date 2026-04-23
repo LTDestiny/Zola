@@ -25,6 +25,9 @@ export interface ChatListProps {
     onSearchTextChange: (value: string) => void;
     onSelectChat: (chatId: string) => void;
     onCreateChat: () => void;
+    isLoading?: boolean;
+    hasError?: boolean;
+    onRetry?: () => void;
 }
 
 // ─── PRESENCE BADGE ─────────────────────────────────────────────────────────────
@@ -123,6 +126,9 @@ export function ChatList({
     onSearchTextChange,
     onSelectChat,
     onCreateChat,
+    isLoading = false,
+    hasError = false,
+    onRetry,
 }: ChatListProps) {
     const displayChats = chats.length > 0 ? chats : [];
 
@@ -157,7 +163,33 @@ export function ChatList({
             </div>
 
             <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-2 pb-16 md:pb-3">
-                {displayChats.length === 0 ? (
+                {isLoading ? (
+                    <div className="space-y-2 px-1 pt-2">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: skeleton
+                            <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-3">
+                                <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-slate-200" />
+                                <div className="flex-1 space-y-2">
+                                    <div className="h-3.5 w-3/4 animate-pulse rounded bg-slate-200" />
+                                    <div className="h-3 w-1/2 animate-pulse rounded bg-slate-200" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : hasError ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                        <p className="text-sm text-slate-500">Could not load conversations</p>
+                        {onRetry && (
+                            <button
+                                type="button"
+                                onClick={onRetry}
+                                className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
+                            >
+                                Retry
+                            </button>
+                        )}
+                    </div>
+                ) : displayChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                         <p className="text-sm">No conversations yet</p>
                     </div>

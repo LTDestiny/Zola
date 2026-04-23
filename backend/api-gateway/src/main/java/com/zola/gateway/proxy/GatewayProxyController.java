@@ -104,6 +104,53 @@ public class GatewayProxyController {
         }
     }
 
+    @PostMapping("/media/presigned-urls")
+    public ApiResponse<Object> getPresignedUrls(
+        @RequestBody Map<String, Object> body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(fileServiceUrl + "/api/v1/media/presigned-urls", body, null, Map.of("X-User-Id", userId));
+    }
+
+    @DeleteMapping("/media")
+    public org.springframework.http.ResponseEntity<Void> deleteMedia(
+        @RequestParam("fileKey") String fileKey,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        try {
+            restClient.delete()
+                .uri(fileServiceUrl + "/api/v1/media?fileKey={fileKey}", fileKey)
+                .header("X-User-Id", userId)
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            throw toStatusException(ex);
+        }
+        return org.springframework.http.ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/media/confirm")
+    public org.springframework.http.ResponseEntity<Void> confirmUploads(
+        @RequestBody Map<String, Object> body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        try {
+            restClient.post()
+                .uri(fileServiceUrl + "/api/v1/media/confirm")
+                .header("X-User-Id", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            throw toStatusException(ex);
+        }
+        return org.springframework.http.ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/auth/register")
     public ApiResponse<Object> register(@RequestBody Map<String, Object> body) {
         return postMap(authServiceUrl + "/api/v1/auth/register", body, null, null, Map.of());

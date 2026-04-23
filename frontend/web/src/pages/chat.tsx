@@ -91,6 +91,18 @@ function inferMessageType(item: MessageItem): ChatMessage["type"] {
   if (rawType === "IMAGE") return "image";
   if (rawType === "VIDEO") return "video";
   if (rawType === "AUDIO") return "audio";
+  if (rawType === "MEDIA") {
+    const firstAttachment = item.attachments?.[0];
+    if (firstAttachment) {
+      if (firstAttachment.mediaType === "IMAGE") return "image";
+      if (firstAttachment.mediaType === "VIDEO") return "video";
+      return "file";
+    }
+    const fn = (item.fileName ?? "").toLowerCase();
+    if (/\.(png|jpe?g|gif|webp)$/.test(fn)) return "image";
+    if (/\.(mp4|webm|mov)$/.test(fn)) return "video";
+    return "file";
+  }
   if (rawType === "FILE") {
     const fileName = (item.fileName ?? "").toLowerCase();
     if (/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileName)) return "image";
@@ -128,8 +140,8 @@ function mapToUiMessage(
     rawType,
     isForwarded: rawType === "FORWARD",
     isEdited: Boolean(item.edited),
-    mediaUrl: item.fileUrl ?? undefined,
-    fileName: item.fileName ?? undefined,
+    mediaUrl: item.fileUrl ?? item.attachments?.[0]?.fileUrl ?? undefined,
+    fileName: item.fileName ?? item.attachments?.[0]?.fileName ?? undefined,
     fileSize: undefined,
     duration: undefined,
     reactions: item.reactions,

@@ -18,6 +18,7 @@ import com.zola.chat.chatrealtime.dto.UserPresenceResponse;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
+import com.zola.chat.infrastructure.persistence.mongo.AttachmentDocument;
 import com.zola.chat.infrastructure.persistence.mongo.MessageDocument;
 import com.zola.chat.presence.PresenceManager;
 import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
@@ -127,10 +128,35 @@ public class ChatRealtimeService {
         item.setId(generateMessageId());
         item.setSenderId(senderId);
         item.setReceiverId(receiverId);
-        item.setType(request.type().trim().toUpperCase());
-        item.setContent(request.content().trim());
-        item.setFileUrl(request.fileUrl());
-        item.setFileName(request.fileName());
+        // Resolve type: use MEDIA when attachments are present
+        boolean hasAttachments = request.attachments() != null && !request.attachments().isEmpty();
+        String resolvedType = hasAttachments ? "MEDIA" : request.type().trim().toUpperCase();
+        item.setType(resolvedType);
+        String rawContent = request.content();
+        item.setContent(rawContent == null ? "" : rawContent.trim());
+
+        // Map attachments and populate legacy single-file fields for backward compat
+        if (hasAttachments) {
+            List<AttachmentDocument> docs = new ArrayList<>();
+            for (ChatSendRequest.AttachmentInput a : request.attachments()) {
+                AttachmentDocument doc = new AttachmentDocument();
+                doc.setFileName(a.fileName());
+                doc.setFileKey(a.fileKey());
+                doc.setFileUrl(a.fileUrl());
+                doc.setContentType(a.contentType());
+                doc.setMediaType(a.mediaType());
+                doc.setSizeBytes(a.sizeBytes());
+                doc.setSortOrder(a.sortOrder());
+                docs.add(doc);
+            }
+            item.setAttachments(docs);
+            // Backward-compat: populate legacy fields from first attachment
+            item.setFileUrl(request.attachments().get(0).fileUrl());
+            item.setFileName(request.attachments().get(0).fileName());
+        } else {
+            item.setFileUrl(request.fileUrl());
+            item.setFileName(request.fileName());
+        }
         item.setReactions(Collections.emptyList());
         item.setCreatedAt(now.toString());
         item.setUpdatedAt(now.toString());
@@ -329,6 +355,7 @@ public class ChatRealtimeService {
         forwarded.setContent(original.getContent());
         forwarded.setFileUrl(original.getFileUrl());
         forwarded.setFileName(original.getFileName());
+        forwarded.setAttachments(original.getAttachments());
         forwarded.setReactions(Collections.emptyList());
         forwarded.setCreatedAt(Instant.now().toString());
         forwarded.setUpdatedAt(Instant.now().toString());
@@ -564,26 +591,10 @@ public class ChatRealtimeService {
         String clientMessageId
     ) {
         String normalizedType = (type == null || type.isBlank()) ? "TEXT" : type.trim().toUpperCase();
-        ChatEventResponse event = sendMessage(senderId, new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName, clientMessageId));
+        ChatEventResponse event = sendMessage(senderId,
+            new ChatSendRequest(conversationId, normalizedType, content, fileUrl, fileName, null, clientMessageId));
         MessagePayload message = event.message();
-        return new MessageItemResponse(
-            message.messageId(),
-            message.conversationId(),
-            message.senderId(),
-            message.receiverId(),
-            message.type(),
-            message.content(),
-            message.fileUrl(),
-            message.fileName(),
-            message.reactions(),
-            message.recalled(),
-            message.deletedForUsers(),
-            message.deliveredTo(),
-            message.seenBy(),
-            message.createdAt(),
-            message.updatedAt(),
-            message.edited()
-        );
+        return toMessageItemResponse(message);
     }
 
     public MessagesPageResponse getMessagesHttp(String userId, UUID conversationId, String cursor, int limit) {
@@ -610,24 +621,7 @@ public class ChatRealtimeService {
         String nextCursor = end < messages.size() ? pageSlice.get(pageSlice.size() - 1).messageId() : null;
 
         List<MessageItemResponse> items = pageSlice.stream()
-            .map(message -> new MessageItemResponse(
-                message.messageId(),
-                message.conversationId(),
-                message.senderId(),
-                message.receiverId(),
-                message.type(),
-                message.content(),
-                message.fileUrl(),
-                message.fileName(),
-                message.reactions(),
-                message.recalled(),
-                message.deletedForUsers(),
-                message.deliveredTo(),
-                message.seenBy(),
-                message.createdAt(),
-                message.updatedAt(),
-                message.edited()
-            ))
+            .map(this::toMessageItemResponse)
             .toList();
 
         return new MessagesPageResponse(items, nextCursor);
@@ -683,7 +677,36 @@ public class ChatRealtimeService {
         }
     }
 
+    private MessageItemResponse toMessageItemResponse(MessagePayload message) {
+        return new MessageItemResponse(
+            message.messageId(),
+            message.conversationId(),
+            message.senderId(),
+            message.receiverId(),
+            message.type(),
+            message.content(),
+            message.fileUrl(),
+            message.fileName(),
+            message.attachments(),
+            message.reactions(),
+            message.recalled(),
+            message.deletedForUsers(),
+            message.deliveredTo(),
+            message.seenBy(),
+            message.createdAt(),
+            message.updatedAt(),
+            message.edited()
+        );
+    }
+
     private MessagePayload toMessagePayload(MessageDocument item) {
+        List<MessagePayload.AttachmentPayload> attachmentPayloads =
+            item.getAttachments() == null ? Collections.emptyList() :
+            item.getAttachments().stream()
+                .map(a -> new MessagePayload.AttachmentPayload(
+                    a.getFileName(), a.getFileKey(), a.getFileUrl(),
+                    a.getContentType(), a.getMediaType(), a.getSizeBytes(), a.getSortOrder()))
+                .toList();
         return new MessagePayload(
             item.getId(),
             item.getConversationId(),
@@ -693,6 +716,7 @@ public class ChatRealtimeService {
             item.getContent(),
             item.getFileUrl(),
             item.getFileName(),
+            attachmentPayloads,
             item.getReactions(),
             item.getDeletedForUsers(),
             item.getDeliveredTo(),

@@ -37,6 +37,15 @@ export type ChatRealtimeEvent = {
     content: string;
     fileUrl: string | null;
     fileName: string | null;
+    attachments?: Array<{
+      fileName: string;
+      fileKey: string;
+      fileUrl: string;
+      contentType: string;
+      mediaType: "IMAGE" | "VIDEO" | "FILE";
+      sizeBytes: number;
+      sortOrder: number;
+    }> | null;
     reactions: string[];
     deletedForUsers: string[];
     deliveredTo: string[];
@@ -306,6 +315,29 @@ export class ChatRealtimeClient {
       fileUrl,
       fileName,
       clientMessageId,
+    });
+  }
+
+  publishMediaSend(
+    conversationId: string,
+    caption: string,
+    clientMessageId: string,
+    attachments: Array<{
+      fileName: string;
+      fileKey: string;
+      fileUrl: string;
+      contentType: string;
+      mediaType: "IMAGE" | "VIDEO" | "FILE";
+      sizeBytes: number;
+      sortOrder: number;
+    }>,
+  ): boolean {
+    return this.safePublish("/app/chat.send", {
+      conversationId,
+      type: "MEDIA",
+      content: caption,
+      clientMessageId,
+      attachments,
     });
   }
 

@@ -41,7 +41,7 @@ import {
   type PendingFriendRequestItem,
   type UserProfile,
 } from "../api/chatApi";
-import { uploadMedia } from "../api/mediaApi";
+import { requestPresignedUrls, uploadFileToS3, resolveMediaType, deleteUploadedFile } from "../api/mediaApi";
 import {
   ChatRealtimeClient,
   type ChatRealtimeEvent,
@@ -224,6 +224,7 @@ export function ChatPage() {
   const [draftMessage, setDraftMessage] = useState("");
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [conversationsLoadFailed, setConversationsLoadFailed] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -256,6 +257,12 @@ export function ChatPage() {
   const [uploadLimitModalMessage, setUploadLimitModalMessage] = useState<string | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
+  // Auto-dismiss error banner after 5 seconds
+  useEffect(() => {
+    if (!bannerMessage) return;
+    const t = window.setTimeout(() => setBannerMessage(""), 5000);
+    return () => window.clearTimeout(t);
+  }, [bannerMessage]);
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("messages");
@@ -265,9 +272,9 @@ export function ChatPage() {
   >({});
   const [presenceTick, setPresenceTick] = useState(Date.now());
 
-  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-  const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
-  const MAX_FILE_BYTES = 100 * 1024 * 1024;
+  const MAX_IMAGE_BYTES = 50 * 1024 * 1024;   // 50 MB — matches API spec
+  const MAX_VIDEO_BYTES = 500 * 1024 * 1024;  // 500 MB — matches API spec
+  const MAX_FILE_BYTES = 100 * 1024 * 1024;   // 100 MB — matches API spec
 
   const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
@@ -576,6 +583,7 @@ export function ChatPage() {
         isSilentRefreshingRef.current = true;
       } else {
         setIsLoadingConversations(true);
+        setConversationsLoadFailed(false);
       }
       const result = await getConversations();
       const incomingItems = result.data ?? [];
@@ -661,7 +669,12 @@ export function ChatPage() {
         setActiveConversationId(null);  // Clear, don't auto-select first
       }
     } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
+      // Silent background polls must not spam the user with error banners.
+      // Only surface errors on the initial (non-silent) load.
+      if (!silent) {
+        setConversationsLoadFailed(true);
+        setBannerMessage(toApiErrorMessage(error));
+      }
     } finally {
       if (silent) {
         isSilentRefreshingRef.current = false;
@@ -1424,57 +1437,59 @@ export function ChatPage() {
   };
 
   const validateFileBeforeUpload = (file: File) => {
-    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-    const mediaKind = inferMediaKind(file);
-
-    const imageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
-    const videoExtensions = new Set(["mp4", "mov", "webm"]);
-    const fileExtensions = new Set([
-      "pdf",
-      "doc",
-      "docx",
-      "xls",
-      "xlsx",
-      "ppt",
-      "pptx",
-      "zip",
-      "rar",
-      "txt",
+    const ALLOWED_IMAGE_TYPES = new Set([
+      "image/jpeg", "image/png", "image/webp", "image/gif",
+    ]);
+    const ALLOWED_VIDEO_TYPES = new Set([
+      "video/mp4", "video/quicktime", "video/webm", "video/x-msvideo",
+    ]);
+    // Common document / archive types accepted by the backend FILE category
+    const ALLOWED_FILE_TYPES = new Set([
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // .xlsx
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/x-rar-compressed",
+      "application/vnd.rar",
+      "text/plain",
     ]);
 
-    if (mediaKind === "image") {
-      if (!imageExtensions.has(ext)) {
+    if (file.type.startsWith("image/")) {
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
         return language === "vi"
-          ? "Dinh dang anh khong ho tro"
-          : "Unsupported image format";
+          ? "Anh phai la JPEG, PNG, WebP hoac GIF"
+          : "Image must be JPEG, PNG, WebP or GIF";
       }
       if (file.size > MAX_IMAGE_BYTES) {
-        return language === "vi" ? "Anh vuot 10MB" : "Image exceeds 10MB";
+        return language === "vi" ? "Anh vuot 50MB" : "Image exceeds 50 MB";
       }
       return null;
     }
 
-    if (mediaKind === "video") {
-      if (!videoExtensions.has(ext)) {
+    if (file.type.startsWith("video/")) {
+      if (!ALLOWED_VIDEO_TYPES.has(file.type)) {
         return language === "vi"
-          ? "Dinh dang video khong ho tro"
-          : "Unsupported video format";
+          ? "Video phai la MP4, MOV, WebM hoac AVI"
+          : "Video must be MP4, MOV, WebM or AVI";
       }
       if (file.size > MAX_VIDEO_BYTES) {
-        return language === "vi"
-          ? "Video vuot 100MB"
-          : "Video exceeds 100MB";
+        return language === "vi" ? "Video vuot 500MB" : "Video exceeds 500 MB";
       }
       return null;
     }
 
-    if (!fileExtensions.has(ext)) {
+    if (!ALLOWED_FILE_TYPES.has(file.type)) {
       return language === "vi"
-        ? "Dinh dang tep khong ho tro"
-        : "Unsupported file format";
+        ? "Dinh dang khong ho tro. Vui long gui PDF, Word, Excel, PowerPoint, ZIP, RAR hoac TXT"
+        : "Unsupported format. Please send PDF, Word, Excel, PowerPoint, ZIP, RAR or TXT";
     }
     if (file.size > MAX_FILE_BYTES) {
-      return language === "vi" ? "Tep vuot 100MB" : "File exceeds 100MB";
+      return language === "vi" ? "File vuot 100MB" : "File exceeds 100 MB";
     }
     return null;
   };
@@ -1482,22 +1497,55 @@ export function ChatPage() {
   const sendUploadedMediaMessage = async (
     conversationId: string,
     caption: string,
-    uploaded: Awaited<ReturnType<typeof uploadMedia>>,
-    mediaKind: "image" | "video" | "file",
+    attachment: {
+      fileName: string;
+      fileKey: string;
+      fileUrl: string;
+      contentType: string;
+      sizeBytes: number;
+    },
   ) => {
-    const type = mediaKind === "image" ? "IMAGE" : mediaKind === "video" ? "VIDEO" : "FILE";
-    const content = caption || `📎 ${uploaded.data.fileName}`;
-    const result = await sendMessage(conversationId, content, {
-      type,
-      fileName: uploaded.data.fileName,
-      fileUrl: uploaded.data.fileUrl,
+    const mediaType = resolveMediaType(attachment.contentType);
+    const content = caption;
+    const clientMessageId =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const stompAttachment = {
+      fileName: attachment.fileName,
+      fileKey: attachment.fileKey,
+      fileUrl: attachment.fileUrl,
+      contentType: attachment.contentType,
+      mediaType,
+      sizeBytes: attachment.sizeBytes,
+      sortOrder: 0,
+    };
+
+    // Prefer STOMP for instant delivery; fall back to REST when disconnected
+    if (realtimeClientRef.current?.isConnected()) {
+      const sent = realtimeClientRef.current.publishMediaSend(
+        conversationId,
+        content,
+        clientMessageId,
+        [stompAttachment],
+      );
+      if (sent) return;
+    }
+
+    // REST fallback — server broadcasts MESSAGE_SENT via STOMP too
+    const restType =
+      mediaType === "IMAGE" ? "IMAGE" : mediaType === "VIDEO" ? "VIDEO" : "FILE";
+    const result = await sendMessage(conversationId, content || `📎 ${attachment.fileName}`, {
+      type: restType,
+      fileName: attachment.fileName,
+      fileUrl: attachment.fileUrl,
+      clientMessageId,
     });
 
     setMessages((prev) => {
       const exists = prev.some((item) => item.id === result.data.id);
-      if (exists) {
-        return prev;
-      }
+      if (exists) return prev;
       return [...prev, result.data];
     });
   };
@@ -1509,13 +1557,32 @@ export function ChatPage() {
     }
 
     const { file, caption, conversationId } = payload;
-    const mediaKind = inferMediaKind(file);
 
     const controller = new AbortController();
     uploadAbortControllersRef.current[localId] = controller;
 
+    // Track the fileKey so we can clean up on cancel
+    let pendingFileKey: string | null = null;
+
     try {
-      const uploaded = await uploadMedia(file, {
+      // ── Step 1: Obtain a presigned S3 URL ────────────────────────────────
+      const presignedItems = await requestPresignedUrls([
+        { fileName: file.name, contentType: file.type, sizeBytes: file.size },
+      ]);
+      const presignedItem = presignedItems[0];
+      if (!presignedItem) {
+        throw new Error("Failed to obtain presigned upload URL");
+      }
+      pendingFileKey = presignedItem.fileKey;
+
+      // Abort check: user may have cancelled while awaiting presigned URL
+      if (controller.signal.aborted) {
+        void deleteUploadedFile(presignedItem.fileKey).catch(() => undefined);
+        return;
+      }
+
+      // ── Step 2: Upload directly to S3 with per-byte progress ─────────────
+      await uploadFileToS3(file, presignedItem, {
         signal: controller.signal,
         onProgress: (percent) => {
           setPendingUploads((prev) =>
@@ -1528,7 +1595,14 @@ export function ChatPage() {
         },
       });
 
-      await sendUploadedMediaMessage(conversationId, caption, uploaded, mediaKind);
+      // ── Step 3: Dispatch STOMP MEDIA message (REST fallback inside) ───────
+      await sendUploadedMediaMessage(conversationId, caption, {
+        fileName: presignedItem.fileName,
+        fileKey: presignedItem.fileKey,
+        fileUrl: presignedItem.publicUrl,
+        contentType: file.type,
+        sizeBytes: file.size,
+      });
 
       setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
       delete uploadFileRegistryRef.current[localId];
@@ -1541,6 +1615,10 @@ export function ChatPage() {
         (error as { name?: string; code?: string })?.code === "ERR_CANCELED";
 
       if (isAbort) {
+        // Clean up orphaned S3 file on cancel
+        if (pendingFileKey) {
+          void deleteUploadedFile(pendingFileKey).catch(() => undefined);
+        }
         setPendingUploads((prev) => prev.filter((item) => item.localId !== localId));
         delete uploadFileRegistryRef.current[localId];
         delete uploadAbortControllersRef.current[localId];
@@ -1550,11 +1628,7 @@ export function ChatPage() {
       setPendingUploads((prev) =>
         prev.map((item) =>
           item.localId === localId
-            ? {
-              ...item,
-              status: "failed",
-              errorMessage: message,
-            }
+            ? { ...item, status: "failed", errorMessage: message }
             : item,
         ),
       );
@@ -2096,9 +2170,16 @@ export function ChatPage() {
 
     try {
       setIsUploadingAvatar(true);
-      const uploaded = await uploadMedia(file);
 
-      const uploadedAvatarUrl = uploaded.data.fileUrl;
+      // Use presigned URL flow: get URL → upload to S3 → use publicUrl
+      const presignedItems = await requestPresignedUrls([
+        { fileName: file.name, contentType: file.type, sizeBytes: file.size },
+      ]);
+      const presignedItem = presignedItems[0];
+      if (!presignedItem) throw new Error("Failed to get upload URL");
+      await uploadFileToS3(file, presignedItem);
+
+      const uploadedAvatarUrl = presignedItem.publicUrl;
       setProfileAvatarUrl(uploadedAvatarUrl);
 
       const updatedProfile = await updateMyProfile({
@@ -2258,6 +2339,9 @@ export function ChatPage() {
           selectedChatId={activeConversationId}
           searchText={searchText}
           onSearchTextChange={setSearchText}
+          isLoading={isLoadingConversations}
+          hasError={conversationsLoadFailed}
+          onRetry={() => void fetchConversations()}
           onSelectChat={(conversationId) => {
             hasUserOpenedConversationRef.current = true;
             manuallyOpenedConversationIdRef.current = conversationId;

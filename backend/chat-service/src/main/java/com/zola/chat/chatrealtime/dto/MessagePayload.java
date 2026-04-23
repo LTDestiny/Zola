@@ -10,8 +10,12 @@ public record MessagePayload(
     String receiverId,
     String type,
     String content,
+    /** Legacy single-file URL – populated from first attachment when attachments are present. */
     String fileUrl,
+    /** Legacy single-file name – populated from first attachment when attachments are present. */
     String fileName,
+    /** All attachments for this message. Empty list for TEXT messages. */
+    List<AttachmentPayload> attachments,
     List<String> reactions,
     Set<String> deletedForUsers,
     Set<String> deliveredTo,
@@ -21,4 +25,14 @@ public record MessagePayload(
     boolean recalled,
     boolean edited
 ) {
+    public record AttachmentPayload(
+        String fileName,
+        String fileKey,
+        String fileUrl,
+        String contentType,
+        String mediaType,
+        long   sizeBytes,
+        int    sortOrder
+    ) {}
 }
+

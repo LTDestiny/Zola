@@ -59,6 +59,16 @@ export type UserPresenceItem = {
   lastChangedAt: string | null;
 };
 
+export type MediaAttachment = {
+  fileName: string;
+  fileKey: string;
+  fileUrl: string;
+  contentType: string;
+  mediaType: "IMAGE" | "VIDEO" | "FILE";
+  sizeBytes: number;
+  sortOrder: number;
+};
+
 export type MessageItem = {
   id: string;
   conversationId?: string;
@@ -68,6 +78,7 @@ export type MessageItem = {
   content: string;
   fileUrl?: string | null;
   fileName?: string | null;
+  attachments?: MediaAttachment[];
   reactions?: string[];
   recalled?: boolean;
   deletedForUsers?: string[];

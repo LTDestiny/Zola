@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,6 +26,8 @@ public class MessageDocument {
     private String content;
     private String fileUrl;
     private String fileName;
+    /** Multi-file attachments. Supersedes the legacy fileUrl/fileName fields for new messages. */
+    private List<AttachmentDocument> attachments = new ArrayList<>();
     private List<String> reactions;
     private boolean recalled;
     private boolean edited;
@@ -109,6 +112,14 @@ public class MessageDocument {
 
     public void setReactions(List<String> reactions) {
         this.reactions = reactions;
+    }
+
+    public List<AttachmentDocument> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<AttachmentDocument> attachments) {
+        this.attachments = attachments == null ? new ArrayList<>() : attachments;
     }
 
     public boolean isRecalled() {

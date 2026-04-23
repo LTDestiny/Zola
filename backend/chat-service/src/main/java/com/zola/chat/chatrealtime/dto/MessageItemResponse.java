@@ -12,6 +12,7 @@ public record MessageItemResponse(
     String content,
     String fileUrl,
     String fileName,
+    List<MessagePayload.AttachmentPayload> attachments,
     List<String> reactions,
     boolean recalled,
     Set<String> deletedForUsers,

@@ -108,6 +108,7 @@ public class ChatConversationController {
                 response.content(),
                 response.fileUrl(),
                 response.fileName(),
+                response.attachments(),
                 response.reactions(),
                 response.deletedForUsers(),
                 response.deliveredTo(),
