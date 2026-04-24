@@ -46,6 +46,7 @@ export function AddFriendModal({
       if (normalized === "NONE") return "Nguoi la";
       if (normalized === "PENDING") return "Dang cho xac nhan";
       if (normalized === "ACCEPTED") return "Ban be";
+      if (normalized === "BLOCKED") return "Da chan";
       if (normalized === "REJECTED") return "Da tu choi";
       return normalized || "Nguoi la";
     }
@@ -53,6 +54,7 @@ export function AddFriendModal({
     if (normalized === "NONE") return "Stranger";
     if (normalized === "PENDING") return "Pending";
     if (normalized === "ACCEPTED") return "Accepted";
+    if (normalized === "BLOCKED") return "Blocked";
     if (normalized === "REJECTED") return "Rejected";
     return normalized || "Stranger";
   })();

@@ -81,8 +81,14 @@ export type GroupSettings = {
   ownerId: string | null;
   admins: string[];
   participants: string[];
+  allowMembersEditGroupProfile: boolean;
+  allowMembersPinBoardItems: boolean;
+  allowMembersCreateNotes: boolean;
+  allowMembersCreatePolls: boolean;
+  allowMembersSendMessages: boolean;
   onlyAdminsCanMessage: boolean;
   requireApprovalToJoin: boolean;
+  highlightAdminMessages: boolean;
   allowMemberInvite: boolean;
   inviteCode?: string | null;
   isOwner: boolean;
@@ -92,8 +98,14 @@ export type GroupSettings = {
 export type UpdateGroupSettingsInput = {
   name?: string;
   avatar?: string | null;
+  allowMembersEditGroupProfile?: boolean;
+  allowMembersPinBoardItems?: boolean;
+  allowMembersCreateNotes?: boolean;
+  allowMembersCreatePolls?: boolean;
+  allowMembersSendMessages?: boolean;
   onlyAdminsCanMessage?: boolean;
   requireApprovalToJoin?: boolean;
+  highlightAdminMessages?: boolean;
   allowMemberInvite?: boolean;
   transferOwnerId?: string;
 };

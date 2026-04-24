@@ -10,6 +10,12 @@ type ApiResponse<T> = {
   data: T;
 };
 
+function isCompatibilityStatus(error: unknown, statuses: number[]) {
+  const axiosError = error as AxiosError;
+  const status = axiosError.response?.status;
+  return typeof status === "number" && statuses.includes(status);
+}
+
 export type UserProfile = {
   id: string;
   fullName: string;
@@ -317,18 +323,40 @@ export async function getSentPendingFriendRequests() {
 }
 
 export async function getPendingFriendRequestsUnreadCount() {
-  const response = await httpClient.get<ApiResponse<{ count: number }>>(
-    "/api/v1/users/friendships/pending/unread-count",
-  );
-  return response.data;
+  try {
+    const response = await httpClient.get<ApiResponse<{ count: number }>>(
+      "/api/v1/users/friendships/pending/unread-count",
+    );
+    return response.data;
+  } catch (error) {
+    if (isCompatibilityStatus(error, [404, 405, 501])) {
+      return {
+        success: true,
+        message: "Pending unread-count endpoint unavailable, fallback to zero",
+        data: { count: 0 },
+      };
+    }
+    throw error;
+  }
 }
 
 export async function markPendingFriendRequestsRead() {
-  const response = await httpClient.post<ApiResponse<{ updated: number }>>(
-    "/api/v1/users/friendships/pending/mark-read",
-    {},
-  );
-  return response.data;
+  try {
+    const response = await httpClient.post<ApiResponse<{ updated: number }>>(
+      "/api/v1/users/friendships/pending/mark-read",
+      {},
+    );
+    return response.data;
+  } catch (error) {
+    if (isCompatibilityStatus(error, [404, 405, 501])) {
+      return {
+        success: true,
+        message: "Pending mark-read endpoint unavailable, fallback to no-op",
+        data: { updated: 0 },
+      };
+    }
+    throw error;
+  }
 }
 
 export async function getFriends() {
@@ -339,25 +367,165 @@ export async function getFriends() {
 }
 
 export async function getBlockedUsers() {
-  const response = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
-    "/api/v1/users/friendships/blocks",
-  );
-  return response.data;
+  try {
+    const response = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
+      "/api/v1/users/friendships/blocks",
+    );
+    return response.data;
+  } catch (error) {
+    if (isCompatibilityStatus(error, [404, 405])) {
+      try {
+        const fallback = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
+          "/api/v1/users/friendships/block",
+        );
+        return fallback.data;
+      } catch (fallbackError) {
+        if (isCompatibilityStatus(fallbackError, [404, 405])) {
+          return {
+            success: true,
+            message: "Blocked-users endpoint unavailable, fallback to empty list",
+            data: [],
+          };
+        }
+        throw fallbackError;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function blockUser(targetUserId: string) {
-  const response = await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
-    "/api/v1/users/friendships/block",
-    { targetUserId },
-  );
-  return response.data;
+  const body = { targetUserId };
+  try {
+    const response = await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+      "/api/v1/users/friendships/block",
+      body,
+    );
+    return {
+      ...response.data,
+      data: {
+        ...response.data.data,
+        status: String(response.data.data?.status ?? "BLOCKED"),
+        blockedByMe: response.data.data?.blockedByMe ?? true,
+      },
+    };
+  } catch (error) {
+    if (!isCompatibilityStatus(error, [404, 405])) {
+      throw error;
+    }
+  }
+
+  const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatusPayload>>> = [
+    async () =>
+      (
+        await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+          `/api/v1/users/friendships/block/${targetUserId}`,
+          {},
+        )
+      ).data,
+    async () =>
+      (
+        await httpClient.put<ApiResponse<FriendshipStatusPayload>>(
+          "/api/v1/users/friendships/block",
+          body,
+        )
+      ).data,
+    async () =>
+      (
+        await httpClient.put<ApiResponse<FriendshipStatusPayload>>(
+          `/api/v1/users/friendships/block/${targetUserId}`,
+          {},
+        )
+      ).data,
+  ];
+
+  let latestError: unknown;
+  for (const request of fallbacks) {
+    try {
+      const result = await request();
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          status: String(result.data?.status ?? "BLOCKED"),
+          blockedByMe: result.data?.blockedByMe ?? true,
+        },
+      };
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405])) {
+        throw error;
+      }
+    }
+  }
+
+  throw latestError;
 }
 
 export async function unblockUser(targetUserId: string) {
-  const response = await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
-    `/api/v1/users/friendships/block/${targetUserId}`,
-  );
-  return response.data;
+  try {
+    const response = await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
+      `/api/v1/users/friendships/block/${targetUserId}`,
+    );
+    return {
+      ...response.data,
+      data: {
+        ...response.data.data,
+        status: String(response.data.data?.status ?? "NONE"),
+        blockedByMe: response.data.data?.blockedByMe ?? false,
+      },
+    };
+  } catch (error) {
+    if (!isCompatibilityStatus(error, [404, 405])) {
+      throw error;
+    }
+  }
+
+  const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatusPayload>>> = [
+    async () =>
+      (
+        await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+          `/api/v1/users/friendships/unblock/${targetUserId}`,
+          {},
+        )
+      ).data,
+    async () =>
+      (
+        await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+          "/api/v1/users/friendships/unblock",
+          { targetUserId },
+        )
+      ).data,
+    async () =>
+      (
+        await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+          `/api/v1/users/friendships/block/${targetUserId}/unblock`,
+          {},
+        )
+      ).data,
+  ];
+
+  let latestError: unknown;
+  for (const request of fallbacks) {
+    try {
+      const result = await request();
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          status: String(result.data?.status ?? "NONE"),
+          blockedByMe: result.data?.blockedByMe ?? false,
+        },
+      };
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405])) {
+        throw error;
+      }
+    }
+  }
+
+  throw latestError;
 }
 
 export async function acceptFriendRequest(friendshipId: string) {

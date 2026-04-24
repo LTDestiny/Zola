@@ -24,6 +24,10 @@ type ConversationPayload = Partial<ConversationItem> & {
   requesterUnreadCount?: number;
   requesterLastReadAt?: string | null;
   requesterLastReadMessageId?: string | null;
+  lastMessageSenderId?: string | null;
+  lastSenderId?: string | null;
+  lastMessageType?: MessageType | string | null;
+  messageType?: MessageType | string | null;
 };
 
 type RawMessageItem = Omit<MessageItem, "id"> & {
@@ -38,6 +42,8 @@ function normalizeConversationItem(item: ConversationPayload): ConversationItem 
     name: item.name ?? "",
     avatar: item.avatar ?? null,
     lastMessage: item.lastMessage ?? "",
+    lastMessageSenderId: item.lastMessageSenderId ?? item.lastSenderId ?? null,
+    lastMessageType: item.lastMessageType ?? item.messageType ?? null,
     lastMessageAt: item.lastMessageAt ?? null,
     unreadCount: Number.isFinite(item.unreadCount)
       ? (item.unreadCount as number)

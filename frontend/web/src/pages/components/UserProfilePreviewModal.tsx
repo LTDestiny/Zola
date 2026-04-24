@@ -8,12 +8,18 @@ type UserProfilePreviewModalProps = {
   isOpen: boolean;
   isCurrentUser?: boolean;
   friendshipStatus?: string;
+  friendRequestDirection?: "incoming" | "outgoing" | null;
   isSubmittingFriend?: boolean;
+  isProcessingFriendship?: boolean;
   blockedByMe?: boolean;
   blockedByPeer?: boolean;
   isSubmittingBlock?: boolean;
   onClose: () => void;
   onAddFriend?: () => void | Promise<void>;
+  onAcceptFriendRequest?: () => void | Promise<void>;
+  onDeclineFriendRequest?: () => void | Promise<void>;
+  onCancelFriendRequest?: () => void | Promise<void>;
+  onRemoveFriend?: () => void | Promise<void>;
   onMessage?: () => void | Promise<void>;
   onBlockUser?: () => void | Promise<void>;
   onUnblockUser?: () => void | Promise<void>;
@@ -81,12 +87,18 @@ export function UserProfilePreviewModal({
   isOpen,
   isCurrentUser = false,
   friendshipStatus = "NONE",
+  friendRequestDirection = null,
   isSubmittingFriend = false,
+  isProcessingFriendship = false,
   blockedByMe = false,
   blockedByPeer = false,
   isSubmittingBlock = false,
   onClose,
   onAddFriend,
+  onAcceptFriendRequest,
+  onDeclineFriendRequest,
+  onCancelFriendRequest,
+  onRemoveFriend,
   onMessage,
   onBlockUser,
   onUnblockUser,
@@ -97,6 +109,13 @@ export function UserProfilePreviewModal({
 
   const avatarUrl = resolveMediaUrl(profile.avatarUrl ?? null);
   const normalizedFriendshipStatus = friendshipStatus.trim().toUpperCase();
+  const isIncomingPending =
+    normalizedFriendshipStatus === "PENDING" &&
+    friendRequestDirection === "incoming";
+  const isOutgoingPending =
+    normalizedFriendshipStatus === "PENDING" &&
+    friendRequestDirection === "outgoing";
+  const isFriend = normalizedFriendshipStatus === "ACCEPTED";
   const isStrangerProfile =
     !isCurrentUser &&
     !blockedByMe &&
@@ -106,7 +125,9 @@ export function UserProfilePreviewModal({
     !isCurrentUser &&
     !blockedByMe &&
     !blockedByPeer &&
-    normalizedFriendshipStatus !== "ACCEPTED";
+    normalizedFriendshipStatus !== "ACCEPTED" &&
+    normalizedFriendshipStatus !== "PENDING" &&
+    normalizedFriendshipStatus !== "BLOCKED";
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/70 p-4">
@@ -190,59 +211,107 @@ export function UserProfilePreviewModal({
           )}
 
           {!isCurrentUser && (
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => void onAddFriend?.()}
-                disabled={!canAddFriend || isSubmittingFriend}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <UserPlus size={16} />
-                <span>
-                  {friendshipStatus.trim().toUpperCase() === "PENDING"
-                    ? language === "vi"
-                      ? "Da gui loi moi"
-                      : "Request sent"
-                    : language === "vi"
-                      ? "Ket ban"
-                      : "Add friend"}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => void onMessage?.()}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2]"
-              >
-                <MessageCircle size={16} />
-                <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (blockedByMe) {
-                    void onUnblockUser?.();
-                    return;
-                  }
-                  void onBlockUser?.();
-                }}
-                disabled={isSubmittingBlock}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                  blockedByMe
-                    ? "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                    : "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                }`}
-              >
-                <Ban size={16} />
-                <span>
-                  {blockedByMe
-                    ? language === "vi"
-                      ? "Bo chan"
-                      : "Unblock"
-                    : language === "vi"
-                      ? "Chan"
-                      : "Block"}
-                </span>
-              </button>
+            <div className="mt-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => void onMessage?.()}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2]"
+                >
+                  <MessageCircle size={16} />
+                  <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (blockedByMe) {
+                      void onUnblockUser?.();
+                      return;
+                    }
+                    void onBlockUser?.();
+                  }}
+                  disabled={isSubmittingBlock}
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                    blockedByMe
+                      ? "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      : "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                  }`}
+                >
+                  <Ban size={16} />
+                  <span>
+                    {blockedByMe
+                      ? language === "vi"
+                        ? "Bo chan"
+                        : "Unblock"
+                      : language === "vi"
+                        ? "Chan"
+                        : "Block"}
+                  </span>
+                </button>
+              </div>
+
+              {isIncomingPending && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void onAcceptFriendRequest?.()}
+                    disabled={isProcessingFriendship}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <UserPlus size={16} />
+                    <span>{language === "vi" ? "Chap nhan" : "Accept"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onDeclineFriendRequest?.()}
+                    disabled={isProcessingFriendship}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <X size={16} />
+                    <span>{language === "vi" ? "Tu choi" : "Decline"}</span>
+                  </button>
+                </div>
+              )}
+
+              {isOutgoingPending && (
+                <button
+                  type="button"
+                  onClick={() => void onCancelFriendRequest?.()}
+                  disabled={isProcessingFriendship}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <X size={16} />
+                  <span>{language === "vi" ? "Huy loi moi ket ban" : "Cancel friend request"}</span>
+                </button>
+              )}
+
+              {isFriend && (
+                <button
+                  type="button"
+                  onClick={() => void onRemoveFriend?.()}
+                  disabled={isProcessingFriendship}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/35 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-100 transition hover:bg-orange-500/15 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <X size={16} />
+                  <span>{language === "vi" ? "Huy ket ban" : "Remove friend"}</span>
+                </button>
+              )}
+
+              {(normalizedFriendshipStatus === "NONE" ||
+                normalizedFriendshipStatus === "REJECTED" ||
+                normalizedFriendshipStatus === "DECLINED" ||
+                normalizedFriendshipStatus === "CANCELLED") && (
+                <button
+                  type="button"
+                  onClick={() => void onAddFriend?.()}
+                  disabled={!canAddFriend || isSubmittingFriend}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <UserPlus size={16} />
+                  <span>{language === "vi" ? "Ket ban" : "Add friend"}</span>
+                </button>
+              )}
+
             </div>
           )}
 

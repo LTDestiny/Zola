@@ -351,6 +351,11 @@ public class GatewayProxyController {
         );
     }
 
+    @GetMapping("/users/friendships/block")
+    public ApiResponse<Object> blockedUsersCompat(HttpServletRequest request) {
+        return blockedUsers(request);
+    }
+
     @PostMapping("/users/friendships/block")
     public ApiResponse<Object> blockUser(
         @Valid @RequestBody BlockUserRequest body,
@@ -360,6 +365,49 @@ public class GatewayProxyController {
         ApiResponse<Object> response = postMap(
             userServiceUrl + "/api/v1/users/friendships/block",
             body,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+        emitBlockSync(response, "FRIENDSHIP_BLOCKED");
+        return response;
+    }
+
+    // Backward compatibility routes for environments using path-variable block endpoints.
+    @PostMapping("/users/friendships/block/{targetUserId}")
+    public ApiResponse<Object> blockUserCompatPostPath(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        return blockUser(new BlockUserRequest(java.util.UUID.fromString(targetUserId)), request);
+    }
+
+    @PutMapping("/users/friendships/block")
+    public ApiResponse<Object> blockUserCompatPut(
+        @Valid @RequestBody BlockUserRequest body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = putMap(
+            userServiceUrl + "/api/v1/users/friendships/block",
+            body,
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+        emitBlockSync(response, "FRIENDSHIP_BLOCKED");
+        return response;
+    }
+
+    @PutMapping("/users/friendships/block/{targetUserId}")
+    public ApiResponse<Object> blockUserCompatPutPath(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = putMap(
+            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+            Map.of(),
+            Map.of("targetUserId", targetUserId),
             null,
             Map.of("X-User-Id", userId)
         );
@@ -380,6 +428,30 @@ public class GatewayProxyController {
         );
         emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
         return response;
+    }
+
+    @PostMapping("/users/friendships/unblock")
+    public ApiResponse<Object> unblockUserCompatPost(
+        @Valid @RequestBody BlockUserRequest body,
+        HttpServletRequest request
+    ) {
+        return unblockUser(body.targetUserId().toString(), request);
+    }
+
+    @PostMapping("/users/friendships/unblock/{targetUserId}")
+    public ApiResponse<Object> unblockUserCompatPostPath(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        return unblockUser(targetUserId, request);
+    }
+
+    @PostMapping("/users/friendships/block/{targetUserId}/unblock")
+    public ApiResponse<Object> unblockUserCompatLegacyPath(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        return unblockUser(targetUserId, request);
     }
 
     @PostMapping("/users/friendships/{friendshipId}/accept")

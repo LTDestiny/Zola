@@ -11,12 +11,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useActionSheet } from "@expo/react-native-action-sheet";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   addReaction,
   deleteForMe,
   editMessage,
   forwardMessage,
+  getGroupSettings,
   recallMessage,
   removeReaction,
   sendMessage,
@@ -50,6 +52,10 @@ import { useAuthStore } from "@/modules/auth/authStore";
 import { useChatStore } from "@/modules/chat/store/chatStore";
 import { usePresenceStore, getPresenceLabel as getStoredPresenceLabel } from "@/modules/chat/store/presenceStore";
 import {
+  canCurrentUserSendGroupMessages,
+  resolveGroupSettingsRoleFlags,
+} from "@/modules/chat/utils/groupPermissions";
+import {
   fetchUserProfile,
   getConversationDisplayName,
   getPeerUserId,
@@ -57,7 +63,7 @@ import {
 import { useSocketStore } from "@/modules/chat/store/socketStore";
 import { socketService, type CallRealtimeEvent } from "@/modules/chat/socket/socketService";
 import type { ChatStackParamList } from "@/shared/types/navigation";
-import type { ConversationItem, MessageItem } from "@/shared/types/api";
+import type { ConversationItem, GroupSettings, MessageItem } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
 const DEBUG = false;
@@ -143,7 +149,14 @@ function buildCallDedupKey(event: CallRealtimeEvent) {
 
 export function ChatDetailScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const conversation = route.params.conversation;
+  const routeConversation = route.params.conversation;
+  const conversations = useChatStore((s) => s.conversations);
+  const conversation = useMemo(
+    () =>
+      conversations.find((item) => item.id === routeConversation.id) ??
+      routeConversation,
+    [conversations, routeConversation],
+  );
   const conversationId = conversation.id;
   const conversationType = inferConversationType(conversation);
 
@@ -162,7 +175,6 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   const avatarLetter = displayName.charAt(0).toUpperCase();
 
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
-  const conversations = useChatStore((s) => s.conversations);
   const appendMessageRealtime = useChatStore((s) => s.appendMessageRealtime);
 
   const typing = useChatStore(
@@ -237,6 +249,8 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   const [forwardingMessage, setForwardingMessage] = useState<MessageItem | null>(null);
   const [editingMessage, setEditingMessage] = useState<MessageItem | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [groupSettings, setGroupSettings] = useState<GroupSettings | null>(null);
+  const [groupSettingsLoading, setGroupSettingsLoading] = useState(false);
 
   const [groupCallNotice, setGroupCallNotice] = useState<GroupCallNotice | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null);
@@ -290,6 +304,55 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       clearCallRuntime();
     };
   }, [clearCallRuntime, conversationId, loadInitial, setActiveConversation]);
+
+  const loadGroupSettings = useCallback(async () => {
+    if (conversationType !== "group") {
+      setGroupSettings(null);
+      setGroupSettingsLoading(false);
+      return;
+    }
+
+    setGroupSettingsLoading(true);
+    try {
+      const response = await getGroupSettings(conversationId);
+      setGroupSettings(response.data);
+    } catch (error) {
+      if (DEBUG) {
+        console.log("[ChatDetail][groupSettings]", error);
+      }
+    } finally {
+      setGroupSettingsLoading(false);
+    }
+  }, [conversationId, conversationType]);
+
+  useEffect(() => {
+    void loadGroupSettings();
+  }, [loadGroupSettings]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadGroupSettings();
+      return () => undefined;
+    }, [loadGroupSettings]),
+  );
+
+  const resolvedGroupSettings = useMemo(
+    () => resolveGroupSettingsRoleFlags(groupSettings, meId, conversation),
+    [conversation, groupSettings, meId],
+  );
+
+  const canSendMessages = useMemo(() => {
+    if (conversationType !== "group") {
+      return true;
+    }
+    return canCurrentUserSendGroupMessages(resolvedGroupSettings, meId, conversation);
+  }, [conversation, conversationType, meId, resolvedGroupSettings]);
+
+  const shouldShowComposer = conversationType !== "group" || canSendMessages;
+  const isGroupMessagingPermissionPending =
+    conversationType === "group" &&
+    groupSettingsLoading &&
+    !canSendMessages;
 
   const onEndCall = useCallback((reason = "ended") => {
     setActiveCall((current) => {
@@ -837,6 +900,11 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   }, [appendMessageRealtime, conversationId, meId, showActionSheetWithOptions]);
 
   const onPickImage = useCallback(async () => {
+    if (!canSendMessages) {
+      Alert.alert("Thong bao", "Ban khong duoc phep gui tin nhan trong nhom nay");
+      return;
+    }
+
     const asset = await pickMediaFromLibrary();
     if (!asset) return;
 
@@ -855,9 +923,14 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     if ((uploaded.data.contentType ?? "").startsWith("image/")) {
       setSelectedImage(uploaded.data.fileUrl);
     }
-  }, [conversationId]);
+  }, [canSendMessages, conversationId]);
 
   const onPickFile = useCallback(async () => {
+    if (!canSendMessages) {
+      Alert.alert("Thong bao", "Ban khong duoc phep gui tin nhan trong nhom nay");
+      return;
+    }
+
     const doc = await pickDocumentFile();
     if (!doc) return;
 
@@ -872,12 +945,16 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       fileUrl: uploaded.data.fileUrl,
       fileName: uploaded.data.fileName,
     });
-  }, [conversationId]);
+  }, [canSendMessages, conversationId]);
 
   const onSend = useCallback((value: string) => {
+    if (!canSendMessages) {
+      Alert.alert("Thong bao", "Ban khong duoc phep gui tin nhan trong nhom nay");
+      return;
+    }
     void sendText(value);
     onSendMessage();
-  }, [onSendMessage, sendText]);
+  }, [canSendMessages, onSendMessage, sendText]);
 
   const reversed = useMemo(() => [...messages].reverse(), [messages]);
 
@@ -1067,7 +1144,8 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         showsVerticalScrollIndicator={false}
       />
 
-      <View style={[styles.inputContainer, { paddingBottom: insets.bottom || spacing.md }]}> 
+      <View style={[styles.inputContainer, { paddingBottom: insets.bottom || spacing.md }]}>
+        {shouldShowComposer ? (
         <MessageInput
           onSend={onSend}
           onPickImage={() => void onPickImage()}
@@ -1077,6 +1155,18 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           onTextChange={onTextChange}
           onSendComplete={onSendMessage}
         />
+        ) : (
+          <View style={styles.permissionBanner}>
+            <Text style={styles.permissionBannerTitle}>
+              {isGroupMessagingPermissionPending ? "Dang tai quyen nhan tin..." : "Khong the gui tin nhan"}
+            </Text>
+            <Text style={styles.permissionBannerText}>
+              {isGroupMessagingPermissionPending
+                ? "He thong dang xac minh quyen gui tin nhan cua ban trong nhom nay."
+                : "Ban khong duoc phep gui tin nhan trong nhom nay."}
+            </Text>
+          </View>
+        )}
       </View>
 
       <Modal
@@ -1321,6 +1411,24 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.md,
+  },
+  permissionBanner: {
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: "#FFF7E8",
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  permissionBannerTitle: {
+    ...typography.headline,
+    color: "#8A4B00",
+  },
+  permissionBannerText: {
+    ...typography.footnote,
+    color: "#8A4B00",
+    marginTop: spacing.xs,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

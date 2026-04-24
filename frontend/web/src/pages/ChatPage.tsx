@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+﻿import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import {
@@ -714,7 +714,7 @@ export function ChatPage() {
     [],
   );
 
-  // ─── TYPING INDICATOR HOOK (debounced, auto-stop) ────────────────────────────
+  // â”€â”€â”€ TYPING INDICATOR HOOK (debounced, auto-stop) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const publishTypingFn = useCallback((conversationId: string, typing: boolean) => {
     const client = realtimeClientRef.current;
     if (!client || !client.isConnected()) return false;
@@ -937,7 +937,7 @@ export function ChatPage() {
 
     const normalizedMyId = myUserIdRef.current ?? myProfile?.id ?? null;
     if (normalizedMyId && userId === normalizedMyId) {
-      return language === "vi" ? "Bạn" : "You";
+      return language === "vi" ? "Báº¡n" : "You";
     }
 
     return userProfileMap[userId]?.fullName ??
@@ -947,7 +947,7 @@ export function ChatPage() {
   const formatLastMessageBody = (conversation: ConversationItem) => {
     const rawType = String(conversation.lastMessageType ?? "TEXT").toUpperCase();
     if (rawType === "IMAGE") {
-      return language === "vi" ? "[Hình ảnh]" : "[Image]";
+      return language === "vi" ? "[HÃ¬nh áº£nh]" : "[Image]";
     }
     if (rawType === "FILE") {
       return language === "vi" ? "[File]" : "[File]";
@@ -956,7 +956,7 @@ export function ChatPage() {
       return language === "vi" ? "[Video]" : "[Video]";
     }
     if (rawType === "AUDIO") {
-      return language === "vi" ? "[Âm thanh]" : "[Audio]";
+      return language === "vi" ? "[Ã‚m thanh]" : "[Audio]";
     }
     if (rawType === "STICKER") {
       return language === "vi" ? "[Sticker]" : "[Sticker]";
@@ -967,7 +967,7 @@ export function ChatPage() {
   };
 
   const formatConversationLastPreview = (conversation: ConversationItem) => {
-    const mutedPrefix = groupPreferenceMap[conversation.id]?.muted ? "🔕 " : "";
+    const mutedPrefix = groupPreferenceMap[conversation.id]?.muted ? "ðŸ”• " : "";
     const body = formatLastMessageBody(conversation);
     const isGroupConversation = conversation.type === "group";
 
@@ -3670,14 +3670,14 @@ export function ChatPage() {
         }
       }
 
-      // ═══════════════════════════════════════════════════════════════════════
+      // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
       // FIX: Do NOT auto-select first conversation on initial load
       // This ensures:
-      // - Login → /messages shows Welcome Screen
-      // - Refresh /messages → shows Welcome Screen  
-      // - Tab switch → shows Welcome Screen
+      // - Login â†’ /messages shows Welcome Screen
+      // - Refresh /messages â†’ shows Welcome Screen  
+      // - Tab switch â†’ shows Welcome Screen
       // Only clear selection if the selected conversation no longer exists
-      // ═══════════════════════════════════════════════════════════════════════
+      // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
       if (
         activeId &&
         !items.some((conversation) => conversation.id === activeId)
@@ -4104,11 +4104,11 @@ export function ChatPage() {
           setTypingUserId(null);
         }
 
-        // ═══════════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // CRITICAL FIX: Deduplicate by messageId ONLY (not by eventType)
         // Backend sends same message to BOTH topic and user queue
         // MESSAGE_SENT and NEW_MESSAGE for same messageId = duplicate!
-        // ═══════════════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         if (isMessageEvent) {
           // Use just messageId - NOT including eventType
           // This catches duplicates across MESSAGE_SENT and NEW_MESSAGE
@@ -4962,7 +4962,7 @@ export function ChatPage() {
       // Persist recall via REST as the source of truth; backend will broadcast realtime to both participants.
       await recallMessage(activeConversationId, messageId);
       const recalledText =
-        language === "vi" ? "Bạn đã thu hồi một tin nhắn" : "You recalled a message";
+        language === "vi" ? "Báº¡n Ä‘Ã£ thu há»“i má»™t tin nháº¯n" : "You recalled a message";
       setMessages((prev) =>
         prev.map((item) =>
           item.id === messageId
@@ -5749,12 +5749,12 @@ export function ChatPage() {
     : globalUnreadCount;
 
   const onChangeTab = (tab: ChatTab) => {
-    // ═══════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // FIX: Clear selected conversation when switching back to messages tab
     // This ensures:
-    // - Leaving contacts/profile tab → returning to messages → Welcome Screen
+    // - Leaving contacts/profile tab â†’ returning to messages â†’ Welcome Screen
     // - Not keeping the old conversation selected
-    // ═══════════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     if (tab === "messages" && activeTab !== "messages") {
       hasUserOpenedConversationRef.current = false;
       manuallyOpenedConversationIdRef.current = null;
@@ -5791,7 +5791,7 @@ export function ChatPage() {
 
   const composeBlockedMessage = activeConversationForView?.type === "group" && !canComposeInActiveConversation
     ? language === "vi"
-      ? "Chỉ trưởng nhóm và phó nhóm được gửi tin nhắn vào nhóm này"
+      ? "Chá»‰ trÆ°á»Ÿng nhÃ³m vÃ  phÃ³ nhÃ³m Ä‘Æ°á»£c gá»­i tin nháº¯n vÃ o nhÃ³m nÃ y"
       : "Only the owner and admins can send messages in this group"
     : null;
 
@@ -5844,6 +5844,7 @@ export function ChatPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#0d1521] text-slate-100">
       <Sidebar
+        language={language}
         active={activeTab}
         messageBadge={messageBadge}
         contactsBadge={contactsBadge}
@@ -5858,11 +5859,11 @@ export function ChatPage() {
           pendingReadSyncOnOpenRef.current = true;
           setActiveConversationId(conversationId);
 
-          // ═══════════════════════════════════════════════════════════════════════
+          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           // FIX: Clear unread IMMEDIATELY when user clicks on a conversation
           // This ensures the UI updates instantly without waiting for messages to load
           // The API call syncs with backend; realtime will notify other tabs
-          // ═══════════════════════════════════════════════════════════════════════
+          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           const currentConversation = useChatStore
             .getState()
             .conversations.find((c) => c.id === conversationId);
@@ -6156,104 +6157,6 @@ export function ChatPage() {
                         : "Delete account"}
                   </button>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "calls" && (
-            <div className="h-full overflow-y-auto p-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-base font-semibold text-slate-800">
-                  {language === "vi" ? "Cuoc goi" : "Calls"}
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {language === "vi"
-                    ? "Bat dau cuoc goi thoai/video truc tiep ngay trong ung dung."
-                    : "Start voice/video calls directly inside the app."}
-                </p>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={!activeConversationForView}
-                    onClick={() => {
-                      void onStartQuickCall("voice");
-                    }}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {language === "vi" ? "Goi thoai" : "Voice call"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!activeConversationForView}
-                    onClick={() => {
-                      void onStartQuickCall("video");
-                    }}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {language === "vi" ? "Goi video" : "Video call"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Lich su cuoc goi" : "Recent calls"}
-                </h3>
-
-                {callHistory.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    {language === "vi"
-                      ? "Chua co cuoc goi nao trong phien nay."
-                      : "No calls in this session yet."}
-                  </p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {callHistory.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-slate-700">
-                            {item.mode === "video"
-                              ? language === "vi"
-                                ? "Goi video"
-                                : "Video call"
-                              : language === "vi"
-                                ? "Goi thoai"
-                                : "Voice call"}{" "}
-                            · {item.conversationName}
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            {new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600">
-                          {item.status === "connected"
-                            ? language === "vi"
-                              ? "Da ket noi"
-                              : "Connected"
-                            : item.status === "rejected"
-                              ? language === "vi"
-                                ? "Bi tu choi"
-                                : "Declined"
-                              : item.status === "missed"
-                                ? language === "vi"
-                                  ? "Nho"
-                                  : "Missed"
-                                : item.status === "ended"
-                                  ? language === "vi"
-                                    ? "Da ket thuc"
-                                    : "Ended"
-                                  : language === "vi"
-                                    ? "Dang goi"
-                                    : "Calling"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           )}

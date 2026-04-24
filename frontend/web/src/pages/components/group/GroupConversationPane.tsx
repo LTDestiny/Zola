@@ -1,8 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, SendHorizontal, Smile, Sparkles, Video, X } from "lucide-react";
-import { type ConversationItem, type MessageItem, type UserProfile } from "../api/chatApi";
-import { MessageRenderer, type ChatMessage } from "./components/MessageRenderer";
-import { resolveMediaUrl } from "./utils/mediaUrl";
+import {
+  type ConversationItem,
+  type MessageItem,
+  type UserProfile,
+} from "../../../api/chatApi";
+import { MessageRenderer, type ChatMessage } from "../MessageRenderer";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
 
 const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;

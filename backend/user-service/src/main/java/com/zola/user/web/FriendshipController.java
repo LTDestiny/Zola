@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -200,6 +201,14 @@ public class FriendshipController {
         return ApiResponse.ok("Blocked users fetched", blockedUsers);
     }
 
+    // Backward compatibility for deployments exposing singular "/block" path.
+    @GetMapping("/block")
+    public ApiResponse<List<BlockedUser>> getBlockedUsersCompat(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        return getBlockedUsers(userIdHeader);
+    }
+
     @PostMapping("/block")
     public ApiResponse<Map<String, Object>> blockUser(
         @RequestHeader("X-User-Id") String userIdHeader,
@@ -240,6 +249,8 @@ public class FriendshipController {
                 .ifPresent(friendshipRepository::delete);
         }
 
+        friendEventPublisher.publishFriendshipBlocked(blockerId, request.targetUserId());
+
         return ApiResponse.ok("User blocked", Map.of(
             "status", STATUS_BLOCKED,
             "blockerId", blockerId.toString(),
@@ -247,6 +258,31 @@ public class FriendshipController {
             "blockedByMe", true,
             "blockedByPeer", blockedByPeer
         ));
+    }
+
+    // Backward compatibility for deployments using path-variable block routes.
+    @PostMapping("/block/{targetUserId}")
+    public ApiResponse<Map<String, Object>> blockUserCompatPost(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return blockUser(userIdHeader, new BlockUserRequest(targetUserId));
+    }
+
+    @PutMapping("/block")
+    public ApiResponse<Map<String, Object>> blockUserCompatPut(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @Valid @RequestBody BlockUserRequest request
+    ) {
+        return blockUser(userIdHeader, request);
+    }
+
+    @PutMapping("/block/{targetUserId}")
+    public ApiResponse<Map<String, Object>> blockUserCompatPutPath(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return blockUser(userIdHeader, new BlockUserRequest(targetUserId));
     }
 
     @DeleteMapping("/block/{targetUserId}")
@@ -263,6 +299,8 @@ public class FriendshipController {
             blockerId
         ).isPresent();
 
+        friendEventPublisher.publishFriendshipUnblocked(blockerId, targetUserId);
+
         return ApiResponse.ok("User unblocked", Map.of(
             "status", blockedByPeer ? STATUS_BLOCKED : "NONE",
             "blockerId", blockerId.toString(),
@@ -270,6 +308,31 @@ public class FriendshipController {
             "blockedByMe", false,
             "blockedByPeer", blockedByPeer
         ));
+    }
+
+    // Backward compatibility for deployments exposing POST-based unblock routes.
+    @PostMapping("/unblock")
+    public ApiResponse<Map<String, Object>> unblockUserCompatPost(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @Valid @RequestBody BlockUserRequest request
+    ) {
+        return unblockUser(userIdHeader, request.targetUserId());
+    }
+
+    @PostMapping("/unblock/{targetUserId}")
+    public ApiResponse<Map<String, Object>> unblockUserCompatPostPath(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return unblockUser(userIdHeader, targetUserId);
+    }
+
+    @PostMapping("/block/{targetUserId}/unblock")
+    public ApiResponse<Map<String, Object>> unblockUserCompatLegacyPath(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return unblockUser(userIdHeader, targetUserId);
     }
 
     @GetMapping("/pending")
@@ -448,6 +511,11 @@ public class FriendshipController {
         relation.setStatus(STATUS_CANCELLED);
         relation.setUpdatedAt(Instant.now());
         FriendshipEntity updated = friendshipRepository.save(relation);
+        friendEventPublisher.publishFriendRequestCancelled(
+            updated.getRequesterId(),
+            updated.getAddresseeId(),
+            updated.getId()
+        );
 
         return ApiResponse.ok("Friend request cancelled", Map.of(
             "friendshipId", updated.getId().toString(),
@@ -472,6 +540,11 @@ public class FriendshipController {
         }
 
         friendshipRepository.delete(relation);
+        friendEventPublisher.publishFriendshipRemoved(
+            relation.getRequesterId(),
+            relation.getAddresseeId(),
+            relation.getId()
+        );
         return ApiResponse.ok("Friendship removed", Map.of(
             "friendshipId", relation.getId().toString(),
             "status", "NONE",
