@@ -362,10 +362,39 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
+        ApiResponse<Object> response;
+        try {
+            response = postMap(
+                userServiceUrl + "/api/v1/users/friendships/block",
+                body,
+                null,
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            response = postMap(
+                userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+                Map.of(),
+                Map.of("targetUserId", body.targetUserId().toString()),
+                Map.of("X-User-Id", userId)
+            );
+        }
+        emitBlockSync(response, "FRIENDSHIP_BLOCKED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/block/{targetUserId}")
+    public ApiResponse<Object> blockUserLegacyRoute(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
         ApiResponse<Object> response = postMap(
-            userServiceUrl + "/api/v1/users/friendships/block",
-            body,
-            null,
+            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+            Map.of(),
+            Map.of("targetUserId", targetUserId),
             Map.of("X-User-Id", userId)
         );
         emitBlockSync(response, "FRIENDSHIP_BLOCKED");
@@ -421,8 +450,65 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
-        ApiResponse<Object> response = deleteMap(
-            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+        ApiResponse<Object> response;
+        try {
+            response = deleteMap(
+                userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
+                Map.of("targetUserId", targetUserId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            try {
+                response = postMap(
+                    userServiceUrl + "/api/v1/users/friendships/unblock/{targetUserId}",
+                    Map.of(),
+                    Map.of("targetUserId", targetUserId),
+                    Map.of("X-User-Id", userId)
+                );
+            } catch (ResponseStatusException legacyEx) {
+                if (!isLegacyRouteMismatch(legacyEx)) {
+                    throw legacyEx;
+                }
+                response = postMap(
+                    userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}/unblock",
+                    Map.of(),
+                    Map.of("targetUserId", targetUserId),
+                    Map.of("X-User-Id", userId)
+                );
+            }
+        }
+        emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/unblock/{targetUserId}")
+    public ApiResponse<Object> unblockUserLegacyRoute(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/unblock/{targetUserId}",
+            Map.of(),
+            Map.of("targetUserId", targetUserId),
+            Map.of("X-User-Id", userId)
+        );
+        emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/block/{targetUserId}/unblock")
+    public ApiResponse<Object> unblockUserLegacyNestedRoute(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}/unblock",
+            Map.of(),
             Map.of("targetUserId", targetUserId),
             Map.of("X-User-Id", userId)
         );
@@ -492,12 +578,52 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
-        ApiResponse<Object> response = postMap(
-            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
-            Map.of(),
-            Map.of("friendshipId", friendshipId),
-            Map.of("X-User-Id", userId)
-        );
+        ApiResponse<Object> response;
+        try {
+            response = postMap(
+                userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
+                Map.of(),
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            response = deleteMap(
+                userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        }
+        emitFriendshipSync(response, "FRIENDSHIP_REQUEST_CANCELLED");
+        return response;
+    }
+
+    @DeleteMapping("/users/friendships/{friendshipId}/cancel")
+    public ApiResponse<Object> cancelFriendRequestLegacyMethod(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response;
+        try {
+            response = deleteMap(
+                userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            response = postMap(
+                userServiceUrl + "/api/v1/users/friendships/{friendshipId}/cancel",
+                Map.of(),
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        }
         emitFriendshipSync(response, "FRIENDSHIP_REQUEST_CANCELLED");
         return response;
     }
@@ -508,8 +634,65 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
-        ApiResponse<Object> response = deleteMap(
-            userServiceUrl + "/api/v1/users/friendships/{friendshipId}",
+        ApiResponse<Object> response;
+        try {
+            response = deleteMap(
+                userServiceUrl + "/api/v1/users/friendships/{friendshipId}",
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            try {
+                response = postMap(
+                    userServiceUrl + "/api/v1/users/friendships/{friendshipId}/remove",
+                    Map.of(),
+                    Map.of("friendshipId", friendshipId),
+                    Map.of("X-User-Id", userId)
+                );
+            } catch (ResponseStatusException legacyEx) {
+                if (!isLegacyRouteMismatch(legacyEx)) {
+                    throw legacyEx;
+                }
+                response = postMap(
+                    userServiceUrl + "/api/v1/users/friendships/{friendshipId}/delete",
+                    Map.of(),
+                    Map.of("friendshipId", friendshipId),
+                    Map.of("X-User-Id", userId)
+                );
+            }
+        }
+        emitFriendshipSync(response, "FRIENDSHIP_REMOVED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/{friendshipId}/remove")
+    public ApiResponse<Object> removeFriendLegacyRoute(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/remove",
+            Map.of(),
+            Map.of("friendshipId", friendshipId),
+            Map.of("X-User-Id", userId)
+        );
+        emitFriendshipSync(response, "FRIENDSHIP_REMOVED");
+        return response;
+    }
+
+    @PostMapping("/users/friendships/{friendshipId}/delete")
+    public ApiResponse<Object> removeFriendLegacyDeleteRoute(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response = postMap(
+            userServiceUrl + "/api/v1/users/friendships/{friendshipId}/delete",
+            Map.of(),
             Map.of("friendshipId", friendshipId),
             Map.of("X-User-Id", userId)
         );
@@ -978,6 +1161,11 @@ public class GatewayProxyController {
         } catch (RestClientResponseException ex) {
             throw toStatusException(ex);
         }
+    }
+
+    private boolean isLegacyRouteMismatch(ResponseStatusException ex) {
+        int statusCode = ex.getStatusCode().value();
+        return statusCode == HttpStatus.NOT_FOUND.value() || statusCode == HttpStatus.METHOD_NOT_ALLOWED.value();
     }
 
     private ResponseStatusException toStatusException(RestClientResponseException ex) {

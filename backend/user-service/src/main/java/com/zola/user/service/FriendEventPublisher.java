@@ -47,26 +47,29 @@ public class FriendEventPublisher {
 
     public void publishFriendRequestCancelled(UUID requesterId, UUID addresseeId, UUID friendshipId) {
         String payload = "{\"event\":\"FRIENDSHIP_REQUEST_CANCELLED\",\"friendshipId\":\"" + friendshipId + "\",\"requesterId\":\"" + requesterId + "\",\"addresseeId\":\"" + addresseeId + "\"}";
-        emit(requesterId, "FRIENDSHIP_REQUEST_CANCELLED", payload);
-        emit(addresseeId, "FRIENDSHIP_REQUEST_CANCELLED", payload);
-    }
-
-    public void publishFriendshipRemoved(UUID userA, UUID userB, UUID friendshipId) {
-        String payload = "{\"event\":\"FRIENDSHIP_REMOVED\",\"friendshipId\":\"" + friendshipId + "\",\"userA\":\"" + userA + "\",\"userB\":\"" + userB + "\"}";
-        emit(userA, "FRIENDSHIP_REMOVED", payload);
-        emit(userB, "FRIENDSHIP_REMOVED", payload);
+        emitBetween(requesterId, addresseeId, "FRIENDSHIP_REQUEST_CANCELLED", payload);
     }
 
     public void publishFriendshipBlocked(UUID blockerId, UUID blockedUserId) {
         String payload = "{\"event\":\"FRIENDSHIP_BLOCKED\",\"blockerId\":\"" + blockerId + "\",\"blockedUserId\":\"" + blockedUserId + "\"}";
-        emit(blockerId, "FRIENDSHIP_BLOCKED", payload);
-        emit(blockedUserId, "FRIENDSHIP_BLOCKED", payload);
+        emitBetween(blockerId, blockedUserId, "FRIENDSHIP_BLOCKED", payload);
     }
 
     public void publishFriendshipUnblocked(UUID blockerId, UUID blockedUserId) {
         String payload = "{\"event\":\"FRIENDSHIP_UNBLOCKED\",\"blockerId\":\"" + blockerId + "\",\"blockedUserId\":\"" + blockedUserId + "\"}";
-        emit(blockerId, "FRIENDSHIP_UNBLOCKED", payload);
-        emit(blockedUserId, "FRIENDSHIP_UNBLOCKED", payload);
+        emitBetween(blockerId, blockedUserId, "FRIENDSHIP_UNBLOCKED", payload);
+    }
+
+    public void publishFriendshipRemoved(UUID requesterId, UUID addresseeId, UUID friendshipId) {
+        String payload = "{\"event\":\"FRIENDSHIP_REMOVED\",\"friendshipId\":\"" + friendshipId + "\",\"requesterId\":\"" + requesterId + "\",\"addresseeId\":\"" + addresseeId + "\"}";
+        emitBetween(requesterId, addresseeId, "FRIENDSHIP_REMOVED", payload);
+    }
+
+    private void emitBetween(UUID userA, UUID userB, String eventType, String payload) {
+        emit(userA, eventType, payload);
+        if (!userA.equals(userB)) {
+            emit(userB, eventType, payload);
+        }
     }
 
     private void emit(UUID userId, String eventType, String payload) {

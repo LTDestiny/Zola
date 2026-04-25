@@ -1860,7 +1860,7 @@ export function DirectConversationPane({
       <footer className="relative mt-auto border-t border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#14314e_0%,#122b45_100%)] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
         {isTyping && (
           <div className="mb-2 text-xs text-slate-300">
-            {language === "vi" ? "Dang go..." : "Typing..."}
+            {typingText ?? (language === "vi" ? "Dang go..." : "Typing...")}
           </div>
         )}
 

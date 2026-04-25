@@ -525,6 +525,14 @@ public class FriendshipController {
         ));
     }
 
+    @DeleteMapping("/{friendshipId}/cancel")
+    public ApiResponse<Map<String, Object>> cancelRequestLegacyMethod(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        return cancelRequest(userIdHeader, friendshipId);
+    }
+
     @DeleteMapping("/{friendshipId}")
     public ApiResponse<Map<String, Object>> removeFriend(
         @RequestHeader("X-User-Id") String userIdHeader,
@@ -551,6 +559,22 @@ public class FriendshipController {
             "requesterId", relation.getRequesterId().toString(),
             "addresseeId", relation.getAddresseeId().toString()
         ));
+    }
+
+    @PostMapping("/{friendshipId}/remove")
+    public ApiResponse<Map<String, Object>> removeFriendLegacyRoute(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        return removeFriend(userIdHeader, friendshipId);
+    }
+
+    @PostMapping("/{friendshipId}/delete")
+    public ApiResponse<Map<String, Object>> removeFriendLegacyDeleteRoute(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        return removeFriend(userIdHeader, friendshipId);
     }
 
     private UUID parseUserId(String value) {

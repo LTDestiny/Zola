@@ -48,6 +48,9 @@ export function AddFriendModal({
       if (normalized === "ACCEPTED") return "Ban be";
       if (normalized === "BLOCKED") return "Da chan";
       if (normalized === "REJECTED") return "Da tu choi";
+      if (normalized === "DECLINED") return "Da tu choi";
+      if (normalized === "CANCELLED" || normalized === "CANCELED") return "Da huy loi moi";
+      if (normalized === "BLOCKED") return "Da chan";
       return normalized || "Nguoi la";
     }
 
@@ -56,6 +59,9 @@ export function AddFriendModal({
     if (normalized === "ACCEPTED") return "Accepted";
     if (normalized === "BLOCKED") return "Blocked";
     if (normalized === "REJECTED") return "Rejected";
+    if (normalized === "DECLINED") return "Declined";
+    if (normalized === "CANCELLED" || normalized === "CANCELED") return "Cancelled";
+    if (normalized === "BLOCKED") return "Blocked";
     return normalized || "Stranger";
   })();
 

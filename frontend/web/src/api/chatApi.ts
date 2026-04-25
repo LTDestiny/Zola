@@ -4,6 +4,12 @@ import { httpClient } from "./httpClient";
 let supportsConversationReadEndpoint: boolean | null = null;
 let supportsMessageReadEndpoint: boolean | null = null;
 
+function shouldFallbackLegacyEndpoint(error: unknown): boolean {
+  const axiosError = error as AxiosError;
+  const status = axiosError.response?.status;
+  return status === 404 || status === 405;
+}
+
 type ApiResponse<T> = {
   success: boolean;
   message: string;
@@ -543,17 +549,50 @@ export async function declineFriendRequest(friendshipId: string) {
 }
 
 export async function cancelFriendRequest(friendshipId: string) {
-  const response = await httpClient.post<
-    ApiResponse<{ friendshipId: string; status: string }>
-  >(`/api/v1/users/friendships/${friendshipId}/cancel`, {});
-  return response.data;
+  try {
+    const response = await httpClient.post<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/${friendshipId}/cancel`, {});
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+
+    const legacyResponse = await httpClient.delete<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/${friendshipId}/cancel`);
+    return legacyResponse.data;
+  }
 }
 
 export async function removeFriend(friendshipId: string) {
-  const response = await httpClient.delete<
+  try {
+    const response = await httpClient.delete<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/${friendshipId}`);
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const legacyResponse = await httpClient.post<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/${friendshipId}/remove`, {});
+    return legacyResponse.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const legacyAltResponse = await httpClient.post<
     ApiResponse<{ friendshipId: string; status: string }>
-  >(`/api/v1/users/friendships/${friendshipId}`);
-  return response.data;
+  >(`/api/v1/users/friendships/${friendshipId}/delete`, {});
+  return legacyAltResponse.data;
 }
 
 export async function getConversations() {

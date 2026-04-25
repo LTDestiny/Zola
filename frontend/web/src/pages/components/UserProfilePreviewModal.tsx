@@ -78,6 +78,12 @@ function friendshipLabel(status: string | undefined, language: "vi" | "en") {
   if (normalized === "BLOCKED") {
     return language === "vi" ? "Da chan" : "Blocked";
   }
+  if (normalized === "REJECTED" || normalized === "DECLINED") {
+    return language === "vi" ? "Da tu choi" : "Declined";
+  }
+  if (normalized === "CANCELLED" || normalized === "CANCELED") {
+    return language === "vi" ? "Da huy loi moi" : "Cancelled";
+  }
   return language === "vi" ? "Nguoi la" : "Stranger";
 }
 
