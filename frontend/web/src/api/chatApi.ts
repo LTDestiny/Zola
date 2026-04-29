@@ -3,6 +3,7 @@ import { httpClient } from "./httpClient";
 
 let supportsConversationReadEndpoint: boolean | null = null;
 let supportsMessageReadEndpoint: boolean | null = null;
+let supportsBlockedUsersEndpoint: boolean | null = null;
 
 function shouldFallbackLegacyEndpoint(error: unknown): boolean {
   const axiosError = error as AxiosError;
@@ -322,10 +323,36 @@ export async function getPendingFriendRequests() {
 }
 
 export async function getSentPendingFriendRequests() {
-  const response = await httpClient.get<
-    ApiResponse<PendingFriendRequestItem[]>
-  >("/api/v1/users/friendships/pending/sent");
-  return response.data;
+  const paths = [
+    "/api/v1/users/friendships/pending/sent",
+    "/api/v1/users/friendships/sent-pending",
+    "/api/v1/users/friendships/sent",
+  ];
+  let latestError: unknown;
+
+  for (const path of paths) {
+    try {
+      const response = await httpClient.get<
+        ApiResponse<PendingFriendRequestItem[]>
+      >(path);
+      return response.data;
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405, 501])) {
+        throw error;
+      }
+    }
+  }
+
+  if (latestError && !isCompatibilityStatus(latestError, [404, 405, 501])) {
+    throw latestError;
+  }
+
+  return {
+    success: true,
+    message: "Sent pending friend requests endpoint unavailable, fallback to empty list",
+    data: [],
+  };
 }
 
 export async function getPendingFriendRequestsUnreadCount() {
@@ -373,10 +400,19 @@ export async function getFriends() {
 }
 
 export async function getBlockedUsers() {
+  if (supportsBlockedUsersEndpoint === false) {
+    return {
+      success: true,
+      message: "Blocked-users endpoint unavailable, compatibility mode enabled",
+      data: [],
+    };
+  }
+
   try {
     const response = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
       "/api/v1/users/friendships/blocks",
     );
+    supportsBlockedUsersEndpoint = true;
     return response.data;
   } catch (error) {
     if (isCompatibilityStatus(error, [404, 405])) {
@@ -384,9 +420,11 @@ export async function getBlockedUsers() {
         const fallback = await httpClient.get<ApiResponse<BlockedUserItem[]>>(
           "/api/v1/users/friendships/block",
         );
+        supportsBlockedUsersEndpoint = true;
         return fallback.data;
       } catch (fallbackError) {
         if (isCompatibilityStatus(fallbackError, [404, 405])) {
+          supportsBlockedUsersEndpoint = false;
           return {
             success: true,
             message: "Blocked-users endpoint unavailable, fallback to empty list",

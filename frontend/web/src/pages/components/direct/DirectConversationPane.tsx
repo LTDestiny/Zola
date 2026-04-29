@@ -1353,7 +1353,7 @@ export function DirectConversationPane({
 
   const handleSendMessage = async () => {
     const text = draftMessage.trim();
-    if (!text) {
+    if (!text || !allowComposer) {
       return;
     }
 
@@ -1387,19 +1387,39 @@ export function DirectConversationPane({
 
     setLocalMessages((prev) => [...prev, pendingMessage]);
 
-    await onSendMessage({ parentMessageId: replyingTo?.id ?? null });
-    setReplyingTo(null);
+    try {
+      await onSendMessage({ parentMessageId: replyingTo?.id ?? null });
+      setReplyingTo(null);
 
-    setLocalMessages((prev) =>
-      prev.map((item) =>
-        item.id === localId
-          ? {
-            ...item,
-            status: "sent",
-          }
-          : item,
-      ),
-    );
+      setLocalMessages((prev) =>
+        prev.map((item) =>
+          item.id === localId
+            ? {
+              ...item,
+              status: "sent",
+            }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setLocalMessages((prev) =>
+        prev.map((item) =>
+          item.id === localId
+            ? {
+              ...item,
+              status: "upload_failed",
+            }
+            : item,
+        ),
+      );
+      setPolicyModalMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : language === "vi"
+            ? "Khong the gui tin nhan. Vui long thu lai."
+            : "Could not send this message. Please try again.",
+      );
+    }
   };
 
   const handleKeyDown = async (
@@ -1527,7 +1547,9 @@ export function DirectConversationPane({
           <button
             type="button"
             onClick={onVoiceCall}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+            disabled={!allowComposer}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
           >
             <Phone size={18} />
           </button>
@@ -1543,7 +1565,9 @@ export function DirectConversationPane({
           <button
             type="button"
             onClick={onVideoCall}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+            disabled={!allowComposer}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
           >
             <Video size={18} />
           </button>

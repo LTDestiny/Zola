@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ChevronRight,
@@ -6,6 +6,7 @@ import {
   LogOut,
   MoreHorizontal,
   Search,
+  UserSearch,
   UserRoundPlus,
   Users,
   UsersRound,
@@ -169,7 +170,24 @@ function resolveBlockedState(
 
 type ChatTab = MiniNavTab;
 type MessageWorkspaceView = "default" | "stranger-inbox";
-type ContactsView = "friends" | "groups" | "requests" | "group-invites";
+type ContactsView = "friends" | "people" | "groups" | "requests" | "group-invites";
+type FriendshipStatus = "NONE" | "PENDING" | "ACCEPTED" | "BLOCKED" | "REJECTED" | "DECLINED" | "CANCELLED";
+type FriendshipRelationshipKind =
+  | "self"
+  | "friend"
+  | "pending_sent"
+  | "pending_received"
+  | "blocked_by_me"
+  | "blocked_by_peer"
+  | "blocked_mutual"
+  | "stranger";
+
+type UserRelationshipSnapshot = {
+  kind: FriendshipRelationshipKind;
+  status: FriendshipStatus;
+  friendshipId: string | null;
+  requestDirection: "incoming" | "outgoing" | null;
+};
 
 const STRANGER_INBOX_ID = "__stranger_inbox__";
 
@@ -664,6 +682,8 @@ export function ChatPage() {
   const [sentPendingFriendRequests, setSentPendingFriendRequests] = useState<
     PendingFriendRequestItem[]
   >([]);
+  const [isLoadingFriendshipData, setIsLoadingFriendshipData] = useState(false);
+  const [friendshipDataError, setFriendshipDataError] = useState<string | null>(null);
   const [
     pendingFriendRequestsUnreadCount,
     setPendingFriendRequestsUnreadCount,
@@ -722,6 +742,10 @@ export function ChatPage() {
   const [activeMessageWorkspaceView, setActiveMessageWorkspaceView] = useState<MessageWorkspaceView>("default");
   const [contactsView, setContactsView] = useState<ContactsView>("friends");
   const [contactsSearchQuery, setContactsSearchQuery] = useState("");
+  const [contactCandidateProfile, setContactCandidateProfile] = useState<UserProfile | null>(null);
+  const [contactCandidateStatusPayload, setContactCandidateStatusPayload] = useState<FriendshipStatusPayload | null>(null);
+  const [isSearchingContactCandidate, setIsSearchingContactCandidate] = useState(false);
+  const [contactCandidateError, setContactCandidateError] = useState<string | null>(null);
   const [isChatViewportAtBottom, setIsChatViewportAtBottom] = useState(true);
   const [userPresenceMap, setUserPresenceMap] = useState<
     Record<string, UserPresenceState>
@@ -1232,15 +1256,18 @@ export function ChatPage() {
     return `${mutedPrefix}${getParticipantDisplayName(senderId)}: ${body}`;
   };
 
-  const normalizeFriendshipStatus = (status: string | null | undefined) => {
+  const normalizeFriendshipStatus = (status: string | null | undefined): FriendshipStatus => {
     const normalized = (status ?? "").trim().toUpperCase();
     if (
       normalized === "PENDING" ||
       normalized === "ACCEPTED" ||
       normalized === "BLOCKED" ||
-      normalized === "NONE"
+      normalized === "NONE" ||
+      normalized === "REJECTED" ||
+      normalized === "DECLINED" ||
+      normalized === "CANCELLED"
     ) {
-      return normalized;
+      return normalized as FriendshipStatus;
     }
     if (normalized === "CANCELED") {
       return "CANCELLED";
@@ -1248,7 +1275,7 @@ export function ChatPage() {
     if (normalized === "DELETED") {
       return "NONE";
     }
-    return normalized || "NONE";
+    return "NONE";
   };
 
   const activeConversation = useMemo(
@@ -3470,6 +3497,24 @@ export function ChatPage() {
         ? resolvePeerUserId(activeConversation)
         : undefined;
 
+    if (
+      conversationType === "private" &&
+      peerUserId &&
+      (blockedUserIds.includes(peerUserId) || blockedByPeerUserIds.includes(peerUserId))
+    ) {
+      setBannerMessage(
+        blockedUserIds.includes(peerUserId)
+          ? language === "vi"
+            ? "Ban da chan nguoi nay. Hay bo chan truoc khi goi."
+            : "You blocked this user. Unblock them before calling."
+          : language === "vi"
+            ? "Nguoi nay da chan ban. Ban khong the thuc hien cuoc goi."
+            : "This user blocked you. You cannot start a call.",
+      );
+      appendCurrentDirectRestrictionNotice();
+      return;
+    }
+
     if (conversationType === "private" && (!peerUserId || peerUserId === myUserIdRef.current)) {
       setBannerMessage(
         language === "vi"
@@ -4068,6 +4113,8 @@ export function ChatPage() {
     friendshipFetchRequestIdRef.current = requestId;
 
     try {
+      setIsLoadingFriendshipData(true);
+      setFriendshipDataError(null);
       const [pendingResult, sentPendingResult, friendsResult, unreadResult, blockedResult] = await Promise.all([
         getPendingFriendRequests(),
         getSentPendingFriendRequests(),
@@ -4080,26 +4127,60 @@ export function ChatPage() {
       }
 
       const currentUserId = myUserIdRef.current;
-      const pending = normalizePendingRequestItems(
+      const blocked = blockedResult.data ?? [];
+      const blockedIds = blocked
+        .map((item) => String(item.userId ?? "").trim())
+        .filter(Boolean);
+      const hiddenUserIds = new Set(
+        [currentUserId ?? "", ...blockedIds]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      const friendMap = new Map<string, FriendContactItem>();
+      (friendsResult.data ?? []).forEach((item) => {
+        const userId = String(item.userId ?? "").trim();
+        const friendshipId = String(item.friendshipId ?? "").trim();
+        if (!userId || !friendshipId || hiddenUserIds.has(userId)) {
+          return;
+        }
+        friendMap.set(userId, {
+          ...item,
+          userId,
+          friendshipId,
+        });
+      });
+      const friends = Array.from(friendMap.values());
+      const friendIds = new Set(friends.map((item) => item.userId));
+      const uniqueIncomingByUserId = new Map<string, PendingFriendRequestItem>();
+      normalizePendingRequestItems(
         pendingResult.data ?? [],
         currentUserId,
         "incoming",
-      );
-      const sentPending = normalizePendingRequestItems(
+      ).forEach((item) => {
+        if (hiddenUserIds.has(item.requesterId) || friendIds.has(item.requesterId)) {
+          return;
+        }
+        uniqueIncomingByUserId.set(item.requesterId, item);
+      });
+      const uniqueSentByUserId = new Map<string, PendingFriendRequestItem>();
+      normalizePendingRequestItems(
         sentPendingResult.data ?? [],
         currentUserId,
         "sent",
+      ).forEach((item) => {
+        if (hiddenUserIds.has(item.addresseeId) || friendIds.has(item.addresseeId)) {
+          return;
+        }
+        uniqueSentByUserId.set(item.addresseeId, item);
+      });
+      const pending = Array.from(uniqueIncomingByUserId.values());
+      const sentPending = Array.from(uniqueSentByUserId.values()).filter(
+        (item) => !uniqueIncomingByUserId.has(item.addresseeId),
       );
-      const friends = friendsResult.data ?? [];
-      const blocked = blockedResult.data ?? [];
       setPendingFriendRequests(pending);
       setSentPendingFriendRequests(sentPending);
       setFriendContacts(friends);
-      setBlockedUserIds(
-        blocked
-          .map((item) => String(item.userId ?? "").trim())
-          .filter(Boolean),
-      );
+      setBlockedUserIds(blockedIds);
       setPendingFriendRequestsUnreadCount(
         Math.max(0, unreadResult.data?.count ?? 0),
       );
@@ -4143,7 +4224,13 @@ export function ChatPage() {
       }));
     } catch (error) {
       if (requestId === friendshipFetchRequestIdRef.current) {
-        setBannerMessage(toApiErrorMessage(error));
+        const message = toApiErrorMessage(error);
+        setFriendshipDataError(message);
+        setBannerMessage(message);
+      }
+    } finally {
+      if (requestId === friendshipFetchRequestIdRef.current) {
+        setIsLoadingFriendshipData(false);
       }
     }
   };
@@ -5300,12 +5387,13 @@ export function ChatPage() {
       await fetchConversations();
     } catch (error) {
       if (handleDirectMessageBlockedError(error)) {
-        return;
+        throw error;
       }
       if (handleDirectMessageRestrictionError(error)) {
-        return;
+        throw error;
       }
       setBannerMessage(toApiErrorMessage(error));
+      throw error;
     } finally {
       setIsSending(false);
     }
@@ -5883,7 +5971,12 @@ export function ChatPage() {
       const nextStatus = normalizeFriendshipStatus(result.data.status);
       setFriendshipStatus(nextStatus);
       setPreviewUserFriendshipStatus(nextStatus);
-      await fetchFriendshipData();
+      await Promise.all([
+        fetchFriendshipData(),
+        nextStatus === "ACCEPTED"
+          ? fetchConversations({ silent: true })
+          : Promise.resolve(),
+      ]);
       setBannerMessage(
         nextStatus === "ACCEPTED"
           ? language === "vi"
@@ -6168,6 +6261,15 @@ export function ChatPage() {
       return;
     }
 
+    if (blockedByPeerUserIds.includes(targetUserId)) {
+      setBannerMessage(
+        language === "vi"
+          ? "Nguoi nay da chan ban. Ban khong the gui loi moi ket ban."
+          : "This user blocked you. You cannot send a friend request.",
+      );
+      return;
+    }
+
     setIsUpdatingPeerRelationship(true);
     try {
       const result = await addFriend(targetUserId);
@@ -6176,7 +6278,12 @@ export function ChatPage() {
       if (previewUserProfile?.id === targetUserId) {
         setPreviewUserFriendshipStatus(nextStatus);
       }
-      await fetchFriendshipData();
+      await Promise.all([
+        fetchFriendshipData(),
+        nextStatus === "ACCEPTED"
+          ? fetchConversations({ silent: true })
+          : Promise.resolve(),
+      ]);
       setBannerMessage(
         nextStatus === "ACCEPTED"
           ? language === "vi"
@@ -6283,6 +6390,12 @@ export function ChatPage() {
         ...prev,
         [userId]: summaryResult.data,
       }));
+      if (blockedByMe) {
+        setBlockedUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
+      }
+      if (blockedByPeer) {
+        setBlockedByPeerUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
+      }
       setPreviewUserFriendshipStatus(
         blockedByMe ||
         blockedByPeer ||
@@ -6308,6 +6421,54 @@ export function ChatPage() {
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
       return null;
+    }
+  };
+
+  const onSearchContactCandidate = async () => {
+    const email = contactsSearchQuery.trim();
+    if (!email) {
+      setContactCandidateProfile(null);
+      setContactCandidateStatusPayload(null);
+      setContactCandidateError(
+        language === "vi" ? "Nhap email de tim nguoi dung." : "Enter an email to find a user.",
+      );
+      return;
+    }
+
+    try {
+      setIsSearchingContactCandidate(true);
+      setContactCandidateError(null);
+      setContactCandidateProfile(null);
+      setContactCandidateStatusPayload(null);
+      const profileResult = await searchUserByEmail(email);
+      const profile = profileResult.data;
+      const statusResult = profile.id === myProfile?.id
+        ? { data: { status: "ACCEPTED" } as FriendshipStatusPayload }
+        : await getFriendshipStatus(profile.id);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
+
+      setContactCandidateProfile(profile);
+      setContactCandidateStatusPayload(statusResult.data);
+      setUserProfileMap((prev) => ({
+        ...prev,
+        [profile.id]: profile,
+      }));
+      if (blockedByMe) {
+        setBlockedUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      }
+      if (blockedByPeer) {
+        setBlockedByPeerUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      }
+    } catch (error) {
+      setContactCandidateError(toApiErrorMessage(error));
+    } finally {
+      setIsSearchingContactCandidate(false);
+    }
+  };
+
+  const onContactsSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && contactsView === "people") {
+      void onSearchContactCandidate();
     }
   };
 
@@ -6518,7 +6679,13 @@ export function ChatPage() {
   };
 
   const contactUsers = useMemo(() => {
+    const excludedUserIds = new Set([
+      ...(myProfile?.id ? [myProfile.id] : []),
+      ...blockedUserIds,
+      ...blockedByPeerUserIds,
+    ]);
     return friendContacts
+      .filter((friend) => !excludedUserIds.has(friend.userId))
       .map((friend, index) => {
         const presence = getPresenceForUser(friend.userId);
         return {
@@ -6534,7 +6701,7 @@ export function ChatPage() {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [friendContacts, userProfileMap, userPresenceMap, presenceTick]);
+  }, [blockedByPeerUserIds, blockedUserIds, friendContacts, myProfile?.id, userProfileMap, userPresenceMap, presenceTick]);
 
   const normalizedContactsSearchQuery = contactsSearchQuery.trim().toLowerCase();
 
@@ -6580,44 +6747,179 @@ export function ChatPage() {
     [blockedByPeerUserIds],
   );
 
-  const resolveRelationshipStatusForUser = useCallback((userId: string | null | undefined) => {
+  const friendContactByUserId = useMemo(() => {
+    const map = new Map<string, FriendContactItem>();
+    friendContacts.forEach((item) => {
+      map.set(item.userId, item);
+    });
+    return map;
+  }, [friendContacts]);
+
+  const incomingPendingRequestByUserId = useMemo(() => {
+    const map = new Map<string, PendingFriendRequestItem>();
+    pendingFriendRequests.forEach((item) => {
+      if (normalizeFriendshipStatus(item.status) === "PENDING") {
+        map.set(item.requesterId, item);
+      }
+    });
+    return map;
+  }, [pendingFriendRequests]);
+
+  const sentPendingRequestByUserId = useMemo(() => {
+    const map = new Map<string, PendingFriendRequestItem>();
+    sentPendingFriendRequests.forEach((item) => {
+      if (normalizeFriendshipStatus(item.status) === "PENDING") {
+        map.set(item.addresseeId, item);
+      }
+    });
+    return map;
+  }, [sentPendingFriendRequests]);
+
+  const resolveRelationshipForUser = useCallback((userId: string | null | undefined): UserRelationshipSnapshot => {
     const normalizedUserId = String(userId ?? "").trim();
     if (!normalizedUserId) {
-      return "NONE";
+      return {
+        kind: "stranger",
+        status: "NONE",
+        friendshipId: null,
+        requestDirection: null,
+      };
     }
-    if (
-      blockedUserIdSet.has(normalizedUserId) ||
-      blockedByPeerUserIdSet.has(normalizedUserId)
-    ) {
-      return "BLOCKED";
+    if (myProfile?.id && normalizedUserId === myProfile.id) {
+      return {
+        kind: "self",
+        status: "ACCEPTED",
+        friendshipId: null,
+        requestDirection: null,
+      };
     }
-    if (friendUserIdSet.has(normalizedUserId)) {
-      return "ACCEPTED";
+    const blockedByMe = blockedUserIdSet.has(normalizedUserId);
+    const blockedByPeer = blockedByPeerUserIdSet.has(normalizedUserId);
+    if (blockedByMe || blockedByPeer) {
+      return {
+        kind: blockedByMe && blockedByPeer
+          ? "blocked_mutual"
+          : blockedByMe
+            ? "blocked_by_me"
+            : "blocked_by_peer",
+        status: "BLOCKED",
+        friendshipId: null,
+        requestDirection: null,
+      };
     }
-    const hasIncomingPending = pendingFriendRequests.some(
-      (item) =>
-        item.requesterId === normalizedUserId &&
-        normalizeFriendshipStatus(item.status) === "PENDING",
-    );
-    if (hasIncomingPending) {
-      return "PENDING";
+    const friend = friendContactByUserId.get(normalizedUserId);
+    if (friend) {
+      return {
+        kind: "friend",
+        status: "ACCEPTED",
+        friendshipId: friend.friendshipId,
+        requestDirection: null,
+      };
     }
-    const hasSentPending = sentPendingFriendRequests.some(
-      (item) =>
-        item.addresseeId === normalizedUserId &&
-        normalizeFriendshipStatus(item.status) === "PENDING",
-    );
-    if (hasSentPending) {
-      return "PENDING";
+    const incoming = incomingPendingRequestByUserId.get(normalizedUserId);
+    if (incoming) {
+      return {
+        kind: "pending_received",
+        status: "PENDING",
+        friendshipId: incoming.friendshipId,
+        requestDirection: "incoming",
+      };
     }
-    return "NONE";
+    const sent = sentPendingRequestByUserId.get(normalizedUserId);
+    if (sent) {
+      return {
+        kind: "pending_sent",
+        status: "PENDING",
+        friendshipId: sent.friendshipId,
+        requestDirection: "outgoing",
+      };
+    }
+    return {
+      kind: "stranger",
+      status: "NONE",
+      friendshipId: null,
+      requestDirection: null,
+    };
   }, [
     blockedByPeerUserIdSet,
     blockedUserIdSet,
-    friendUserIdSet,
-    pendingFriendRequests,
-    sentPendingFriendRequests,
+    friendContactByUserId,
+    incomingPendingRequestByUserId,
+    myProfile?.id,
+    sentPendingRequestByUserId,
   ]);
+
+  const resolveRelationshipStatusForUser = useCallback((userId: string | null | undefined) => {
+    return resolveRelationshipForUser(userId).status;
+  }, [resolveRelationshipForUser]);
+
+  const contactCandidateRelationship = useMemo((): UserRelationshipSnapshot | null => {
+    if (!contactCandidateProfile?.id) {
+      return null;
+    }
+
+    const localRelationship = resolveRelationshipForUser(contactCandidateProfile.id);
+    if (
+      localRelationship.kind !== "stranger" ||
+      !contactCandidateStatusPayload
+    ) {
+      return localRelationship;
+    }
+
+    const status = normalizeFriendshipStatus(contactCandidateStatusPayload.status);
+    const { blockedByMe, blockedByPeer } = resolveBlockedState(contactCandidateStatusPayload);
+    if (status === "BLOCKED" || blockedByMe || blockedByPeer) {
+      return {
+        kind: blockedByMe && blockedByPeer
+          ? "blocked_mutual"
+          : blockedByMe
+            ? "blocked_by_me"
+            : "blocked_by_peer",
+        status: "BLOCKED",
+        friendshipId: contactCandidateStatusPayload.friendshipId ?? null,
+        requestDirection: null,
+      };
+    }
+
+    if (status === "ACCEPTED") {
+      return {
+        kind: contactCandidateProfile.id === myProfile?.id ? "self" : "friend",
+        status,
+        friendshipId: contactCandidateStatusPayload.friendshipId ?? null,
+        requestDirection: null,
+      };
+    }
+
+    if (status === "PENDING") {
+      const requesterId = String(contactCandidateStatusPayload.requesterId ?? "").trim();
+      const addresseeId = String(contactCandidateStatusPayload.addresseeId ?? "").trim();
+      const isOutgoing = Boolean(myProfile?.id && requesterId === myProfile.id);
+      const isIncoming = Boolean(myProfile?.id && addresseeId === myProfile.id);
+      return {
+        kind: isIncoming ? "pending_received" : isOutgoing ? "pending_sent" : "stranger",
+        status,
+        friendshipId: contactCandidateStatusPayload.friendshipId ?? null,
+        requestDirection: isIncoming ? "incoming" : isOutgoing ? "outgoing" : null,
+      };
+    }
+
+    return {
+      kind: "stranger",
+      status,
+      friendshipId: contactCandidateStatusPayload.friendshipId ?? null,
+      requestDirection: null,
+    };
+  }, [
+    contactCandidateProfile?.id,
+    contactCandidateStatusPayload,
+    myProfile?.id,
+    resolveRelationshipForUser,
+  ]);
+
+  const previewUserRelationship = useMemo(
+    () => resolveRelationshipForUser(previewUserProfile?.id),
+    [previewUserProfile?.id, resolveRelationshipForUser],
+  );
 
   useEffect(() => {
     if (!previewUserProfile?.id) {
@@ -6903,6 +7205,12 @@ export function ChatPage() {
       icon: Users,
     },
     {
+      key: "people" as const,
+      label: language === "vi" ? "Tim nguoi dung" : "Find people",
+      count: contactCandidateRelationship?.kind === "stranger" ? 1 : 0,
+      icon: UserSearch,
+    },
+    {
       key: "groups" as const,
       label: language === "vi" ? "Danh sach nhom va cong dong" : "Groups and communities",
       count: joinedGroupContacts.length,
@@ -7164,18 +7472,37 @@ export function ChatPage() {
             <div className="mx-auto flex h-full w-full max-w-[1500px] gap-5 p-5">
               <aside className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
                 <div className="border-b border-white/6 px-4 pb-3 pt-4">
-                  <div className="relative">
-                    <Search
-                      size={16}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                    />
-                    <input
-                      type="text"
-                      value={contactsSearchQuery}
-                      onChange={(event) => setContactsSearchQuery(event.target.value)}
-                      placeholder={language === "vi" ? "Tim danh ba" : "Search contacts"}
-                      className="h-11 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
-                    />
+                  <div className="flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <Search
+                        size={16}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                      />
+                      <input
+                        type="text"
+                        value={contactsSearchQuery}
+                        onChange={(event) => setContactsSearchQuery(event.target.value)}
+                        onKeyDown={onContactsSearchKeyDown}
+                        placeholder={
+                          contactsView === "people"
+                            ? "email@example.com"
+                            : language === "vi" ? "Tim danh ba" : "Search contacts"
+                        }
+                        className="h-11 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
+                      />
+                    </div>
+                    {contactsView === "people" && (
+                      <button
+                        type="button"
+                        onClick={() => void onSearchContactCandidate()}
+                        disabled={isSearchingContactCandidate || !contactsSearchQuery.trim()}
+                        className="h-11 rounded-xl bg-[var(--color-zola-accent)] px-4 text-xs font-semibold text-white hover:bg-[#4b9dff] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSearchingContactCandidate
+                          ? language === "vi" ? "Dang tim" : "Finding"
+                          : language === "vi" ? "Tim" : "Find"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -7208,6 +7535,10 @@ export function ChatPage() {
                               ? language === "vi"
                                 ? "Quan ly ban be va mo ho so nhanh."
                                 : "Manage friends and open profiles quickly."
+                              : item.key === "people"
+                                ? language === "vi"
+                                  ? "Tim theo email va gui loi moi dung trang thai."
+                                  : "Find by email and send the right request action."
                               : item.key === "groups"
                                 ? language === "vi"
                                   ? "Nhom va cong dong ban dang tham gia."
@@ -7248,6 +7579,8 @@ export function ChatPage() {
                         <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-300">
                           {contactsView === "friends" ? (
                             <Users size={18} />
+                          ) : contactsView === "people" ? (
+                            <UserSearch size={18} />
                           ) : contactsView === "groups" ? (
                             <UsersRound size={18} />
                           ) : contactsView === "requests" ? (
@@ -7261,6 +7594,10 @@ export function ChatPage() {
                             ? language === "vi"
                               ? "Danh sach ban be"
                               : "Friend list"
+                            : contactsView === "people"
+                              ? language === "vi"
+                                ? "Tim nguoi dung"
+                                : "Find people"
                             : contactsView === "groups"
                               ? language === "vi"
                                 ? "Danh sach nhom va cong dong"
@@ -7279,6 +7616,10 @@ export function ChatPage() {
                           ? language === "vi"
                             ? `Ban be (${filteredContactUsers.length})`
                             : `Friends (${filteredContactUsers.length})`
+                          : contactsView === "people"
+                            ? language === "vi"
+                              ? "Tim dung theo email de lay du lieu that tu backend"
+                              : "Search by exact email to load real backend data"
                           : contactsView === "groups"
                             ? language === "vi"
                               ? `Nhom va cong dong (${filteredJoinedGroupContacts.length})`
@@ -7298,6 +7639,8 @@ export function ChatPage() {
                         {language === "vi"
                           ? contactsView === "friends"
                             ? "Sap xep A-Z"
+                            : contactsView === "people"
+                              ? "Theo trang thai ket ban"
                             : contactsView === "groups"
                               ? "Theo ten nhom"
                               : contactsView === "requests"
@@ -7305,6 +7648,8 @@ export function ChatPage() {
                                 : "Cho du lieu realtime"
                           : contactsView === "friends"
                             ? "Sorted A-Z"
+                            : contactsView === "people"
+                              ? "By relationship state"
                             : contactsView === "groups"
                               ? "By group name"
                               : contactsView === "requests"
@@ -7325,6 +7670,24 @@ export function ChatPage() {
                 </div>
 
                 <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                  {friendshipDataError && (
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                      <span>{friendshipDataError}</span>
+                      <button
+                        type="button"
+                        onClick={() => void fetchFriendshipData()}
+                        className="rounded-lg border border-rose-200/30 px-3 py-1.5 text-xs font-semibold hover:bg-rose-500/15"
+                      >
+                        {language === "vi" ? "Thu lai" : "Retry"}
+                      </button>
+                    </div>
+                  )}
+                  {isLoadingFriendshipData && (
+                    <div className="mb-4 rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                      {language === "vi" ? "Dang dong bo trang thai ban be..." : "Syncing friendship state..."}
+                    </div>
+                  )}
+
                   {contactsView === "friends" && (
                     <div className="space-y-6">
                       {groupedContactUsers.length === 0 ? (
@@ -7400,6 +7763,178 @@ export function ChatPage() {
                             </div>
                           </div>
                         ))
+                      )}
+                    </div>
+                  )}
+
+                  {contactsView === "people" && (
+                    <div className="space-y-4">
+                      {!contactsSearchQuery.trim() && !contactCandidateProfile && (
+                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-200">
+                            {language === "vi" ? "Nhap email de tim nguoi dung." : "Enter an email to find a user."}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {language === "vi"
+                              ? "Ket qua duoc lay tu API that va se khong chen vao danh sach ban be/loi moi neu da co trang thai khac."
+                              : "Results come from the real API and keep friends, requests, and blocked users in their own states."}
+                          </p>
+                        </div>
+                      )}
+
+                      {contactCandidateError && (
+                        <div className="rounded-[24px] border border-rose-300/25 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
+                          {contactCandidateError}
+                        </div>
+                      )}
+
+                      {isSearchingContactCandidate && (
+                        <div className="rounded-[24px] border border-white/8 bg-[#1b2027] px-5 py-4 text-sm text-slate-300">
+                          {language === "vi" ? "Dang tim nguoi dung..." : "Finding user..."}
+                        </div>
+                      )}
+
+                      {contactCandidateProfile && contactCandidateRelationship && (
+                        <div className="rounded-[24px] border border-white/8 bg-[#1b2027] p-4">
+                          <div className="flex flex-wrap items-center gap-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void onOpenUserPreview(contactCandidateProfile.id);
+                              }}
+                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            >
+                              {resolveMediaUrl(contactCandidateProfile.avatarUrl ?? null) ? (
+                                <img
+                                  src={resolveMediaUrl(contactCandidateProfile.avatarUrl ?? null) ?? undefined}
+                                  alt={contactCandidateProfile.fullName}
+                                  className="h-12 w-12 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="grid h-12 w-12 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-100">
+                                  {initials(contactCandidateProfile.fullName)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="truncate text-lg font-semibold text-slate-100">
+                                  {contactCandidateProfile.fullName}
+                                </p>
+                                <p className="truncate text-xs text-slate-400">
+                                  {contactCandidateProfile.email ?? contactCandidateProfile.id}
+                                </p>
+                              </div>
+                            </button>
+
+                            <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                              {contactCandidateRelationship.kind === "self"
+                                ? language === "vi" ? "Tai khoan cua ban" : "Your account"
+                                : contactCandidateRelationship.kind === "friend"
+                                  ? language === "vi" ? "Ban be" : "Friend"
+                                  : contactCandidateRelationship.kind === "pending_received"
+                                    ? language === "vi" ? "Da nhan loi moi" : "Request received"
+                                    : contactCandidateRelationship.kind === "pending_sent"
+                                      ? language === "vi" ? "Da gui loi moi" : "Request sent"
+                                      : contactCandidateRelationship.status === "BLOCKED"
+                                        ? language === "vi" ? "Da chan" : "Blocked"
+                                        : language === "vi" ? "Co the ket ban" : "Can add friend"}
+                            </span>
+                          </div>
+
+                          {contactCandidateRelationship.kind !== "self" && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {contactCandidateRelationship.kind === "friend" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void onOpenFriendConversation(contactCandidateProfile.id)}
+                                    className="rounded-xl bg-[var(--color-zola-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[#4b9dff]"
+                                  >
+                                    {language === "vi" ? "Nhan tin" : "Message"}
+                                  </button>
+                                  {contactCandidateRelationship.friendshipId && (
+                                    <button
+                                      type="button"
+                                      disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
+                                      onClick={() => void onRemoveFriend(contactCandidateRelationship.friendshipId!)}
+                                      className="rounded-xl border border-orange-300/35 bg-orange-500/10 px-4 py-2 text-xs font-semibold text-orange-100 hover:bg-orange-500/15 disabled:opacity-50"
+                                    >
+                                      {language === "vi" ? "Huy ket ban" : "Unfriend"}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+
+                              {contactCandidateRelationship.kind === "pending_received" && contactCandidateRelationship.friendshipId && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
+                                    onClick={() => void onAcceptFriendRequest(contactCandidateRelationship.friendshipId!)}
+                                    className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                                  >
+                                    {language === "vi" ? "Chap nhan" : "Accept"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
+                                    onClick={() => void onDeclineFriendRequest(contactCandidateRelationship.friendshipId!)}
+                                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
+                                  >
+                                    {language === "vi" ? "Tu choi" : "Decline"}
+                                  </button>
+                                </>
+                              )}
+
+                              {contactCandidateRelationship.kind === "pending_sent" && contactCandidateRelationship.friendshipId && (
+                                <button
+                                  type="button"
+                                  disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
+                                  onClick={() => void onCancelFriendRequest(contactCandidateRelationship.friendshipId!)}
+                                  className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+                                >
+                                  {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                                </button>
+                              )}
+
+                              {(contactCandidateRelationship.kind === "stranger" ||
+                                contactCandidateRelationship.status === "REJECTED" ||
+                                contactCandidateRelationship.status === "DECLINED" ||
+                                contactCandidateRelationship.status === "CANCELLED") && (
+                                <button
+                                  type="button"
+                                  disabled={isUpdatingPeerRelationship}
+                                  onClick={() => void onAddFriendToUser(contactCandidateProfile.id)}
+                                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                                >
+                                  {language === "vi" ? "Ket ban" : "Add friend"}
+                                </button>
+                              )}
+
+                              {contactCandidateRelationship.kind === "blocked_by_me" ||
+                              contactCandidateRelationship.kind === "blocked_mutual" ? (
+                                <button
+                                  type="button"
+                                  disabled={isUpdatingPeerRelationship}
+                                  onClick={() => onUnblockUser(contactCandidateProfile.id)}
+                                  className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-50"
+                                >
+                                  {language === "vi" ? "Bo chan" : "Unblock"}
+                                </button>
+                              ) : (
+                                contactCandidateRelationship.kind !== "blocked_by_peer" && (
+                                  <button
+                                    type="button"
+                                    disabled={isUpdatingPeerRelationship}
+                                    onClick={() => void onBlockUser(contactCandidateProfile.id)}
+                                    className="rounded-xl border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
+                                  >
+                                    {language === "vi" ? "Chan" : "Block"}
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -7595,7 +8130,7 @@ export function ChatPage() {
                                       onClick={() => void onOpenFriendConversation(request.addresseeId)}
                                       className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5"
                                     >
-                                      {language === "vi" ? "Mo chat" : "Open chat"}
+                                      {language === "vi" ? "Nhan tin" : "Message"}
                                     </button>
                                   </div>
                                 </div>
@@ -8318,6 +8853,10 @@ export function ChatPage() {
                     ? language === "vi"
                       ? "Ban da chan nguoi dung nay."
                       : "You blocked this user."
+                    : isActiveDirectPeerBlockedByPeer
+                      ? language === "vi"
+                        ? "Nguoi dung nay da chan ban."
+                        : "This user blocked you."
                     : language === "vi"
                       ? "Nguoi dung hien khong muon nhan tin."
                       : "This user currently does not want to receive messages."
@@ -8406,7 +8945,12 @@ export function ChatPage() {
         isOpen={isUserPreviewOpen}
         isCurrentUser={Boolean(previewUserProfile?.id && previewUserProfile.id === myProfile?.id)}
         friendshipStatus={previewUserFriendshipStatus}
-        isSubmittingFriend={isSubmittingFriend || isLoadingUserPreview}
+        friendRequestDirection={previewUserRelationship.requestDirection}
+        isSubmittingFriend={isSubmittingFriend || isLoadingUserPreview || isUpdatingPeerRelationship}
+        isProcessingFriendship={
+          Boolean(previewUserRelationship.friendshipId && processingFriendshipId === previewUserRelationship.friendshipId) ||
+          isUpdatingPeerRelationship
+        }
         blockedByMe={Boolean(previewUserProfile?.id && blockedUserIdSet.has(previewUserProfile.id))}
         blockedByPeer={Boolean(previewUserProfile?.id && blockedByPeerUserIdSet.has(previewUserProfile.id))}
         isSubmittingBlock={isUpdatingPeerRelationship}
@@ -8416,9 +8960,28 @@ export function ChatPage() {
           setPreviewUserFriendshipStatus("NONE");
         }}
         onAddFriend={() => {
-          if (previewUserProfile) {
-            setFriendProfile(previewUserProfile);
-            void onAddFriend();
+          if (previewUserProfile?.id) {
+            void onAddFriendToUser(previewUserProfile.id);
+          }
+        }}
+        onAcceptFriendRequest={() => {
+          if (previewUserRelationship.friendshipId) {
+            void onAcceptFriendRequest(previewUserRelationship.friendshipId);
+          }
+        }}
+        onDeclineFriendRequest={() => {
+          if (previewUserRelationship.friendshipId) {
+            void onDeclineFriendRequest(previewUserRelationship.friendshipId);
+          }
+        }}
+        onCancelFriendRequest={() => {
+          if (previewUserRelationship.friendshipId) {
+            void onCancelFriendRequest(previewUserRelationship.friendshipId);
+          }
+        }}
+        onRemoveFriend={() => {
+          if (previewUserRelationship.friendshipId) {
+            void onRemoveFriend(previewUserRelationship.friendshipId);
           }
         }}
         onMessage={() => {

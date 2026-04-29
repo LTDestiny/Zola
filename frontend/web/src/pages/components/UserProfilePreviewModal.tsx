@@ -134,6 +134,10 @@ export function UserProfilePreviewModal({
     normalizedFriendshipStatus !== "ACCEPTED" &&
     normalizedFriendshipStatus !== "PENDING" &&
     normalizedFriendshipStatus !== "BLOCKED";
+  const canMessage =
+    !isCurrentUser &&
+    !blockedByMe &&
+    !blockedByPeer;
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/70 p-4">
@@ -222,7 +226,15 @@ export function UserProfilePreviewModal({
                 <button
                   type="button"
                   onClick={() => void onMessage?.()}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2]"
+                  disabled={!canMessage}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2] disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
+                  title={
+                    canMessage
+                      ? undefined
+                      : language === "vi"
+                        ? "Khong the nhan tin do dang bi chan."
+                        : "Messaging is unavailable because this relationship is blocked."
+                  }
                 >
                   <MessageCircle size={16} />
                   <span>{language === "vi" ? "Nhan tin" : "Message"}</span>

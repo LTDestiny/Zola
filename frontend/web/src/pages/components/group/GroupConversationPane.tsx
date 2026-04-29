@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, SendHorizontal, Smile, Sparkles, Video, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, Heart, ImagePlus, Info, Paperclip, Phone, Pin, Search, SendHorizontal, Smile, Sparkles, Video, X } from "lucide-react";
 import {
   type ConversationItem,
   type MessageItem,
@@ -31,6 +31,10 @@ type ChatProps = {
   activeConversationPinned?: boolean;
   headerUnreadBadgeCount?: number;
   userProfileMap?: Record<string, UserProfile>;
+  highlightAdminMessages?: boolean;
+  ownerUserId?: string | null;
+  adminUserIds?: string[];
+  onOpenUserProfile?: (userId: string) => void;
   showGroupPanelToggle?: boolean;
   isGroupPanelOpen?: boolean;
   onToggleGroupPanel?: () => void;
@@ -48,6 +52,7 @@ type ChatProps = {
   onRecallMessage: (messageId: string) => void | Promise<void>;
   onDeleteForMe: (messageId: string) => void | Promise<void>;
   onForwardMessage: (messageId: string) => void | Promise<void>;
+  onForwardMessages?: (messageIds: string[]) => void | Promise<void>;
   onReactMessage: (messageId: string, emoji: string) => void | Promise<void>;
   onPinMessage?: (message: ChatMessage) => void | Promise<void>;
   onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
@@ -55,6 +60,8 @@ type ChatProps = {
   onClosePollMessage?: (message: ChatMessage) => void | Promise<void>;
   canCompose?: boolean;
   composeBlockedMessage?: string | null;
+  allowComposer?: boolean;
+  composerDisabledMessage?: string | null;
   canPinMessages?: boolean;
   canManageGroupPoll?: boolean;
   pinnedMessages?: Array<{
@@ -633,7 +640,50 @@ function mapToUiMessage(
   };
 }
 
-export function Chat({
+function normalizeSearchValue(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function summarizeSearchableMessageText(message: ChatMessage) {
+  const rawType = (message.rawType ?? "").toUpperCase();
+  if (rawType === "SYSTEM" || message.isRecalled) {
+    return "";
+  }
+
+  const payload = parseJsonObject(message.text);
+  if (!payload) {
+    return message.text;
+  }
+
+  const summary = String(
+    payload.title ??
+      payload.question ??
+      payload.note ??
+      payload.preview ??
+      payload.description ??
+      payload.link ??
+      "",
+  ).trim();
+
+  return summary || message.text;
+}
+
+function matchesMessageSearchQuery(messageText: string, query: string) {
+  const normalizedText = normalizeSearchValue(messageText);
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedText || !normalizedQuery) {
+    return false;
+  }
+
+  if (normalizedText.includes(normalizedQuery)) {
+    return true;
+  }
+
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  return queryTokens.length > 0 && queryTokens.every((token) => normalizedText.includes(token));
+}
+
+export function GroupConversationPane({
   language,
   activeConversation,
   activeConversationOnline,
@@ -641,6 +691,10 @@ export function Chat({
   activeConversationPinned = false,
   headerUnreadBadgeCount = 0,
   userProfileMap = {},
+  highlightAdminMessages: _highlightAdminMessages = false,
+  ownerUserId: _ownerUserId = null,
+  adminUserIds: _adminUserIds = [],
+  onOpenUserProfile,
   showGroupPanelToggle = false,
   isGroupPanelOpen = true,
   onToggleGroupPanel,
@@ -658,13 +712,16 @@ export function Chat({
   onRecallMessage,
   onDeleteForMe,
   onForwardMessage,
+  onForwardMessages: _onForwardMessages,
   onReactMessage,
   onPinMessage,
   onUnpinMessage,
   onVotePollMessage,
   onClosePollMessage,
-  canCompose = true,
-  composeBlockedMessage = null,
+  canCompose: canComposeProp = true,
+  composeBlockedMessage: composeBlockedMessageProp = null,
+  allowComposer,
+  composerDisabledMessage,
   canPinMessages = true,
   canManageGroupPoll = false,
   pinnedMessages = [],
@@ -680,6 +737,8 @@ export function Chat({
   onLoadOlderMessages,
   onViewportBottomChange,
 }: ChatProps) {
+  const canCompose = allowComposer ?? canComposeProp;
+  const composeBlockedMessage = composerDisabledMessage ?? composeBlockedMessageProp;
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -698,6 +757,10 @@ export function Chat({
     null,
   );
   const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
+  const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [messageSearchMatchIndex, setMessageSearchMatchIndex] = useState(0);
+  const [messageSearchFeedback, setMessageSearchFeedback] = useState<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const fileInputId = useId();
@@ -707,6 +770,7 @@ export function Chat({
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const emojiPanelRef = useRef<HTMLDivElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
@@ -734,6 +798,24 @@ export function Chat({
       mapToUiMessage(item, language, currentUserId, userProfileMap),
       );
   }, [messages, language, currentUserId, userProfileMap]);
+
+  const normalizedMessageSearchQuery = useMemo(
+    () => normalizeSearchValue(messageSearchQuery),
+    [messageSearchQuery],
+  );
+  const matchedMessages = useMemo(() => {
+    if (!normalizedMessageSearchQuery) {
+      return [];
+    }
+
+    return localMessages.filter((message) => {
+      const searchableText = summarizeSearchableMessageText(message);
+      return (
+        Boolean(searchableText) &&
+        matchesMessageSearchQuery(searchableText, normalizedMessageSearchQuery)
+      );
+    });
+  }, [localMessages, normalizedMessageSearchQuery]);
 
   const pinnedSourceMessageIdSet = useMemo(
     () => new Set((pinnedMessages ?? []).map((item) => item.sourceMessageId)),
@@ -809,7 +891,35 @@ export function Chat({
     previousLastMessageIdRef.current = null;
     pendingScrollToBottomOnLoadRef.current = true;
     setReplyingTo(null);
+    setIsMessageSearchOpen(false);
+    setMessageSearchQuery("");
+    setMessageSearchMatchIndex(0);
+    setMessageSearchFeedback(null);
   }, [activeConversation?.id]);
+
+  useEffect(() => {
+    if (!isMessageSearchOpen) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }, [isMessageSearchOpen]);
+
+  useEffect(() => {
+    if (!normalizedMessageSearchQuery) {
+      setMessageSearchMatchIndex(0);
+      setMessageSearchFeedback(null);
+      return;
+    }
+
+    setMessageSearchMatchIndex(
+      matchedMessages.length > 0 ? matchedMessages.length - 1 : 0,
+    );
+    setMessageSearchFeedback(null);
+  }, [normalizedMessageSearchQuery, matchedMessages.length]);
 
   useEffect(() => {
     if (isLoadingMessages) {
@@ -965,6 +1075,53 @@ export function Chat({
     jumpToMessageById(scrollToMessageRequest.messageId);
   }, [scrollToMessageRequest]);
 
+  const runMessageSearch = (preferredIndex?: number) => {
+    if (!normalizedMessageSearchQuery) {
+      setMessageSearchFeedback(
+        language === "vi"
+          ? "Nhap tu khoa can tim trong tin nhan."
+          : "Enter the words you want to find in messages.",
+      );
+      return;
+    }
+
+    if (matchedMessages.length === 0) {
+      setMessageSearchFeedback(
+        hasMoreMessages
+          ? language === "vi"
+            ? "Chua tim thay trong cac tin nhan da tai. Hay tai them tin nhan cu hon roi thu lai."
+            : "No keyword match in loaded messages yet. Load older messages and try again."
+          : language === "vi"
+            ? "Khong tim thay tin nhan chua cum tu nay."
+            : "No matching messages found.",
+      );
+      return;
+    }
+
+    const resolvedIndex = Math.min(
+      Math.max(preferredIndex ?? matchedMessages.length - 1, 0),
+      matchedMessages.length - 1,
+    );
+    const targetMessage = matchedMessages[resolvedIndex];
+
+    setMessageSearchMatchIndex(resolvedIndex);
+    setMessageSearchFeedback(null);
+    jumpToMessageById(targetMessage.id);
+  };
+
+  const moveBetweenSearchMatches = (direction: -1 | 1) => {
+    if (matchedMessages.length === 0) {
+      runMessageSearch();
+      return;
+    }
+
+    const nextIndex = Math.min(
+      Math.max(messageSearchMatchIndex + direction, 0),
+      matchedMessages.length - 1,
+    );
+    runMessageSearch(nextIndex);
+  };
+
   const inferFileKind = (file: File): "image" | "video" | "file" => {
     const mime = (file.type ?? "").toLowerCase();
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
@@ -1079,19 +1236,39 @@ export function Chat({
 
     setLocalMessages((prev) => [...prev, pendingMessage]);
 
-    await onSendMessage({ parentMessageId: replyingTo?.id ?? null });
-    setReplyingTo(null);
+    try {
+      await onSendMessage({ parentMessageId: replyingTo?.id ?? null });
+      setReplyingTo(null);
 
-    setLocalMessages((prev) =>
-      prev.map((item) =>
-        item.id === localId
-          ? {
-            ...item,
-            status: "sent",
-          }
-          : item,
-      ),
-    );
+      setLocalMessages((prev) =>
+        prev.map((item) =>
+          item.id === localId
+            ? {
+              ...item,
+              status: "sent",
+            }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setLocalMessages((prev) =>
+        prev.map((item) =>
+          item.id === localId
+            ? {
+              ...item,
+              status: "upload_failed",
+            }
+            : item,
+        ),
+      );
+      setPolicyModalMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : language === "vi"
+            ? "Khong the gui tin nhan. Vui long thu lai."
+            : "Could not send this message. Please try again.",
+      );
+    }
   };
 
   const handleKeyDown = async (
@@ -1213,6 +1390,15 @@ export function Chat({
           </button>
           <button
             type="button"
+            onClick={() => setIsMessageSearchOpen((prev) => !prev)}
+            className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
+            title={language === "vi" ? "Tim tin nhan" : "Search messages"}
+            aria-label={language === "vi" ? "Tim tin nhan" : "Search messages"}
+          >
+            <Search size={18} />
+          </button>
+          <button
+            type="button"
             onClick={onVideoCall}
             className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
           >
@@ -1246,6 +1432,98 @@ export function Chat({
           )}
         </div>
       </header>
+
+      {isMessageSearchOpen && (
+        <div className="border-b border-[#1f4673] bg-[#102d52] px-4 py-3 sm:px-6">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#335b89] bg-[#0b213f] px-3 py-2">
+              <Search size={16} className="shrink-0 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={messageSearchQuery}
+                onChange={(event) => setMessageSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    runMessageSearch();
+                  }
+                  if (event.key === "Escape") {
+                    setIsMessageSearchOpen(false);
+                  }
+                }}
+                placeholder={
+                  language === "vi"
+                    ? "Nhap tu hoac cum tu trong tin nhan nhom"
+                    : "Enter a word or phrase from group messages"
+                }
+                className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => runMessageSearch()}
+                className="rounded-lg bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400"
+              >
+                {language === "vi" ? "Tim" : "Search"}
+              </button>
+              <button
+                type="button"
+                onClick={() => moveBetweenSearchMatches(-1)}
+                disabled={matchedMessages.length === 0 || messageSearchMatchIndex === 0}
+                className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
+                title={language === "vi" ? "Ket qua truoc" : "Previous match"}
+                aria-label={language === "vi" ? "Ket qua truoc" : "Previous match"}
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => moveBetweenSearchMatches(1)}
+                disabled={
+                  matchedMessages.length === 0 ||
+                  messageSearchMatchIndex >= matchedMessages.length - 1
+                }
+                className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
+                title={language === "vi" ? "Ket qua tiep theo" : "Next match"}
+                aria-label={language === "vi" ? "Ket qua tiep theo" : "Next match"}
+              >
+                <ChevronDown size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMessageSearchOpen(false);
+                  setMessageSearchFeedback(null);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f]"
+                title={language === "vi" ? "Dong tim kiem" : "Close search"}
+                aria-label={language === "vi" ? "Dong tim kiem" : "Close search"}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-1 font-semibold text-sky-100">
+              {language === "vi" ? "Tim trong tin nhan da tai" : "Search loaded messages"}
+            </span>
+            {normalizedMessageSearchQuery && matchedMessages.length > 0 && (
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-emerald-100">
+                {language === "vi"
+                  ? `Ket qua ${messageSearchMatchIndex + 1}/${matchedMessages.length}`
+                  : `Match ${messageSearchMatchIndex + 1}/${matchedMessages.length}`}
+              </span>
+            )}
+            {messageSearchFeedback && (
+              <span className="text-amber-100">{messageSearchFeedback}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {latestPinnedSummary && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
@@ -1517,6 +1795,11 @@ export function Chat({
                       canPin={canPinMessages}
                       onVotePoll={(targetMessage, optionId) => onVotePollMessage?.(targetMessage, optionId)}
                       onClosePoll={(targetMessage) => onClosePollMessage?.(targetMessage)}
+                      onSenderClick={
+                        senderProfile || message.senderId === currentUserId
+                          ? () => onOpenUserProfile?.(message.senderId)
+                          : undefined
+                      }
                     />
                   </div>
                 );
@@ -1911,3 +2194,5 @@ export function Chat({
     </div>
   );
 }
+
+export { GroupConversationPane as Chat };

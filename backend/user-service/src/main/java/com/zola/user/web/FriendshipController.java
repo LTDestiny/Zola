@@ -373,6 +373,13 @@ public class FriendshipController {
         return ApiResponse.ok("Sent pending friendship requests", requests);
     }
 
+    @GetMapping({"/sent-pending", "/sent"})
+    public ApiResponse<List<PendingFriendRequest>> getSentPendingRequestsCompat(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        return getSentPendingRequests(userIdHeader);
+    }
+
     @GetMapping("/friends")
     public ApiResponse<List<FriendContact>> getFriends(
         @RequestHeader("X-User-Id") String userIdHeader

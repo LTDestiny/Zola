@@ -299,12 +299,24 @@ public class GatewayProxyController {
     @GetMapping("/users/friendships/pending/sent")
     public ApiResponse<Object> sentPendingFriendRequests(HttpServletRequest request) {
         String userId = currentUserId(request);
-        return getMap(
-            userServiceUrl + "/api/v1/users/friendships/pending/sent",
-            null,
-            null,
-            Map.of("X-User-Id", userId)
-        );
+        try {
+            return getMap(
+                userServiceUrl + "/api/v1/users/friendships/pending/sent",
+                null,
+                null,
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            return ApiResponse.ok("Sent pending friendship requests endpoint unavailable", java.util.List.of());
+        }
+    }
+
+    @GetMapping({"/users/friendships/sent-pending", "/users/friendships/sent"})
+    public ApiResponse<Object> sentPendingFriendRequestsCompat(HttpServletRequest request) {
+        return sentPendingFriendRequests(request);
     }
 
     @GetMapping("/users/friendships/pending/unread-count")
@@ -381,22 +393,6 @@ public class GatewayProxyController {
                 Map.of("X-User-Id", userId)
             );
         }
-        emitBlockSync(response, "FRIENDSHIP_BLOCKED");
-        return response;
-    }
-
-    @PostMapping("/users/friendships/block/{targetUserId}")
-    public ApiResponse<Object> blockUserLegacyRoute(
-        @PathVariable("targetUserId") String targetUserId,
-        HttpServletRequest request
-    ) {
-        String userId = currentUserId(request);
-        ApiResponse<Object> response = postMap(
-            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}",
-            Map.of(),
-            Map.of("targetUserId", targetUserId),
-            Map.of("X-User-Id", userId)
-        );
         emitBlockSync(response, "FRIENDSHIP_BLOCKED");
         return response;
     }
@@ -480,38 +476,6 @@ public class GatewayProxyController {
                 );
             }
         }
-        emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
-        return response;
-    }
-
-    @PostMapping("/users/friendships/unblock/{targetUserId}")
-    public ApiResponse<Object> unblockUserLegacyRoute(
-        @PathVariable("targetUserId") String targetUserId,
-        HttpServletRequest request
-    ) {
-        String userId = currentUserId(request);
-        ApiResponse<Object> response = postMap(
-            userServiceUrl + "/api/v1/users/friendships/unblock/{targetUserId}",
-            Map.of(),
-            Map.of("targetUserId", targetUserId),
-            Map.of("X-User-Id", userId)
-        );
-        emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
-        return response;
-    }
-
-    @PostMapping("/users/friendships/block/{targetUserId}/unblock")
-    public ApiResponse<Object> unblockUserLegacyNestedRoute(
-        @PathVariable("targetUserId") String targetUserId,
-        HttpServletRequest request
-    ) {
-        String userId = currentUserId(request);
-        ApiResponse<Object> response = postMap(
-            userServiceUrl + "/api/v1/users/friendships/block/{targetUserId}/unblock",
-            Map.of(),
-            Map.of("targetUserId", targetUserId),
-            Map.of("X-User-Id", userId)
-        );
         emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
         return response;
     }
