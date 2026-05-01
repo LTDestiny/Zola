@@ -133,10 +133,11 @@ export function ChatMessageRow({
   };
 
   return (
-    <div className={`group flex w-full ${isMine ? "justify-end" : "justify-start"}`}>
+    <div className={`group flex w-full ${isMine ? "justify-end pl-8 sm:pl-16" : "justify-start pr-8 sm:pr-16"}`}>
       <div
         ref={rowRef}
-        className={`relative flex max-w-full items-end gap-2 rounded-xl px-1 py-1 transition-colors duration-150 ${showMenu ? "bg-slate-800/45" : "bg-transparent"}`}
+        className={`relative flex max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] items-end gap-2 rounded-xl py-1 transition-colors duration-150 ${isMine ? "flex-row-reverse" : ""} ${showMenu ? "bg-slate-800/45" : "bg-transparent"}`}
+
         onTouchStart={startLongPress}
         onTouchEnd={endLongPress}
         onTouchCancel={endLongPress}
@@ -153,7 +154,7 @@ export function ChatMessageRow({
             <button
               type="button"
               onClick={() => onSenderClick?.(message.senderId)}
-              className="shrink-0 rounded-full"
+              className="shrink-0 rounded-full self-end"
             >
               <img
                 src={resolvedSenderAvatarUrl}
@@ -165,7 +166,7 @@ export function ChatMessageRow({
             <button
               type="button"
               onClick={() => onSenderClick?.(message.senderId)}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-700 text-[10px] font-bold text-slate-100"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-700 text-[10px] font-bold text-slate-100 self-end"
             >
               {recipientAvatar ?? "U"}
             </button>
@@ -174,8 +175,8 @@ export function ChatMessageRow({
 
         {!isMine && !showAvatar && <div className="w-9 shrink-0" />}
 
-        <div className={`relative flex flex-col ${isMine ? "items-end" : "items-start"}`}>
-          <div className={`pointer-events-none absolute top-0 h-full w-56 ${isMine ? "-left-56" : "-right-56"}`} />
+        <div className={`relative flex flex-col min-w-0 ${isMine ? "items-end" : "items-start"}`}>
+          <div className={`pointer-events-none absolute top-0 h-full w-12 ${isMine ? "-left-12" : "-right-12"}`} />
 
           {!isMine && showSenderName && (
             <button
@@ -210,6 +211,7 @@ export function ChatMessageRow({
             onMouseDown={onSelectionMouseDown}
             onMouseEnter={onSelectionMouseEnter}
             className={`relative rounded-[1.35rem] transition-all duration-150 ${isSelected ? "ring-2 ring-sky-300/75 shadow-[0_0_0_1px_rgba(125,211,252,0.16)]" : ""}`}
+
           >
             {isSelected && (
               <div

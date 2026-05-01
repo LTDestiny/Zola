@@ -113,6 +113,7 @@ export type PendingFriendRequestItem = {
   requesterId: string;
   addresseeId: string;
   status: string;
+  createdAt?: string;
 };
 
 export type FriendContactItem = {
@@ -324,9 +325,9 @@ export async function getPendingFriendRequests() {
 
 export async function getSentPendingFriendRequests() {
   const paths = [
+    "/api/v1/users/friendships/requests/sent",
     "/api/v1/users/friendships/pending/sent",
     "/api/v1/users/friendships/sent-pending",
-    "/api/v1/users/friendships/sent",
   ];
   let latestError: unknown;
 
@@ -439,11 +440,10 @@ export async function getBlockedUsers() {
 }
 
 export async function blockUser(targetUserId: string) {
-  const body = { targetUserId };
   try {
     const response = await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
-      "/api/v1/users/friendships/block",
-      body,
+      `/api/v1/users/friendships/${targetUserId}/block`,
+      {},
     );
     return {
       ...response.data,
@@ -459,7 +459,15 @@ export async function blockUser(targetUserId: string) {
     }
   }
 
+  const body = { targetUserId };
   const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatusPayload>>> = [
+    async () =>
+      (
+        await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+          "/api/v1/users/friendships/block",
+          body,
+        )
+      ).data,
     async () =>
       (
         await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
@@ -509,7 +517,7 @@ export async function blockUser(targetUserId: string) {
 export async function unblockUser(targetUserId: string) {
   try {
     const response = await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
-      `/api/v1/users/friendships/block/${targetUserId}`,
+      `/api/v1/users/friendships/${targetUserId}/block`,
     );
     return {
       ...response.data,
@@ -526,6 +534,12 @@ export async function unblockUser(targetUserId: string) {
   }
 
   const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatusPayload>>> = [
+    async () =>
+      (
+        await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
+          `/api/v1/users/friendships/block/${targetUserId}`,
+        )
+      ).data,
     async () =>
       (
         await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
@@ -588,6 +602,17 @@ export async function declineFriendRequest(friendshipId: string) {
 
 export async function cancelFriendRequest(friendshipId: string) {
   try {
+    const response = await httpClient.delete<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/requests/${friendshipId}`);
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
     const response = await httpClient.post<
       ApiResponse<{ friendshipId: string; status: string }>
     >(`/api/v1/users/friendships/${friendshipId}/cancel`, {});
@@ -596,12 +621,12 @@ export async function cancelFriendRequest(friendshipId: string) {
     if (!shouldFallbackLegacyEndpoint(error)) {
       throw error;
     }
-
-    const legacyResponse = await httpClient.delete<
-      ApiResponse<{ friendshipId: string; status: string }>
-    >(`/api/v1/users/friendships/${friendshipId}/cancel`);
-    return legacyResponse.data;
   }
+
+  const legacyResponse = await httpClient.delete<
+    ApiResponse<{ friendshipId: string; status: string }>
+  >(`/api/v1/users/friendships/${friendshipId}/cancel`);
+  return legacyResponse.data;
 }
 
 export async function removeFriend(friendshipId: string) {

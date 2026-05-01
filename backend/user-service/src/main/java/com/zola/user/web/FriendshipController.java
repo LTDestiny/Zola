@@ -260,6 +260,14 @@ public class FriendshipController {
         ));
     }
 
+    @PostMapping("/{targetUserId}/block")
+    public ApiResponse<Map<String, Object>> blockUserByTargetId(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return blockUser(userIdHeader, new BlockUserRequest(targetUserId));
+    }
+
     // Backward compatibility for deployments using path-variable block routes.
     @PostMapping("/block/{targetUserId}")
     public ApiResponse<Map<String, Object>> blockUserCompatPost(
@@ -308,6 +316,14 @@ public class FriendshipController {
             "blockedByMe", false,
             "blockedByPeer", blockedByPeer
         ));
+    }
+
+    @DeleteMapping("/{targetUserId}/block")
+    public ApiResponse<Map<String, Object>> unblockUserByTargetId(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return unblockUser(userIdHeader, targetUserId);
     }
 
     // Backward compatibility for deployments exposing POST-based unblock routes.
@@ -373,6 +389,13 @@ public class FriendshipController {
         return ApiResponse.ok("Sent pending friendship requests", requests);
     }
 
+    @GetMapping("/requests/sent")
+    public ApiResponse<List<PendingFriendRequest>> getSentPendingRequestsV2(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        return getSentPendingRequests(userIdHeader);
+    }
+
     @GetMapping({"/sent-pending", "/sent"})
     public ApiResponse<List<PendingFriendRequest>> getSentPendingRequestsCompat(
         @RequestHeader("X-User-Id") String userIdHeader
@@ -430,7 +453,7 @@ public class FriendshipController {
     ) {
         UUID userId = parseUserId(userIdHeader);
         FriendshipEntity relation = friendshipRepository.findById(friendshipId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+            .orElseGet(() -> friendshipRepository.findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(userId, friendshipId, friendshipId, userId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found")));
 
         if (!relation.getAddresseeId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot accept this request");
@@ -458,7 +481,7 @@ public class FriendshipController {
     ) {
         UUID userId = parseUserId(userIdHeader);
         FriendshipEntity relation = friendshipRepository.findById(friendshipId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+            .orElseGet(() -> friendshipRepository.findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(userId, friendshipId, friendshipId, userId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found")));
 
         if (!relation.getAddresseeId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot decline this request");
@@ -506,7 +529,7 @@ public class FriendshipController {
     ) {
         UUID userId = parseUserId(userIdHeader);
         FriendshipEntity relation = friendshipRepository.findById(friendshipId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found"));
+            .orElseGet(() -> friendshipRepository.findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(userId, friendshipId, friendshipId, userId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found")));
 
         if (!relation.getRequesterId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot cancel this request");
@@ -530,6 +553,14 @@ public class FriendshipController {
             "requesterId", updated.getRequesterId().toString(),
             "addresseeId", updated.getAddresseeId().toString()
         ));
+    }
+
+    @DeleteMapping("/requests/{friendshipId}")
+    public ApiResponse<Map<String, Object>> cancelRequestByRequestId(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("friendshipId") UUID friendshipId
+    ) {
+        return cancelRequest(userIdHeader, friendshipId);
     }
 
     @DeleteMapping("/{friendshipId}/cancel")
@@ -626,3 +657,4 @@ public class FriendshipController {
             || STATUS_CANCELLED.equals(normalized);
     }
 }
+

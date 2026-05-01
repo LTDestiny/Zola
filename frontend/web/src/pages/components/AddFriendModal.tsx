@@ -1,4 +1,5 @@
 import { type UserProfile } from "../../api/chatApi";
+import { normalizeFriendshipStatus } from "../../utils/friendship";
 
 type AddFriendModalProps = {
   language: "vi" | "en";
@@ -40,29 +41,25 @@ export function AddFriendModal({
 }: AddFriendModalProps) {
   if (!open) return null;
 
+  const normalized = normalizeFriendshipStatus(friendshipStatus);
   const statusText = (() => {
-    const normalized = friendshipStatus.trim().toUpperCase();
     if (language === "vi") {
       if (normalized === "NONE") return "Nguoi la";
       if (normalized === "PENDING") return "Dang cho xac nhan";
       if (normalized === "ACCEPTED") return "Ban be";
       if (normalized === "BLOCKED") return "Da chan";
-      if (normalized === "REJECTED") return "Da tu choi";
-      if (normalized === "DECLINED") return "Da tu choi";
-      if (normalized === "CANCELLED" || normalized === "CANCELED") return "Da huy loi moi";
-      if (normalized === "BLOCKED") return "Da chan";
-      return normalized || "Nguoi la";
+      if (normalized === "REJECTED" || normalized === "DECLINED") return "Da tu choi";
+      if (normalized === "CANCELLED") return "Da thu hoi loi moi";
+      return "Nguoi la";
     }
 
     if (normalized === "NONE") return "Stranger";
     if (normalized === "PENDING") return "Pending";
     if (normalized === "ACCEPTED") return "Accepted";
     if (normalized === "BLOCKED") return "Blocked";
-    if (normalized === "REJECTED") return "Rejected";
-    if (normalized === "DECLINED") return "Declined";
-    if (normalized === "CANCELLED" || normalized === "CANCELED") return "Cancelled";
-    if (normalized === "BLOCKED") return "Blocked";
-    return normalized || "Stranger";
+    if (normalized === "REJECTED" || normalized === "DECLINED") return "Declined";
+    if (normalized === "CANCELLED") return "Cancelled";
+    return "Stranger";
   })();
 
   return (

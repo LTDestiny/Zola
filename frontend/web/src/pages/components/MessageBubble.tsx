@@ -185,10 +185,10 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
     const structuredPayload = parseStructuredPayload(message.text);
 
     const bubbleFrame = message.isRecalled
-        ? `w-fit min-w-[44px] max-w-[82vw] lg:max-w-[62vw] rounded-2xl px-4 py-3 shadow-sm ${isMine ? recalledOutgoingTone : recalledIncomingTone}`
+        ? `w-fit min-w-fit max-w-[60%] rounded-xl px-3 py-2 shadow-sm ${isMine ? recalledOutgoingTone : recalledIncomingTone}`
         : isVisualMedia
-        ? "w-fit min-w-[44px] max-w-[82vw] lg:max-w-[62vw] overflow-hidden rounded-2xl shadow-sm"
-        : `w-fit min-w-[44px] max-w-[82vw] lg:max-w-[62vw] rounded-2xl px-4 py-3 shadow-sm ${isMine ? outgoingTone : incomingTone}`;
+        ? "w-fit min-w-fit max-w-[60%] overflow-hidden rounded-xl shadow-sm"
+        : `w-fit min-w-fit max-w-[60%] rounded-xl px-3 py-2 shadow-sm ${isMine ? outgoingTone : incomingTone}`;
 
     let content: React.ReactNode;
 
@@ -643,7 +643,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
             }
 
             content = (
-                <p className="max-w-full whitespace-pre-wrap wrap-break-word [word-break:break-word] text-sm leading-relaxed">
+                <p className="whitespace-pre-wrap break-words [word-break:normal] text-sm leading-[1.4]">
                     {renderTextWithMentions(summarizeStructuredText(message.text) || message.text)}
                 </p>
             );

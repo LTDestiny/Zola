@@ -314,6 +314,24 @@ public class GatewayProxyController {
         }
     }
 
+    @GetMapping("/users/friendships/requests/sent")
+    public ApiResponse<Object> sentPendingFriendRequestsV2(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        try {
+            return getMap(
+                userServiceUrl + "/api/v1/users/friendships/requests/sent",
+                null,
+                null,
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            return sentPendingFriendRequests(request);
+        }
+    }
+
     @GetMapping({"/users/friendships/sent-pending", "/users/friendships/sent"})
     public ApiResponse<Object> sentPendingFriendRequestsCompat(HttpServletRequest request) {
         return sentPendingFriendRequests(request);
@@ -406,6 +424,14 @@ public class GatewayProxyController {
         return blockUser(new BlockUserRequest(java.util.UUID.fromString(targetUserId)), request);
     }
 
+    @PostMapping("/users/friendships/{targetUserId}/block")
+    public ApiResponse<Object> blockUserByTargetId(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        return blockUserCompatPostPath(targetUserId, request);
+    }
+
     @PutMapping("/users/friendships/block")
     public ApiResponse<Object> blockUserCompatPut(
         @Valid @RequestBody BlockUserRequest body,
@@ -478,6 +504,14 @@ public class GatewayProxyController {
         }
         emitBlockSync(response, "FRIENDSHIP_UNBLOCKED");
         return response;
+    }
+
+    @DeleteMapping("/users/friendships/{targetUserId}/block")
+    public ApiResponse<Object> unblockUserByTargetId(
+        @PathVariable("targetUserId") String targetUserId,
+        HttpServletRequest request
+    ) {
+        return unblockUser(targetUserId, request);
     }
 
     @PostMapping("/users/friendships/unblock")
@@ -559,6 +593,29 @@ public class GatewayProxyController {
                 Map.of("friendshipId", friendshipId),
                 Map.of("X-User-Id", userId)
             );
+        }
+        emitFriendshipSync(response, "FRIENDSHIP_REQUEST_CANCELLED");
+        return response;
+    }
+
+    @DeleteMapping("/users/friendships/requests/{friendshipId}")
+    public ApiResponse<Object> cancelFriendRequestByRequestId(
+        @PathVariable("friendshipId") String friendshipId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        ApiResponse<Object> response;
+        try {
+            response = deleteMap(
+                userServiceUrl + "/api/v1/users/friendships/requests/{friendshipId}",
+                Map.of("friendshipId", friendshipId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            response = cancelFriendRequest(friendshipId, request);
         }
         emitFriendshipSync(response, "FRIENDSHIP_REQUEST_CANCELLED");
         return response;

@@ -1,5 +1,6 @@
 import { Ban, MessageCircle, UserPlus, X } from "lucide-react";
 import type { UserProfile } from "../../api/chatApi";
+import { normalizeFriendshipStatus } from "../../utils/friendship";
 import { resolveMediaUrl } from "../utils/mediaUrl";
 
 type UserProfilePreviewModalProps = {
@@ -67,7 +68,19 @@ function formatBirthdate(value: string | null | undefined, language: "vi" | "en"
   }).format(date);
 }
 
-function friendshipLabel(status: string | undefined, language: "vi" | "en") {
+function friendshipLabel(
+  status: string | undefined,
+  language: "vi" | "en",
+  blockedByMe: boolean,
+  blockedByPeer: boolean,
+) {
+  if (blockedByMe) {
+    return language === "vi" ? "Da chan" : "You blocked";
+  }
+  if (blockedByPeer) {
+    return language === "vi" ? "Bi chan" : "Blocked you";
+  }
+
   const normalized = String(status ?? "NONE").trim().toUpperCase();
   if (normalized === "ACCEPTED") {
     return language === "vi" ? "Ban be" : "Friends";
@@ -82,7 +95,7 @@ function friendshipLabel(status: string | undefined, language: "vi" | "en") {
     return language === "vi" ? "Da tu choi" : "Declined";
   }
   if (normalized === "CANCELLED" || normalized === "CANCELED") {
-    return language === "vi" ? "Da huy loi moi" : "Cancelled";
+    return language === "vi" ? "Da thu hoi loi moi" : "Cancelled";
   }
   return language === "vi" ? "Nguoi la" : "Stranger";
 }
@@ -114,13 +127,14 @@ export function UserProfilePreviewModal({
   }
 
   const avatarUrl = resolveMediaUrl(profile.avatarUrl ?? null);
-  const normalizedFriendshipStatus = friendshipStatus.trim().toUpperCase();
+  const normalizedFriendshipStatus = normalizeFriendshipStatus(friendshipStatus);
   const isIncomingPending =
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "incoming";
   const isOutgoingPending =
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "outgoing";
+  const isBlocked = blockedByMe || blockedByPeer;
   const isFriend = normalizedFriendshipStatus === "ACCEPTED";
   const isStrangerProfile =
     !isCurrentUser &&
@@ -187,7 +201,7 @@ export function UserProfilePreviewModal({
                     ? language === "vi"
                       ? "Tai khoan cua ban"
                       : "Your account"
-                    : friendshipLabel(friendshipStatus, language)}
+                    : friendshipLabel(friendshipStatus, language, blockedByMe, blockedByPeer)}
                 </span>
               </div>
               <p className="mt-2 text-sm text-slate-300">
@@ -268,7 +282,7 @@ export function UserProfilePreviewModal({
                 </button>
               </div>
 
-              {isIncomingPending && (
+              {isIncomingPending && !isBlocked && (
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -291,7 +305,7 @@ export function UserProfilePreviewModal({
                 </div>
               )}
 
-              {isOutgoingPending && (
+              {isOutgoingPending && !isBlocked && (
                 <button
                   type="button"
                   onClick={() => void onCancelFriendRequest?.()}
@@ -299,11 +313,11 @@ export function UserProfilePreviewModal({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <X size={16} />
-                  <span>{language === "vi" ? "Huy loi moi ket ban" : "Cancel friend request"}</span>
+                  <span>{language === "vi" ? "Thu hoi loi moi" : "Cancel request"}</span>
                 </button>
               )}
 
-              {isFriend && (
+              {isFriend && !isBlocked && (
                 <button
                   type="button"
                   onClick={() => void onRemoveFriend?.()}
@@ -315,7 +329,7 @@ export function UserProfilePreviewModal({
                 </button>
               )}
 
-              {(normalizedFriendshipStatus === "NONE" ||
+              {!isBlocked && (normalizedFriendshipStatus === "NONE" ||
                 normalizedFriendshipStatus === "REJECTED" ||
                 normalizedFriendshipStatus === "DECLINED" ||
                 normalizedFriendshipStatus === "CANCELLED") && (

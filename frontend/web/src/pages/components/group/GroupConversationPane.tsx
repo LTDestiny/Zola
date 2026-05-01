@@ -1610,7 +1610,8 @@ export function GroupConversationPane({
 
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0a1f3d_0%,#0b213f_100%)] px-4 py-5 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0a1f3d_0%,#0b213f_100%)] px-2 py-4 sm:px-3 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+
         onClickCapture={(event) => {
           focusComposerFromChat(event.target);
         }}
@@ -1638,7 +1639,7 @@ export function GroupConversationPane({
             </p>
           </div>
         )}
-        <div className="mx-auto w-full max-w-full lg:max-w-6xl xl:max-w-7xl">
+        <div className="w-full">
           {isLoadingMessages ? (
             <div className="flex justify-center py-10">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-300"></div>

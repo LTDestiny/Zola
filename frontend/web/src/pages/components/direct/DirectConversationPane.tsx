@@ -1697,7 +1697,8 @@ export function DirectConversationPane({
 
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d223b_0%,#102841_100%)] px-4 py-5 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d223b_0%,#102841_100%)] px-2 py-4 sm:px-3 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+
         onClickCapture={(event) => {
           focusComposerFromChat(event.target);
         }}
@@ -1725,7 +1726,7 @@ export function DirectConversationPane({
             </p>
           </div>
         )}
-        <div className="mx-auto w-full max-w-full lg:max-w-6xl xl:max-w-7xl">
+        <div className="w-full">
           {isLoadingMessages ? (
             <div className="flex justify-center py-10">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-300"></div>
@@ -1897,7 +1898,7 @@ export function DirectConversationPane({
                   : "This user sent you a friend request. Accept or decline?"
                 : resolvedStrangerActionMode === "outgoing-request"
                   ? language === "vi"
-                    ? "Ban da gui loi moi ket ban. Ban co muon huy loi moi nay khong?"
+                    ? "Ban da gui loi moi ket ban. Ban co muon thu hoi loi moi nay khong?"
                     : "You already sent a friend request. Do you want to cancel it?"
                   : language === "vi"
                     ? "Ban co muon gui loi moi ket ban voi nguoi nay hoac chan ho?"
@@ -1953,7 +1954,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-amber-300/60 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <X size={13} />
-                    {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                    {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
                   </button>
                   <button
                     type="button"
