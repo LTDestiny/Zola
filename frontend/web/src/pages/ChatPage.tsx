@@ -15,9 +15,9 @@ import {
   acceptFriendRequest,
   addReaction,
   addGroupMember,
-  addFriend,
-  blockUser as blockUserRequest,
+  blockRelationshipUser,
   cancelFriendRequest,
+  cancelFriendRequestForUser,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -29,7 +29,6 @@ import {
   getConversations,
   getBlockedUsers,
   getFriends,
-  getFriendshipStatus,
   getGroupSettings,
   getMessages,
   getMyProfile,
@@ -49,9 +48,10 @@ import {
   removeReaction,
   searchUserByEmail,
   sendMessage,
+  sendFriendRequest,
   setGroupAdmin,
   toApiErrorMessage,
-  unblockUser as unblockUserRequest,
+  unblockRelationshipUser,
   updateMyProfile,
   updateGroupSettings,
   type FriendshipStatusPayload,
@@ -89,7 +89,9 @@ import { GroupChat } from "./components/GroupChat.jsx";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
+import { useRelationshipStore } from "../stores/relationshipStore";
 import { useTyping } from "../hooks/useTyping";
+import { useRelationshipStatus } from "../hooks/useRelationshipStatus";
 import { resolveMediaUrl } from "./utils/mediaUrl";
 import {
   CallManager,
@@ -99,6 +101,7 @@ import { DirectConversationPane } from "./components/direct/DirectConversationPa
 import { GroupConversationPane } from "./components/group/GroupConversationPane";
 import { UserProfilePreviewModal } from "./components/UserProfilePreviewModal";
 import { normalizeFriendshipStatus, resolveBlockedState, resolveBlockRelationship, type FriendshipStatus } from "../utils/friendship";
+import { relationshipToLegacyFriendshipStatus, relationshipToRequestDirection, type RelationshipEntry } from "../utils/relationship";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -742,6 +745,12 @@ export function ChatPage() {
     Record<string, UserPresenceState>
   >({});
   const [presenceTick, setPresenceTick] = useState(Date.now());
+
+  const relationshipEntries = useRelationshipStore((state) => state.entries);
+  const setRelationshipEntry = useRelationshipStore((state) => state.setEntry);
+  const clearRelationshipEntry = useRelationshipStore((state) => state.clearEntry);
+  const hydrateRelationshipStatuses = useRelationshipStore((state) => state.hydrateFromCollections);
+  const fetchRelationshipEntry = useRelationshipStore((state) => state.fetchEntry);
 
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -4152,26 +4161,46 @@ export function ChatPage() {
 
       const isSentEndpointUnavailable = sentPendingResult.message?.includes("endpoint unavailable");
 
+      setPendingFriendRequests(pending);
       setSentPendingFriendRequests((prev) => {
-        if (isSentEndpointUnavailable) {
-          const merged = new Map<string, PendingFriendRequestItem>();
-          sentPendingFetched.forEach(item => merged.set(item.addresseeId, item));
-          prev.forEach(item => {
-            if (!uniqueIncomingByUserId.has(item.addresseeId) && !hiddenUserIds.has(item.addresseeId) && !friendIds.has(item.addresseeId)) {
-              merged.set(item.addresseeId, item);
-            }
-          });
-          return Array.from(merged.values());
+        if (!isSentEndpointUnavailable) {
+          return sentPendingFetched;
         }
-        return sentPendingFetched;
+
+        const merged = new Map<string, PendingFriendRequestItem>();
+        sentPendingFetched.forEach((item) => {
+          merged.set(item.addresseeId, item);
+        });
+        prev.forEach((item) => {
+          if (
+            item.requesterId !== currentUserId ||
+            uniqueIncomingByUserId.has(item.addresseeId) ||
+            hiddenUserIds.has(item.addresseeId) ||
+            friendIds.has(item.addresseeId) ||
+            normalizeFriendshipStatus(item.status) !== "PENDING"
+          ) {
+            return;
+          }
+          merged.set(item.addresseeId, item);
+        });
+        return Array.from(merged.values());
       });
 
-      setPendingFriendRequests(pending);
       setFriendContacts(friends);
       setBlockedUserIds(blockedIds);
       setPendingFriendRequestsUnreadCount(
         Math.max(0, unreadResult.data?.count ?? 0),
       );
+      hydrateRelationshipStatuses({
+        currentUserId,
+        pendingFriendRequests: pending,
+        sentPendingFriendRequests: isSentEndpointUnavailable
+          ? sentPendingFriendRequests
+          : sentPendingFetched,
+        friendContacts: friends,
+        blockedUserIds: blockedIds,
+        blockedByPeerUserIds,
+      });
 
       const ids = Array.from(
         new Set([
@@ -4731,6 +4760,48 @@ export function ChatPage() {
       },
       onSyncEvent: (event) => {
         if (event.eventType.startsWith("FRIENDSHIP_")) {
+          if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
+            try {
+              const payload = event.payload ? JSON.parse(event.payload) : null;
+              const requesterId = String(payload?.requesterId ?? "").trim();
+              const friendshipId = String(payload?.friendshipId ?? "").trim();
+              const myUserId = myUserIdRef.current;
+
+              if (requesterId && friendshipId && myUserId) {
+                setPendingFriendRequests((prev) => {
+                  const next = prev.filter((item) => item.requesterId !== requesterId);
+                  return [
+                    ...next,
+                    {
+                      friendshipId,
+                      requesterId,
+                      addresseeId: myUserId,
+                      status: "PENDING",
+                      createdAt: new Date().toISOString(),
+                    },
+                  ];
+                });
+                setSentPendingFriendRequests((prev) =>
+                  prev.filter((item) => item.addresseeId !== requesterId),
+                );
+                setRelationshipEntry({
+                  targetUserId: requesterId,
+                  status: "INCOMING_REQUEST",
+                  requestId: friendshipId,
+                  friendshipId,
+                  requesterId,
+                  addresseeId: myUserId,
+                  isBlockedByMe: false,
+                  isBlockedMe: false,
+                  updatedAt: Date.now(),
+                });
+                setPendingFriendRequestsUnreadCount((prev) => prev + 1);
+              }
+            } catch {
+              // Ignore malformed payloads; reconcile from API below.
+            }
+          }
+
           if (
             event.eventType === "FRIENDSHIP_BLOCKED" ||
             event.eventType === "FRIENDSHIP_UNBLOCKED"
@@ -4752,6 +4823,47 @@ export function ChatPage() {
                       : null;
 
                 if (counterpartyUserId) {
+                  const hadIncomingPending = pendingFriendRequests.some(
+                    (item) => item.requesterId === counterpartyUserId,
+                  );
+                  setRelationshipEntry({
+                    targetUserId: counterpartyUserId,
+                    status: isBlockedEvent
+                      ? blockerId === myUserId
+                        ? "BLOCKED_BY_ME"
+                        : "BLOCKED_ME"
+                      : "NONE",
+                    requestId: null,
+                    friendshipId: null,
+                    requesterId: null,
+                    addresseeId: null,
+                    isBlockedByMe: isBlockedEvent && blockerId === myUserId,
+                    isBlockedMe: isBlockedEvent && blockedUserId === myUserId,
+                    updatedAt: Date.now(),
+                  });
+                  if (isBlockedEvent) {
+                    setPendingFriendRequests((prev) =>
+                      prev.filter(
+                        (item) =>
+                          item.requesterId !== counterpartyUserId &&
+                          item.addresseeId !== counterpartyUserId,
+                      ),
+                    );
+                    setSentPendingFriendRequests((prev) =>
+                      prev.filter(
+                        (item) =>
+                          item.requesterId !== counterpartyUserId &&
+                          item.addresseeId !== counterpartyUserId,
+                      ),
+                    );
+                    setFriendContacts((prev) =>
+                      prev.filter((item) => item.userId !== counterpartyUserId),
+                    );
+                    if (hadIncomingPending) {
+                      setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
+                    }
+                  }
+
                   if (blockerId === myUserId) {
                     setBlockedUserIds((prev) =>
                       isBlockedEvent
@@ -4861,6 +4973,22 @@ export function ChatPage() {
                 addresseeId === myUserId ? requesterId : null;
 
               if (counterpartyUserId) {
+                const hadIncomingPending = pendingFriendRequests.some(
+                  (item) =>
+                    item.requesterId === counterpartyUserId &&
+                    (!friendshipId || item.friendshipId === friendshipId),
+                );
+                setRelationshipEntry({
+                  targetUserId: counterpartyUserId,
+                  status: "NONE",
+                  requestId: null,
+                  friendshipId: null,
+                  requesterId: null,
+                  addresseeId: null,
+                  isBlockedByMe: false,
+                  isBlockedMe: false,
+                  updatedAt: Date.now(),
+                });
                 // Remove from pending/sent lists immediately
                 setSentPendingFriendRequests((prev) =>
                   prev.filter((item) =>
@@ -4881,6 +5009,9 @@ export function ChatPage() {
                     prev.filter((item) => item.userId !== counterpartyUserId),
                   );
                 }
+                if (hadIncomingPending) {
+                  setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
+                }
 
                 const activePeerIdNow = activeDirectPeerIdRef.current;
                 if (activePeerIdNow === counterpartyUserId) {
@@ -4888,6 +5019,59 @@ export function ChatPage() {
                 }
                 if (previewUserProfile?.id === counterpartyUserId) {
                   setPreviewUserFriendshipStatus("NONE");
+                }
+              }
+            } catch {
+              // Ignore malformed payloads; reconcile from API below.
+            }
+          }
+
+          if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED") {
+            try {
+              const payload = event.payload ? JSON.parse(event.payload) : null;
+              const requesterId = payload?.requesterId as string | undefined;
+              const addresseeId = payload?.addresseeId as string | undefined;
+              const friendshipId = payload?.friendshipId as string | undefined;
+              const myUserId = myUserIdRef.current;
+              const counterpartyUserId =
+                requesterId === myUserId ? addresseeId :
+                addresseeId === myUserId ? requesterId : null;
+
+              if (counterpartyUserId) {
+                const hadIncomingPending = pendingFriendRequests.some(
+                  (item) =>
+                    item.requesterId === counterpartyUserId &&
+                    (!friendshipId || item.friendshipId === friendshipId),
+                );
+                setRelationshipEntry({
+                  targetUserId: counterpartyUserId,
+                  status: "FRIEND",
+                  requestId: null,
+                  friendshipId: friendshipId ?? null,
+                  requesterId: requesterId ?? null,
+                  addresseeId: addresseeId ?? null,
+                  isBlockedByMe: false,
+                  isBlockedMe: false,
+                  updatedAt: Date.now(),
+                });
+                setSentPendingFriendRequests((prev) =>
+                  prev.filter(
+                    (item) =>
+                      item.addresseeId !== counterpartyUserId &&
+                      item.requesterId !== counterpartyUserId &&
+                      (!friendshipId || item.friendshipId !== friendshipId),
+                  ),
+                );
+                setPendingFriendRequests((prev) =>
+                  prev.filter(
+                    (item) =>
+                      item.requesterId !== counterpartyUserId &&
+                      item.addresseeId !== counterpartyUserId &&
+                      (!friendshipId || item.friendshipId !== friendshipId),
+                  ),
+                );
+                if (hadIncomingPending) {
+                  setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
                 }
               }
             } catch {
@@ -5233,50 +5417,154 @@ export function ChatPage() {
     activeConversation && activeConversation.type !== "group"
       ? resolvePeerUserId(activeConversation)
       : null;
+  const { relationship: activePeerRelationship } = useRelationshipStatus(
+    activeDirectPeerIdForActions,
+    {
+      enabled: Boolean(
+        activeDirectPeerIdForActions && activeConversation?.type !== "group",
+      ),
+      currentUserId: myProfile?.id,
+    },
+  );
+  const { relationship: previewUserRelationshipFromStore } = useRelationshipStatus(
+    isUserPreviewOpen ? previewUserProfile?.id : null,
+    {
+      enabled: Boolean(isUserPreviewOpen && previewUserProfile?.id),
+      currentUserId: myProfile?.id,
+    },
+  );
+  const syncRelationshipEntryIntoBlockLists = useCallback(
+    (entry: RelationshipEntry | null | undefined) => {
+      const targetUserId = String(entry?.targetUserId ?? "").trim();
+      if (!targetUserId) {
+        return;
+      }
+
+      setBlockedUserIds((prev) =>
+        entry?.isBlockedByMe
+          ? prev.includes(targetUserId)
+            ? prev
+            : [...prev, targetUserId]
+          : prev.filter((userId) => userId !== targetUserId),
+      );
+      setBlockedByPeerUserIds((prev) =>
+        entry?.isBlockedMe
+          ? prev.includes(targetUserId)
+            ? prev
+            : [...prev, targetUserId]
+          : prev.filter((userId) => userId !== targetUserId),
+      );
+    },
+    [],
+  );
+  const stabilizeRelationshipEntry = useCallback(
+    (entry: RelationshipEntry, targetUserId: string): RelationshipEntry => {
+      const normalizedTargetUserId = String(targetUserId ?? "").trim();
+      if (!normalizedTargetUserId) {
+        return entry;
+      }
+
+      if (entry.status === "NONE") {
+        if (blockedUserIds.includes(normalizedTargetUserId)) {
+          return {
+            ...entry,
+            status: "BLOCKED_BY_ME",
+            isBlockedByMe: true,
+            isBlockedMe: false,
+            updatedAt: Date.now(),
+          };
+        }
+        if (blockedByPeerUserIds.includes(normalizedTargetUserId)) {
+          return {
+            ...entry,
+            status: "BLOCKED_ME",
+            isBlockedByMe: false,
+            isBlockedMe: true,
+            updatedAt: Date.now(),
+          };
+        }
+      }
+
+      return entry;
+    },
+    [blockedByPeerUserIds, blockedUserIds],
+  );
   const canComposeDirectForActions = Boolean(
     !activeDirectPeerIdForActions ||
-      (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
-        !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
+      (activePeerRelationship.status !== "BLOCKED_BY_ME" &&
+        activePeerRelationship.status !== "BLOCKED_ME" &&
         !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
   );
 
   const refreshActiveDirectFriendshipStatus = useCallback(
     async (peerUserId: string, shouldIgnore?: () => boolean) => {
       try {
-        const result = await getFriendshipStatus(peerUserId);
+        const fetchedEntry = await fetchRelationshipEntry(peerUserId, myProfile?.id);
         if (shouldIgnore?.()) {
           return;
         }
-        const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
-        setBlockedUserIds((prev) => {
-          const hasUser = prev.includes(peerUserId);
-          if (blockedByMe) {
-            return hasUser ? prev : [...prev, peerUserId];
-          }
-          return hasUser ? prev.filter((userId) => userId !== peerUserId) : prev;
-        });
-        setBlockedByPeerUserIds((prev) => {
-          const hasUser = prev.includes(peerUserId);
-          if (blockedByPeer) {
-            return hasUser ? prev : [...prev, peerUserId];
-          }
-          return hasUser ? prev.filter((userId) => userId !== peerUserId) : prev;
-        });
-        setActiveDirectFriendshipStatus(
-          normalizeFriendshipStatus(result.data?.status ?? "NONE"),
-        );
+        const entry = stabilizeRelationshipEntry(fetchedEntry, peerUserId);
+        if (entry !== fetchedEntry) {
+          setRelationshipEntry(entry);
+        }
+        syncRelationshipEntryIntoBlockLists(entry);
+        setActiveDirectFriendshipStatus(relationshipToLegacyFriendshipStatus(entry));
       } catch {
         if (!shouldIgnore?.()) {
+          if (blockedUserIds.includes(peerUserId) || blockedByPeerUserIds.includes(peerUserId)) {
+            setActiveDirectFriendshipStatus("BLOCKED");
+            return;
+          }
           setActiveDirectFriendshipStatus("NONE");
         }
       }
     },
-    [],
+    [
+      blockedByPeerUserIds,
+      blockedUserIds,
+      fetchRelationshipEntry,
+      myProfile?.id,
+      setRelationshipEntry,
+      stabilizeRelationshipEntry,
+      syncRelationshipEntryIntoBlockLists,
+    ],
   );
 
   useEffect(() => {
     activeDirectPeerIdRef.current = activeDirectPeerIdForActions ?? null;
   }, [activeDirectPeerIdForActions]);
+
+  useEffect(() => {
+    if (!activeDirectPeerIdForActions || activeConversation?.type === "group") {
+      return;
+    }
+
+    syncRelationshipEntryIntoBlockLists(activePeerRelationship);
+    setActiveDirectFriendshipStatus(
+      relationshipToLegacyFriendshipStatus(activePeerRelationship),
+    );
+  }, [
+    activeConversation?.type,
+    activeDirectPeerIdForActions,
+    activePeerRelationship,
+    syncRelationshipEntryIntoBlockLists,
+  ]);
+
+  useEffect(() => {
+    if (!isUserPreviewOpen || !previewUserProfile?.id) {
+      return;
+    }
+
+    syncRelationshipEntryIntoBlockLists(previewUserRelationshipFromStore);
+    setPreviewUserFriendshipStatus(
+      relationshipToLegacyFriendshipStatus(previewUserRelationshipFromStore),
+    );
+  }, [
+    isUserPreviewOpen,
+    previewUserProfile?.id,
+    previewUserRelationshipFromStore,
+    syncRelationshipEntryIntoBlockLists,
+  ]);
 
   useEffect(() => {
     if (!activeDirectPeerIdForActions || activeConversation?.type === "group") {
@@ -6010,8 +6298,12 @@ export function ChatPage() {
       const profileResult = await searchUserByEmail(email);
       setFriendProfile(profileResult.data);
 
-      const statusResult = await getFriendshipStatus(profileResult.data.id);
-      setFriendshipStatus(normalizeFriendshipStatus(statusResult.data.status));
+      const relationship = await fetchRelationshipEntry(
+        profileResult.data.id,
+        myProfile?.id,
+      );
+      syncRelationshipEntryIntoBlockLists(relationship);
+      setFriendshipStatus(relationshipToLegacyFriendshipStatus(relationship));
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -6024,10 +6316,12 @@ export function ChatPage() {
 
     try {
       setIsSubmittingFriend(true);
-      const result = await addFriend(friendProfile.id);
-      const nextStatus = normalizeFriendshipStatus(result.data.status);
+      await sendFriendRequest(friendProfile.id);
+      const relationship = await fetchRelationshipEntry(friendProfile.id, myProfile?.id);
+      const nextStatus = relationshipToLegacyFriendshipStatus(relationship);
       setFriendshipStatus(nextStatus);
-      setPreviewUserFriendshipStatus(nextStatus);
+      setRelationshipEntry(relationship);
+      syncRelationshipEntryIntoBlockLists(relationship);
       await Promise.all([
         fetchFriendshipData(),
         nextStatus === "ACCEPTED"
@@ -6159,12 +6453,15 @@ export function ChatPage() {
     }
   };
 
-  const onCancelFriendRequest = async (friendshipId: string) => {
+  const onCancelFriendRequest = async (friendshipId: string, targetUserId?: string) => {
     // optimistic: remove from sent pending and set direct status to NONE immediately
     setProcessingFriendshipId(friendshipId);
     const prevSentPending = sentPendingFriendRequests;
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
+    const prevRelationshipEntry = targetUserId
+      ? relationshipEntries[targetUserId]
+      : undefined;
 
     try {
       setSentPendingFriendRequests((prev) =>
@@ -6172,15 +6469,46 @@ export function ChatPage() {
       );
       setActiveDirectFriendshipStatus("NONE");
       setPreviewUserFriendshipStatus((_) => "NONE");
+      if (targetUserId) {
+        setRelationshipEntry({
+          targetUserId,
+          status: "NONE",
+          requestId: null,
+          friendshipId: null,
+          requesterId: null,
+          addresseeId: null,
+          isBlockedByMe: false,
+          isBlockedMe: false,
+          updatedAt: Date.now(),
+        });
+      }
 
-      await cancelFriendRequest(friendshipId);
+      if (targetUserId) {
+        await cancelFriendRequestForUser(targetUserId, friendshipId);
+      } else {
+        await cancelFriendRequest(friendshipId);
+      }
       await fetchFriendshipData();
       setBannerMessage(
         language === "vi" ? "Da thu hoi loi moi ket ban" : "Friend request cancelled",
       );
     } catch (error) {
       const status = (error as any)?.response?.status;
-      if (status === 404) {
+      const code = (error as any)?.code;
+      if (status === 404 || code === "RELATIONSHIP_REQUEST_NOT_FOUND") {
+        if (targetUserId) {
+          const relationship = await fetchRelationshipEntry(targetUserId, myProfile?.id);
+          setRelationshipEntry(relationship);
+          syncRelationshipEntryIntoBlockLists(relationship);
+          setActiveDirectFriendshipStatus(
+            relationshipToLegacyFriendshipStatus(relationship),
+          );
+          if (previewUserProfile?.id === targetUserId) {
+            setPreviewUserFriendshipStatus(
+              relationshipToLegacyFriendshipStatus(relationship),
+            );
+          }
+        }
         await fetchFriendshipData();
         setBannerMessage(
           language === "vi"
@@ -6192,6 +6520,11 @@ export function ChatPage() {
         setSentPendingFriendRequests(prevSentPending);
         setActiveDirectFriendshipStatus(prevActiveStatus);
         setPreviewUserFriendshipStatus(prevPreviewStatus);
+        if (targetUserId && prevRelationshipEntry) {
+          setRelationshipEntry(prevRelationshipEntry);
+        } else if (targetUserId) {
+          clearRelationshipEntry(targetUserId);
+        }
         setBannerMessage(toApiErrorMessage(error));
       }
     } finally {
@@ -6234,6 +6567,7 @@ export function ChatPage() {
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
     const prevPeerRejected = peerRejectedMessageUserIds;
+    const prevRelationshipEntry = relationshipEntries[targetUserId];
 
     // apply optimistic changes immediately
     const hasIncomingPendingRequestWithTarget = pendingFriendRequests.some(
@@ -6261,6 +6595,17 @@ export function ChatPage() {
     setPendingFriendRequestsUnreadCount((prev) =>
       hasIncomingPendingRequestWithTarget ? Math.max(0, prev - 1) : prev,
     );
+    setRelationshipEntry({
+      targetUserId,
+      status: "BLOCKED_BY_ME",
+      requestId: null,
+      friendshipId: null,
+      requesterId: null,
+      addresseeId: null,
+      isBlockedByMe: true,
+      isBlockedMe: false,
+      updatedAt: Date.now(),
+    });
 
     if (activeDirectPeerIdForActions === targetUserId) {
       setActiveDirectFriendshipStatus("BLOCKED");
@@ -6276,8 +6621,16 @@ export function ChatPage() {
     }
 
     try {
-      const result = await blockUserRequest(targetUserId);
-      const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
+      await blockRelationshipUser(targetUserId);
+      const entry = stabilizeRelationshipEntry(
+        await fetchRelationshipEntry(targetUserId, myProfile?.id),
+        targetUserId,
+      );
+      const { blockedByMe, blockedByPeer } = {
+        blockedByMe: entry.isBlockedByMe,
+        blockedByPeer: entry.isBlockedMe,
+      };
+      setRelationshipEntry(entry);
 
       // reconcile with server response
       setBlockedUserIds((prev) =>
@@ -6300,6 +6653,11 @@ export function ChatPage() {
       setActiveDirectFriendshipStatus(prevActiveStatus);
       setPreviewUserFriendshipStatus(prevPreviewStatus);
       setPeerRejectedMessageUserIds(prevPeerRejected);
+      if (prevRelationshipEntry) {
+        setRelationshipEntry(prevRelationshipEntry);
+      } else {
+        clearRelationshipEntry(targetUserId);
+      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsUpdatingPeerRelationship(false);
@@ -6317,15 +6675,32 @@ export function ChatPage() {
     const prevBlockedByPeerUserIds = blockedByPeerUserIds;
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
+    const prevRelationshipEntry = relationshipEntries[targetUserId];
 
     setBlockedUserIds((prev) => prev.filter((id) => id !== targetUserId));
     setBlockedByPeerUserIds((prev) => prev.filter((id) => id !== targetUserId));
     setActiveDirectFriendshipStatus((prev) => (prev === "BLOCKED" ? "NONE" : prev));
     setPreviewUserFriendshipStatus((_) => "NONE");
+    setRelationshipEntry({
+      targetUserId,
+      status: "NONE",
+      requestId: null,
+      friendshipId: null,
+      requesterId: null,
+      addresseeId: null,
+      isBlockedByMe: false,
+      isBlockedMe: false,
+      updatedAt: Date.now(),
+    });
 
     try {
-      const result = await unblockUserRequest(targetUserId);
-      const { blockedByPeer } = resolveBlockedState(result.data);
+      await unblockRelationshipUser(targetUserId);
+      const entry = stabilizeRelationshipEntry(
+        await fetchRelationshipEntry(targetUserId, myProfile?.id),
+        targetUserId,
+      );
+      const blockedByPeer = entry.isBlockedMe;
+      setRelationshipEntry(entry);
 
       // reconcile: if still blocked by peer, keep blockedByPeer
       setBlockedByPeerUserIds((prev) =>
@@ -6362,6 +6737,11 @@ export function ChatPage() {
       setBlockedByPeerUserIds(prevBlockedByPeerUserIds);
       setActiveDirectFriendshipStatus(prevActiveStatus);
       setPreviewUserFriendshipStatus(prevPreviewStatus);
+      if (prevRelationshipEntry) {
+        setRelationshipEntry(prevRelationshipEntry);
+      } else {
+        clearRelationshipEntry(targetUserId);
+      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsUpdatingPeerRelationship(false);
@@ -6393,9 +6773,12 @@ export function ChatPage() {
 
     setIsUpdatingPeerRelationship(true);
     try {
-      const result = await addFriend(targetUserId);
-      const nextStatus = normalizeFriendshipStatus(result.data.status);
-      const newFriendshipId = result.data.friendshipId;
+      await sendFriendRequest(targetUserId);
+      const relationship = await fetchRelationshipEntry(targetUserId, myProfile?.id);
+      const nextStatus = relationshipToLegacyFriendshipStatus(relationship);
+      const newFriendshipId = relationship.requestId ?? relationship.friendshipId;
+      setRelationshipEntry(relationship);
+      syncRelationshipEntryIntoBlockLists(relationship);
 
       setActiveDirectFriendshipStatus(nextStatus);
       if (previewUserProfile?.id === targetUserId) {
@@ -6522,31 +6905,25 @@ export function ChatPage() {
         setPreviewUserProfile(cachedProfile);
       }
 
-      const [summaryResult, statusResult] = await Promise.all([
+      const [summaryResult, relationship] = await Promise.all([
         getUserSummary(userId),
-        normalizedMyId ? getFriendshipStatus(userId) : Promise.resolve({ data: { status: "NONE", blockedByMe: false, blockedByPeer: false } }),
+        normalizedMyId
+          ? fetchRelationshipEntry(userId, normalizedMyId)
+          : Promise.resolve(null),
       ]);
-      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data as { blockedByMe?: boolean | null; blockedByPeer?: boolean | null });
 
       setPreviewUserProfile(summaryResult.data);
       setUserProfileMap((prev) => ({
         ...prev,
         [userId]: summaryResult.data,
       }));
-      if (blockedByMe) {
-        setBlockedUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
+      if (relationship) {
+        setRelationshipEntry(relationship);
+        syncRelationshipEntryIntoBlockLists(relationship);
+        setPreviewUserFriendshipStatus(
+          relationshipToLegacyFriendshipStatus(relationship),
+        );
       }
-      if (blockedByPeer) {
-        setBlockedByPeerUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
-      }
-      setPreviewUserFriendshipStatus(
-        blockedByMe ||
-        blockedByPeer ||
-        blockedUserIds.includes(userId) ||
-        blockedByPeerUserIds.includes(userId)
-          ? "BLOCKED"
-          : normalizeFriendshipStatus(statusResult.data.status),
-      );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -6585,22 +6962,30 @@ export function ChatPage() {
       setContactCandidateStatusPayload(null);
       const profileResult = await searchUserByEmail(email);
       const profile = profileResult.data;
-      const statusResult = profile.id === myProfile?.id
-        ? { data: { status: "ACCEPTED" } as FriendshipStatusPayload }
-        : await getFriendshipStatus(profile.id);
-      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
+      const relationship = profile.id === myProfile?.id
+        ? null
+        : await fetchRelationshipEntry(profile.id, myProfile?.id);
 
       setContactCandidateProfile(profile);
-      setContactCandidateStatusPayload(statusResult.data);
+      setContactCandidateStatusPayload(
+        relationship
+          ? {
+              friendshipId: relationship.friendshipId ?? undefined,
+              status: relationshipToLegacyFriendshipStatus(relationship),
+              requesterId: relationship.requesterId ?? undefined,
+              addresseeId: relationship.addresseeId ?? undefined,
+              blockedByMe: relationship.isBlockedByMe,
+              blockedByPeer: relationship.isBlockedMe,
+            }
+          : ({ status: "ACCEPTED" } as FriendshipStatusPayload),
+      );
       setUserProfileMap((prev) => ({
         ...prev,
         [profile.id]: profile,
       }));
-      if (blockedByMe) {
-        setBlockedUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
-      }
-      if (blockedByPeer) {
-        setBlockedByPeerUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      if (relationship) {
+        setRelationshipEntry(relationship);
+        syncRelationshipEntryIntoBlockLists(relationship);
       }
     } catch (error) {
       setContactCandidateError(toApiErrorMessage(error));
@@ -6936,6 +7321,49 @@ export function ChatPage() {
         requestDirection: null,
       };
     }
+    const storedRelationship = relationshipEntries[normalizedUserId];
+    if (storedRelationship) {
+      if (storedRelationship.status === "BLOCKED_BY_ME") {
+        return {
+          kind: "blocked_by_me",
+          status: "BLOCKED",
+          friendshipId: storedRelationship.friendshipId,
+          requestDirection: null,
+        };
+      }
+      if (storedRelationship.status === "BLOCKED_ME") {
+        return {
+          kind: "blocked_by_peer",
+          status: "BLOCKED",
+          friendshipId: storedRelationship.friendshipId,
+          requestDirection: null,
+        };
+      }
+      if (storedRelationship.status === "FRIEND") {
+        return {
+          kind: normalizedUserId === myProfile?.id ? "self" : "friend",
+          status: "ACCEPTED",
+          friendshipId: storedRelationship.friendshipId,
+          requestDirection: null,
+        };
+      }
+      if (storedRelationship.status === "INCOMING_REQUEST") {
+        return {
+          kind: "pending_received",
+          status: "PENDING",
+          friendshipId: storedRelationship.requestId ?? storedRelationship.friendshipId,
+          requestDirection: "incoming",
+        };
+      }
+      if (storedRelationship.status === "OUTGOING_REQUEST") {
+        return {
+          kind: "pending_sent",
+          status: "PENDING",
+          friendshipId: storedRelationship.requestId ?? storedRelationship.friendshipId,
+          requestDirection: "outgoing",
+        };
+      }
+    }
     const blockedByMe = blockedUserIdSet.has(normalizedUserId);
     const blockedByPeer = blockedByPeerUserIdSet.has(normalizedUserId);
     const blockRelationship = resolveBlockRelationship({ blockedByMe, blockedByPeer });
@@ -6986,6 +7414,7 @@ export function ChatPage() {
     friendContactByUserId,
     incomingPendingRequestByUserId,
     myProfile?.id,
+    relationshipEntries,
     sentPendingRequestByUserId,
   ]);
 
@@ -7132,11 +7561,18 @@ export function ChatPage() {
   }, [normalizedContactsSearchQuery, pendingFriendRequests, userProfileMap]);
 
   const filteredSentPendingFriendRequests = useMemo(() => {
+    const visibleSentRequests = sentPendingFriendRequests.filter((request) => (
+      !blockedUserIdSet.has(request.addresseeId) &&
+      !blockedByPeerUserIdSet.has(request.addresseeId) &&
+      !friendUserIdSet.has(request.addresseeId) &&
+      normalizeFriendshipStatus(request.status) === "PENDING"
+    ));
+
     if (!normalizedContactsSearchQuery) {
-      return sentPendingFriendRequests;
+      return visibleSentRequests;
     }
 
-    return sentPendingFriendRequests.filter((request) => {
+    return visibleSentRequests.filter((request) => {
       const profile = userProfileMap[request.addresseeId];
       const haystacks = [
         profile?.fullName ?? "",
@@ -7147,7 +7583,16 @@ export function ChatPage() {
         value.toLowerCase().includes(normalizedContactsSearchQuery),
       );
     });
-  }, [normalizedContactsSearchQuery, sentPendingFriendRequests, userProfileMap]);
+  }, [
+    blockedByPeerUserIdSet,
+    blockedUserIdSet,
+    friendUserIdSet,
+    normalizedContactsSearchQuery,
+    sentPendingFriendRequests,
+    userProfileMap,
+  ]);
+  const receivedRequestsCount = filteredPendingFriendRequests.length;
+  const sentRequestsCount = filteredSentPendingFriendRequests.length;
 
   const unreadFromConversations = conversations.reduce(
     (sum, item) => sum + Math.max(0, item.unreadCount ?? 0),
@@ -7173,13 +7618,13 @@ export function ChatPage() {
       : null;
 
   const isActiveDirectPeerFriend = Boolean(
-    activeDirectPeerUserId && friendUserIdSet.has(activeDirectPeerUserId),
+    activeDirectPeerUserId && activePeerRelationship.status === "FRIEND",
   );
   const isActiveDirectPeerBlockedByMe = Boolean(
-    activeDirectPeerUserId && blockedUserIdSet.has(activeDirectPeerUserId),
+    activeDirectPeerUserId && activePeerRelationship.status === "BLOCKED_BY_ME",
   );
   const isActiveDirectPeerBlockedByPeer = Boolean(
-    activeDirectPeerUserId && blockedByPeerUserIdSet.has(activeDirectPeerUserId),
+    activeDirectPeerUserId && activePeerRelationship.status === "BLOCKED_ME",
   );
   const isActiveDirectPeerRejectingMessages = Boolean(
     activeDirectPeerUserId && peerRejectedMessageUserIds[activeDirectPeerUserId],
@@ -7192,21 +7637,41 @@ export function ChatPage() {
     activeConversationForView &&
       activeConversationForView.type !== "group" &&
       activeDirectPeerUserId &&
-      !friendUserIdSet.has(activeDirectPeerUserId),
+      activePeerRelationship.status === "NONE",
   );
   const activeIncomingPendingFriendRequest = activeDirectPeerUserId
-    ? pendingFriendRequests.find(
-      (item) =>
-        item.requesterId === activeDirectPeerUserId &&
-        normalizeFriendshipStatus(item.status) === "PENDING",
-    ) ?? null
+    ? activePeerRelationship.status === "INCOMING_REQUEST"
+      ? {
+          friendshipId:
+            activePeerRelationship.requestId ??
+            activePeerRelationship.friendshipId ??
+            "",
+          requesterId: activePeerRelationship.requesterId ?? activeDirectPeerUserId,
+          addresseeId: activePeerRelationship.addresseeId ?? myProfile?.id ?? "",
+          status: "PENDING",
+        }
+      : pendingFriendRequests.find(
+          (item) =>
+            item.requesterId === activeDirectPeerUserId &&
+            normalizeFriendshipStatus(item.status) === "PENDING",
+        ) ?? null
     : null;
   const activeSentPendingFriendRequest = activeDirectPeerUserId
-    ? sentPendingFriendRequests.find(
-      (item) =>
-        item.addresseeId === activeDirectPeerUserId &&
-        normalizeFriendshipStatus(item.status) === "PENDING",
-    ) ?? null
+    ? activePeerRelationship.status === "OUTGOING_REQUEST"
+      ? {
+          friendshipId:
+            activePeerRelationship.requestId ??
+            activePeerRelationship.friendshipId ??
+            "",
+          requesterId: activePeerRelationship.requesterId ?? myProfile?.id ?? "",
+          addresseeId: activePeerRelationship.addresseeId ?? activeDirectPeerUserId,
+          status: "PENDING",
+        }
+      : sentPendingFriendRequests.find(
+          (item) =>
+            item.addresseeId === activeDirectPeerUserId &&
+            normalizeFriendshipStatus(item.status) === "PENDING",
+        ) ?? null
     : null;
   const directStrangerActionMode: "add-or-block" | "incoming-request" | "outgoing-request" | null =
     !activeConversationForView ||
@@ -7218,7 +7683,9 @@ export function ChatPage() {
       ? null
       : activeIncomingPendingFriendRequest
         ? "incoming-request"
-        : activeSentPendingFriendRequest || normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
+        : activeSentPendingFriendRequest ||
+            activePeerRelationship.status === "OUTGOING_REQUEST" ||
+            normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
           ? "outgoing-request"
           : "add-or-block";
   const activeDirectRelationshipBadgeLabel =
@@ -8032,7 +8499,12 @@ export function ChatPage() {
                                 <button
                                   type="button"
                                   disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
-                                  onClick={() => void onCancelFriendRequest(contactCandidateRelationship.friendshipId!)}
+                                  onClick={() =>
+                                    void onCancelFriendRequest(
+                                      contactCandidateRelationship.friendshipId!,
+                                      contactCandidateProfile?.id,
+                                    )
+                                  }
                                   className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                 >
                                   {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
@@ -8146,7 +8618,9 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi" ? "Loi moi ket ban den" : "Incoming requests"}
+                            {language === "vi"
+                              ? `Loi moi ket ban den (${receivedRequestsCount})`
+                              : `Incoming requests (${receivedRequestsCount})`}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
@@ -8219,7 +8693,9 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi" ? `Loi moi da gui (${filteredSentPendingFriendRequests.length})` : `Sent requests (${filteredSentPendingFriendRequests.length})`}
+                            {language === "vi"
+                              ? `Loi moi da gui (${sentRequestsCount})`
+                              : `Sent requests (${sentRequestsCount})`}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
@@ -8269,7 +8745,12 @@ export function ChatPage() {
                                     <button
                                       type="button"
                                       disabled={processingFriendshipId === request.friendshipId}
-                                      onClick={() => void onCancelFriendRequest(request.friendshipId)}
+                                      onClick={() =>
+                                        void onCancelFriendRequest(
+                                          request.friendshipId,
+                                          request.addresseeId,
+                                        )
+                                      }
                                       className="flex-1 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                     >
                                       {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
@@ -9022,7 +9503,10 @@ export function ChatPage() {
                 }}
                 onCancelFriendRequestForPeer={() => {
                   if (activeSentPendingFriendRequest) {
-                    void onCancelFriendRequest(activeSentPendingFriendRequest.friendshipId);
+                    void onCancelFriendRequest(
+                      activeSentPendingFriendRequest.friendshipId,
+                      activeDirectPeerUserId ?? undefined,
+                    );
                   }
                 }}
                 onBlockPeer={() => {
@@ -9086,15 +9570,20 @@ export function ChatPage() {
         profile={previewUserProfile}
         isOpen={isUserPreviewOpen}
         isCurrentUser={Boolean(previewUserProfile?.id && previewUserProfile.id === myProfile?.id)}
-        friendshipStatus={previewUserFriendshipStatus}
-        friendRequestDirection={previewUserRelationship.requestDirection}
+        friendshipStatus={previewUserRelationshipFromStore.status}
+        friendRequestDirection={relationshipToRequestDirection(previewUserRelationshipFromStore)}
         isSubmittingFriend={isSubmittingFriend || isLoadingUserPreview || isUpdatingPeerRelationship}
         isProcessingFriendship={
-          Boolean(previewUserRelationship.friendshipId && processingFriendshipId === previewUserRelationship.friendshipId) ||
+          Boolean(
+            (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) &&
+              processingFriendshipId ===
+                (previewUserRelationshipFromStore.requestId ??
+                  previewUserRelationship.friendshipId),
+          ) ||
           isUpdatingPeerRelationship
         }
-        blockedByMe={Boolean(previewUserProfile?.id && blockedUserIdSet.has(previewUserProfile.id))}
-        blockedByPeer={Boolean(previewUserProfile?.id && blockedByPeerUserIdSet.has(previewUserProfile.id))}
+        blockedByMe={previewUserRelationshipFromStore.isBlockedByMe}
+        blockedByPeer={previewUserRelationshipFromStore.isBlockedMe}
         isSubmittingBlock={isUpdatingPeerRelationship}
         onClose={() => {
           setIsUserPreviewOpen(false);
@@ -9107,18 +9596,28 @@ export function ChatPage() {
           }
         }}
         onAcceptFriendRequest={() => {
-          if (previewUserRelationship.friendshipId) {
-            void onAcceptFriendRequest(previewUserRelationship.friendshipId);
+          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
+            void onAcceptFriendRequest(
+              previewUserRelationshipFromStore.requestId ??
+                previewUserRelationship.friendshipId!,
+            );
           }
         }}
         onDeclineFriendRequest={() => {
-          if (previewUserRelationship.friendshipId) {
-            void onDeclineFriendRequest(previewUserRelationship.friendshipId);
+          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
+            void onDeclineFriendRequest(
+              previewUserRelationshipFromStore.requestId ??
+                previewUserRelationship.friendshipId!,
+            );
           }
         }}
         onCancelFriendRequest={() => {
-          if (previewUserRelationship.friendshipId) {
-            void onCancelFriendRequest(previewUserRelationship.friendshipId);
+          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
+            void onCancelFriendRequest(
+              previewUserRelationshipFromStore.requestId ??
+                previewUserRelationship.friendshipId!,
+              previewUserProfile?.id ?? undefined,
+            );
           }
         }}
         onRemoveFriend={() => {

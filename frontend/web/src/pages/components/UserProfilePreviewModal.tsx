@@ -82,6 +82,21 @@ function friendshipLabel(
   }
 
   const normalized = String(status ?? "NONE").trim().toUpperCase();
+  if (normalized === "FRIEND") {
+    return language === "vi" ? "Ban be" : "Friends";
+  }
+  if (normalized === "OUTGOING_REQUEST") {
+    return language === "vi" ? "Da gui loi moi" : "Request sent";
+  }
+  if (normalized === "INCOMING_REQUEST") {
+    return language === "vi" ? "Loi moi den" : "Incoming request";
+  }
+  if (normalized === "BLOCKED_BY_ME") {
+    return language === "vi" ? "Da chan" : "You blocked";
+  }
+  if (normalized === "BLOCKED_ME") {
+    return language === "vi" ? "Bi chan" : "Blocked you";
+  }
   if (normalized === "ACCEPTED") {
     return language === "vi" ? "Ban be" : "Friends";
   }
@@ -128,30 +143,52 @@ export function UserProfilePreviewModal({
 
   const avatarUrl = resolveMediaUrl(profile.avatarUrl ?? null);
   const normalizedFriendshipStatus = normalizeFriendshipStatus(friendshipStatus);
+  const normalizedRelationshipStatus = String(friendshipStatus ?? "NONE")
+    .trim()
+    .toUpperCase();
+  const isBlockedByMe =
+    blockedByMe || normalizedRelationshipStatus === "BLOCKED_BY_ME";
+  const isBlockedByPeer =
+    blockedByPeer || normalizedRelationshipStatus === "BLOCKED_ME";
   const isIncomingPending =
+    normalizedRelationshipStatus === "INCOMING_REQUEST" ||
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "incoming";
   const isOutgoingPending =
+    normalizedRelationshipStatus === "OUTGOING_REQUEST" ||
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "outgoing";
-  const isBlocked = blockedByMe || blockedByPeer;
-  const isFriend = normalizedFriendshipStatus === "ACCEPTED";
+  const isBlocked = isBlockedByMe || isBlockedByPeer;
+  const isFriend =
+    normalizedRelationshipStatus === "FRIEND" ||
+    normalizedFriendshipStatus === "ACCEPTED";
   const isStrangerProfile =
     !isCurrentUser &&
-    !blockedByMe &&
-    !blockedByPeer &&
-    normalizedFriendshipStatus === "NONE";
+    !isBlockedByMe &&
+    !isBlockedByPeer &&
+    (normalizedRelationshipStatus === "NONE" ||
+      normalizedFriendshipStatus === "NONE");
   const canAddFriend =
     !isCurrentUser &&
-    !blockedByMe &&
-    !blockedByPeer &&
-    normalizedFriendshipStatus !== "ACCEPTED" &&
-    normalizedFriendshipStatus !== "PENDING" &&
-    normalizedFriendshipStatus !== "BLOCKED";
+    !isBlockedByMe &&
+    !isBlockedByPeer &&
+    !isFriend &&
+    !isIncomingPending &&
+    !isOutgoingPending;
   const canMessage =
     !isCurrentUser &&
-    !blockedByMe &&
-    !blockedByPeer;
+    !isBlockedByMe &&
+    !isBlockedByPeer;
+  const showActionRow =
+    !isCurrentUser &&
+    !isBlockedByMe;
+  const showPrimaryAddFriend =
+    !isBlocked &&
+    (normalizedRelationshipStatus === "NONE" ||
+      normalizedFriendshipStatus === "NONE" ||
+      normalizedFriendshipStatus === "REJECTED" ||
+      normalizedFriendshipStatus === "DECLINED" ||
+      normalizedFriendshipStatus === "CANCELLED");
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/70 p-4">
@@ -210,7 +247,7 @@ export function UserProfilePreviewModal({
             </div>
           </div>
 
-          {!isCurrentUser && blockedByMe && (
+          {!isCurrentUser && isBlockedByMe && (
             <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               {language === "vi"
                 ? "Ban da chan nguoi nay. Ca hai hien khong the nhan tin cho nhau."
@@ -218,69 +255,63 @@ export function UserProfilePreviewModal({
             </div>
           )}
 
-          {!isCurrentUser && blockedByPeer && (
+          {!isCurrentUser && isBlockedByPeer && (
             <div className="mt-5 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {language === "vi"
-                ? "Nguoi dung nay da chan tin nhan cua ban. Ca hai hien khong the nhan tin cho nhau."
-                : "This user blocked messages with you. Neither side can send new messages right now."}
+                ? "Nguoi dung nay da chan ban. Ban khong the nhan tin hoac gui loi moi ket ban."
+                : "This user blocked you. Messaging and friend actions are unavailable."}
             </div>
           )}
 
-          {isStrangerProfile && (
+          {!isCurrentUser && isOutgoingPending && !isBlocked && (
             <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               {language === "vi"
-                ? "Day la nguoi la, chua nam trong danh ba cua ban."
-                : "This user is a stranger and is not currently in your contacts."}
+                ? "Ban da gui loi moi ket ban. Ban co muon thu hoi loi moi nay khong?"
+                : "You already sent a friend request. Do you want to cancel it?"}
             </div>
           )}
 
           {!isCurrentUser && (
             <div className="mt-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              {isBlockedByMe ? (
                 <button
                   type="button"
-                  onClick={() => void onMessage?.()}
-                  disabled={!canMessage}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2] disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
-                  title={
-                    canMessage
-                      ? undefined
-                      : language === "vi"
-                        ? "Khong the nhan tin do dang bi chan."
-                        : "Messaging is unavailable because this relationship is blocked."
-                  }
-                >
-                  <MessageCircle size={16} />
-                  <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (blockedByMe) {
-                      void onUnblockUser?.();
-                      return;
-                    }
-                    void onBlockUser?.();
-                  }}
+                  onClick={() => void onUnblockUser?.()}
                   disabled={isSubmittingBlock}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                    blockedByMe
-                      ? "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      : "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                  }`}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Ban size={16} />
-                  <span>
-                    {blockedByMe
-                      ? language === "vi"
-                        ? "Bo chan"
-                        : "Unblock"
-                      : language === "vi"
-                        ? "Chan"
-                        : "Block"}
-                  </span>
+                  <span>{language === "vi" ? "Bo chan" : "Unblock"}</span>
                 </button>
-              </div>
+              ) : showActionRow ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void onMessage?.()}
+                    disabled={!canMessage}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f5bd7] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1c6df2] disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
+                    title={
+                      canMessage
+                        ? undefined
+                        : language === "vi"
+                          ? "Khong the nhan tin do trang thai quan he hien tai khong cho phep."
+                          : "Messaging is unavailable because of the current relationship status."
+                    }
+                  >
+                    <MessageCircle size={16} />
+                    <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onBlockUser?.()}
+                    disabled={isSubmittingBlock || isBlockedByPeer}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Ban size={16} />
+                    <span>{language === "vi" ? "Chan" : "Block"}</span>
+                  </button>
+                </div>
+              ) : null}
 
               {isIncomingPending && !isBlocked && (
                 <div className="grid grid-cols-2 gap-3">
@@ -329,10 +360,7 @@ export function UserProfilePreviewModal({
                 </button>
               )}
 
-              {!isBlocked && (normalizedFriendshipStatus === "NONE" ||
-                normalizedFriendshipStatus === "REJECTED" ||
-                normalizedFriendshipStatus === "DECLINED" ||
-                normalizedFriendshipStatus === "CANCELLED") && (
+              {showPrimaryAddFriend && (
                 <button
                   type="button"
                   onClick={() => void onAddFriend?.()}
@@ -342,6 +370,27 @@ export function UserProfilePreviewModal({
                   <UserPlus size={16} />
                   <span>{language === "vi" ? "Ket ban" : "Add friend"}</span>
                 </button>
+              )}
+
+              {isBlockedByPeer && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-300 opacity-60"
+                  >
+                    <MessageCircle size={16} />
+                    <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-300 opacity-60"
+                  >
+                    <UserPlus size={16} />
+                    <span>{language === "vi" ? "Ket ban" : "Add friend"}</span>
+                  </button>
+                </div>
               )}
 
             </div>

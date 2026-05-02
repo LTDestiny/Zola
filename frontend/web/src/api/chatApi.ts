@@ -134,6 +134,18 @@ export type FriendshipStatusPayload = {
   blockedByPeer?: boolean;
 };
 
+export type RelationshipStatusPayload = {
+  status: string;
+  requestId?: string;
+  friendshipId?: string;
+  requesterId?: string;
+  addresseeId?: string;
+  isBlockedByMe?: boolean;
+  isBlockedMe?: boolean;
+  blockedByMe?: boolean;
+  blockedByPeer?: boolean;
+};
+
 export type UserPresenceItem = {
   userId: string;
   online: boolean;
@@ -307,6 +319,38 @@ export async function getFriendshipStatus(targetUserId: string) {
   return response.data;
 }
 
+export async function getRelationshipStatus(targetUserId: string) {
+  try {
+    const response = await httpClient.get<ApiResponse<RelationshipStatusPayload>>(
+      `/api/v1/users/friendships/status/${targetUserId}`,
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const legacy = await getFriendshipStatus(targetUserId);
+    return {
+      ...legacy,
+      data: {
+        ...legacy.data,
+        requestId: legacy.data?.friendshipId,
+        isBlockedByMe: legacy.data?.blockedByMe ?? false,
+        isBlockedMe: legacy.data?.blockedByPeer ?? false,
+      },
+    };
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to fetch relationship status");
+}
+
 export async function addFriend(addresseeId: string) {
   const response = await httpClient.post<
     ApiResponse<{ friendshipId: string; status: string }>
@@ -316,11 +360,59 @@ export async function addFriend(addresseeId: string) {
   return response.data;
 }
 
+export async function sendFriendRequest(targetUserId: string) {
+  try {
+    return await addFriend(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const response = await httpClient.post<
+      ApiResponse<{ friendshipId: string; status: string }>
+    >(`/api/v1/users/friendships/${targetUserId}/request`, {});
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to send friend request");
+}
+
 export async function getPendingFriendRequests() {
-  const response = await httpClient.get<
-    ApiResponse<PendingFriendRequestItem[]>
-  >("/api/v1/users/friendships/pending");
-  return response.data;
+  const paths = [
+    "/api/v1/users/friendships/requests/received",
+    "/api/v1/users/friendships/pending",
+  ];
+  let latestError: unknown;
+
+  for (const path of paths) {
+    try {
+      const response = await httpClient.get<
+        ApiResponse<PendingFriendRequestItem[]>
+      >(path);
+      return response.data;
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405, 501])) {
+        throw error;
+      }
+    }
+  }
+
+  if (latestError) {
+    throw latestError;
+  }
+
+  return {
+    success: true,
+    message: "Pending friend requests endpoint unavailable, fallback to empty list",
+    data: [],
+  };
 }
 
 export async function getSentPendingFriendRequests() {
@@ -627,6 +719,58 @@ export async function cancelFriendRequest(friendshipId: string) {
     ApiResponse<{ friendshipId: string; status: string }>
   >(`/api/v1/users/friendships/${friendshipId}/cancel`);
   return legacyResponse.data;
+}
+
+export async function cancelFriendRequestForUser(
+  targetUserId: string,
+  requestId?: string | null,
+) {
+  let resolvedRequestId = requestId ? String(requestId).trim() : "";
+  if (!resolvedRequestId) {
+    const status = await getRelationshipStatus(targetUserId);
+    resolvedRequestId = String(
+      status.data?.requestId ?? status.data?.friendshipId ?? "",
+    ).trim();
+  }
+
+  if (!resolvedRequestId) {
+    const notFoundError = new Error("No pending friend request found for this user");
+    (notFoundError as Error & { code?: string }).code = "RELATIONSHIP_REQUEST_NOT_FOUND";
+    throw notFoundError;
+  }
+
+  return cancelFriendRequest(resolvedRequestId);
+}
+
+export async function blockRelationshipUser(targetUserId: string) {
+  try {
+    return await blockUser(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const response = await httpClient.post<ApiResponse<FriendshipStatusPayload>>(
+    `/api/v1/users/blocks/${targetUserId}`,
+    {},
+  );
+  return response.data;
+}
+
+export async function unblockRelationshipUser(targetUserId: string) {
+  try {
+    return await unblockUser(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const response = await httpClient.delete<ApiResponse<FriendshipStatusPayload>>(
+    `/api/v1/users/blocks/${targetUserId}`,
+  );
+  return response.data;
 }
 
 export async function removeFriend(friendshipId: string) {

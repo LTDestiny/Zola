@@ -156,37 +156,26 @@ public class FriendshipController {
         @RequestHeader("X-User-Id") String userIdHeader,
         @RequestParam("targetUserId") UUID targetUserId
     ) {
-        UUID requesterId = parseUserId(userIdHeader);
-        List<MessageBlockEntity> blocks = messageBlockRepository.findAllBetweenUsers(requesterId, targetUserId);
-        if (!blocks.isEmpty()) {
-            boolean blockedByMe = blocks.stream().anyMatch(block -> requesterId.equals(block.getBlockerId()));
-            boolean blockedByPeer = blocks.stream().anyMatch(block -> targetUserId.equals(block.getBlockerId()));
-            return ApiResponse.ok("Friendship status", Map.of(
-                "status", STATUS_BLOCKED,
-                "blockedByMe", blockedByMe,
-                "blockedByPeer", blockedByPeer
-            ));
-        }
+        UUID currentUserId = parseUserId(userIdHeader);
+        return ApiResponse.ok("Friendship status", buildLegacyFriendshipStatusPayload(currentUserId, targetUserId));
+    }
 
-        Optional<FriendshipEntity> existing = friendshipRepository
-            .findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(
-                requesterId,
-                targetUserId,
-                targetUserId,
-                requesterId
-            );
+    @GetMapping("/status/{targetUserId}")
+    public ApiResponse<Map<String, Object>> getStatusV2(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        UUID currentUserId = parseUserId(userIdHeader);
+        return ApiResponse.ok("Relationship status", buildRelationshipStatusPayload(currentUserId, targetUserId));
+    }
 
-        if (existing.isEmpty()) {
-            return ApiResponse.ok("Friendship status", Map.of("status", "NONE"));
-        }
-
-        FriendshipEntity relation = existing.get();
-        return ApiResponse.ok("Friendship status", Map.of(
-            "friendshipId", relation.getId().toString(),
-            "status", relation.getStatus(),
-            "requesterId", relation.getRequesterId().toString(),
-            "addresseeId", relation.getAddresseeId().toString()
-        ));
+    @PostMapping("/{targetUserId}/request")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<Map<String, Object>> addFriendByTargetId(
+        @RequestHeader("X-User-Id") String userIdHeader,
+        @PathVariable("targetUserId") UUID targetUserId
+    ) {
+        return addFriend(userIdHeader, new AddFriendRequest(targetUserId));
     }
 
     @GetMapping("/blocks")
@@ -224,11 +213,6 @@ public class FriendshipController {
             request.targetUserId()
         );
 
-        boolean blockedByPeer = messageBlockRepository.findByBlockerIdAndBlockedUserId(
-            request.targetUserId(),
-            blockerId
-        ).isPresent();
-
         if (existingBlock.isEmpty()) {
             Instant now = Instant.now();
             MessageBlockEntity block = new MessageBlockEntity();
@@ -251,13 +235,7 @@ public class FriendshipController {
 
         friendEventPublisher.publishFriendshipBlocked(blockerId, request.targetUserId());
 
-        return ApiResponse.ok("User blocked", Map.of(
-            "status", STATUS_BLOCKED,
-            "blockerId", blockerId.toString(),
-            "blockedUserId", request.targetUserId().toString(),
-            "blockedByMe", true,
-            "blockedByPeer", blockedByPeer
-        ));
+        return ApiResponse.ok("User blocked", buildBlockMutationPayload(blockerId, request.targetUserId()));
     }
 
     @PostMapping("/{targetUserId}/block")
@@ -302,20 +280,9 @@ public class FriendshipController {
         messageBlockRepository.findByBlockerIdAndBlockedUserId(blockerId, targetUserId)
             .ifPresent(messageBlockRepository::delete);
 
-        boolean blockedByPeer = messageBlockRepository.findByBlockerIdAndBlockedUserId(
-            targetUserId,
-            blockerId
-        ).isPresent();
-
         friendEventPublisher.publishFriendshipUnblocked(blockerId, targetUserId);
 
-        return ApiResponse.ok("User unblocked", Map.of(
-            "status", blockedByPeer ? STATUS_BLOCKED : "NONE",
-            "blockerId", blockerId.toString(),
-            "blockedUserId", targetUserId.toString(),
-            "blockedByMe", false,
-            "blockedByPeer", blockedByPeer
-        ));
+        return ApiResponse.ok("User unblocked", buildUnblockMutationPayload(blockerId, targetUserId));
     }
 
     @DeleteMapping("/{targetUserId}/block")
@@ -363,11 +330,19 @@ public class FriendshipController {
                 relation.getId(),
                 relation.getRequesterId(),
                 relation.getAddresseeId(),
-                relation.getStatus()
+                relation.getStatus(),
+                relation.getCreatedAt()
             ))
             .toList();
 
         return ApiResponse.ok("Pending friendship requests", requests);
+    }
+
+    @GetMapping("/requests/received")
+    public ApiResponse<List<PendingFriendRequest>> getPendingRequestsV2(
+        @RequestHeader("X-User-Id") String userIdHeader
+    ) {
+        return getPendingRequests(userIdHeader);
     }
 
     @GetMapping("/pending/sent")
@@ -382,7 +357,8 @@ public class FriendshipController {
                 relation.getId(),
                 relation.getRequesterId(),
                 relation.getAddresseeId(),
-                relation.getStatus()
+                relation.getStatus(),
+                relation.getCreatedAt()
             ))
             .toList();
 
@@ -630,7 +606,8 @@ public class FriendshipController {
         UUID friendshipId,
         UUID requesterId,
         UUID addresseeId,
-        String status
+        String status,
+        Instant createdAt
     ) {
     }
 
@@ -644,6 +621,152 @@ public class FriendshipController {
     }
 
     public record BlockedUser(UUID userId) {
+    }
+
+    private Map<String, Object> buildRelationshipStatusPayload(UUID currentUserId, UUID targetUserId) {
+        List<MessageBlockEntity> blocks = messageBlockRepository.findAllBetweenUsers(currentUserId, targetUserId);
+        boolean blockedByMe = blocks.stream().anyMatch(block -> currentUserId.equals(block.getBlockerId()));
+        boolean blockedMe = blocks.stream().anyMatch(block -> targetUserId.equals(block.getBlockerId()));
+
+        if (blockedByMe || blockedMe) {
+            String status = blockedByMe ? "BLOCKED_BY_ME" : "BLOCKED_ME";
+            return Map.of(
+                "status", status,
+                "requestId", "",
+                "friendshipId", "",
+                "requesterId", "",
+                "addresseeId", "",
+                "isBlockedByMe", blockedByMe,
+                "isBlockedMe", blockedMe,
+                "blockedByMe", blockedByMe,
+                "blockedByPeer", blockedMe
+            );
+        }
+
+        Optional<FriendshipEntity> existing = friendshipRepository
+            .findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(
+                currentUserId,
+                targetUserId,
+                targetUserId,
+                currentUserId
+            );
+
+        if (existing.isEmpty()) {
+            return Map.of(
+                "status", "NONE",
+                "requestId", "",
+                "friendshipId", "",
+                "requesterId", "",
+                "addresseeId", "",
+                "isBlockedByMe", false,
+                "isBlockedMe", false,
+                "blockedByMe", false,
+                "blockedByPeer", false
+            );
+        }
+
+        FriendshipEntity relation = existing.get();
+        String normalizedStatus = switch (String.valueOf(relation.getStatus()).trim().toUpperCase()) {
+            case STATUS_PENDING -> relation.getRequesterId().equals(currentUserId)
+                ? "OUTGOING_REQUEST"
+                : "INCOMING_REQUEST";
+            case STATUS_ACCEPTED -> "FRIEND";
+            default -> "NONE";
+        };
+
+        String relationshipId = relation.getId().toString();
+        return Map.of(
+            "status", normalizedStatus,
+            "requestId",
+            normalizedStatus.equals("OUTGOING_REQUEST") || normalizedStatus.equals("INCOMING_REQUEST")
+                ? relationshipId
+                : "",
+            "friendshipId", relationshipId,
+            "requesterId", relation.getRequesterId().toString(),
+            "addresseeId", relation.getAddresseeId().toString(),
+            "isBlockedByMe", false,
+            "isBlockedMe", false,
+            "blockedByMe", false,
+            "blockedByPeer", false
+        );
+    }
+
+    private Map<String, Object> buildLegacyFriendshipStatusPayload(UUID currentUserId, UUID targetUserId) {
+        List<MessageBlockEntity> blocks = messageBlockRepository.findAllBetweenUsers(currentUserId, targetUserId);
+        boolean blockedByMe = blocks.stream().anyMatch(block -> currentUserId.equals(block.getBlockerId()));
+        boolean blockedByPeer = blocks.stream().anyMatch(block -> targetUserId.equals(block.getBlockerId()));
+        if (blockedByMe || blockedByPeer) {
+            return Map.of(
+                "status", STATUS_BLOCKED,
+                "requestId", "",
+                "friendshipId", "",
+                "requesterId", "",
+                "addresseeId", "",
+                "blockedByMe", blockedByMe,
+                "blockedByPeer", blockedByPeer
+            );
+        }
+
+        Optional<FriendshipEntity> existing = friendshipRepository
+            .findByRequesterIdAndAddresseeIdOrRequesterIdAndAddresseeId(
+                currentUserId,
+                targetUserId,
+                targetUserId,
+                currentUserId
+            );
+
+        if (existing.isEmpty()) {
+            return Map.of(
+                "status", "NONE",
+                "requestId", "",
+                "friendshipId", "",
+                "requesterId", "",
+                "addresseeId", "",
+                "blockedByMe", false,
+                "blockedByPeer", false
+            );
+        }
+
+        FriendshipEntity relation = existing.get();
+        String normalizedStatus = String.valueOf(relation.getStatus()).trim().toUpperCase();
+        if (!STATUS_PENDING.equals(normalizedStatus) && !STATUS_ACCEPTED.equals(normalizedStatus)) {
+            return Map.of(
+                "status", "NONE",
+                "requestId", "",
+                "friendshipId", "",
+                "requesterId", "",
+                "addresseeId", "",
+                "blockedByMe", false,
+                "blockedByPeer", false
+            );
+        }
+
+        String friendshipId = relation.getId().toString();
+        return Map.of(
+            "status", normalizedStatus,
+            "requestId", STATUS_PENDING.equals(normalizedStatus) ? friendshipId : "",
+            "friendshipId", friendshipId,
+            "requesterId", relation.getRequesterId().toString(),
+            "addresseeId", relation.getAddresseeId().toString(),
+            "blockedByMe", false,
+            "blockedByPeer", false
+        );
+    }
+
+    private Map<String, Object> buildBlockMutationPayload(UUID currentUserId, UUID targetUserId) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(buildRelationshipStatusPayload(currentUserId, targetUserId));
+        payload.put("targetUserId", targetUserId.toString());
+        payload.put("blockerId", currentUserId.toString());
+        payload.put("blockedUserId", targetUserId.toString());
+        return payload;
+    }
+
+    private Map<String, Object> buildUnblockMutationPayload(UUID currentUserId, UUID targetUserId) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(buildRelationshipStatusPayload(currentUserId, targetUserId));
+        payload.put("targetUserId", targetUserId.toString());
+        payload.put("blockerId", currentUserId.toString());
+        payload.put("blockedUserId", targetUserId.toString());
+        return payload;
     }
 
     private boolean isResendAllowedStatus(String status) {
