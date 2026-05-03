@@ -62,9 +62,34 @@ export type ChatRealtimeEvent = {
     | "USER_LAST_SEEN_UPDATE"
     | "FRIENDSHIP_REQUEST_RECEIVED"
     | "FRIENDSHIP_REQUEST_ACCEPTED"
-    | "FRIENDSHIP_REQUEST_DECLINED";
+    | "FRIENDSHIP_REQUEST_DECLINED"
+    | "FRIENDSHIP_REQUEST_SENT"
+    | "FRIENDSHIP_REQUEST_CANCELLED"
+    | "FRIENDSHIP_REQUEST_REJECTED"
+    | "FRIENDSHIP_REMOVED"
+    | "USER_BLOCKED"
+    | "USER_UNBLOCKED"
+    | "CALL_INCOMING"
+    | "CALL_CANCELLED"
+    | "CALL_ACCEPTED"
+    | "CALL_REJECTED"
+    | "CALL_ENDED"
+    | "friend_request_sent"
+    | "friend_request_cancelled"
+    | "friend_request_received"
+    | "friend_request_accepted"
+    | "friend_request_rejected"
+    | "user_blocked"
+    | "user_unblocked"
+    | "friendship_removed"
+    | "call_incoming"
+    | "call_cancelled"
+    | "call_accepted"
+    | "call_rejected"
+    | "call_ended";
     conversationId: string;
     actorId?: string;
+    targetUserId?: string;
     typing?: boolean;
     online?: boolean;
     unreadCount?: number | null;

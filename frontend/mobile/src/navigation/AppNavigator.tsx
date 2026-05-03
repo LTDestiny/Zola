@@ -12,8 +12,9 @@ import { VerifyRegisterOtpScreen } from "@/modules/auth/screens/VerifyRegisterOt
 import { ChatListScreen } from "@/modules/chat/screens/ChatListScreen";
 import { ChatDetailScreen } from "@/modules/chat/screens/ChatDetailScreen";
 import { GroupSettingsScreen } from "@/modules/chat/screens/GroupSettingsScreen";
-import { FriendRequestsScreen } from "@/modules/chat/screens/FriendRequestsScreen";
+import { ContactsScreen } from "@/modules/chat/screens/ContactsScreen";
 import { ProfileScreen } from "@/modules/profile/screens/ProfileScreen";
+import { UserProfileScreen } from "@/modules/profile/screens/UserProfileScreen";
 import { getMyProfile } from "@/modules/chat/api/chatApi";
 import { useSocket } from "@/modules/chat/hooks/useSocket";
 import { useUnread } from "@/modules/chat/hooks/useUnread";
@@ -71,6 +72,7 @@ function ChatStackNavigator() {
       <ChatStack.Screen name="ChatList" component={ChatListScreen} />
       <ChatStack.Screen name="ChatDetail" component={ChatDetailScreen} />
       <ChatStack.Screen name="GroupSettings" component={GroupSettingsScreen} />
+      <ChatStack.Screen name="UserProfile" component={UserProfileScreen} />
     </ChatStack.Navigator>
   );
 }
@@ -112,10 +114,10 @@ function MainTabs() {
         }}
       />
       <Tabs.Screen
-        name="FriendRequests"
-        component={FriendRequestsScreen}
+        name="Contacts"
+        component={ContactsScreen}
         options={{
-          title: "Lời mời",
+          title: "Danh bạ",
           tabBarIcon: ({ focused }) => (
             <View>
               <TabBarIcon name="friend" focused={focused} />

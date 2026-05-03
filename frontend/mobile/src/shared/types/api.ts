@@ -51,7 +51,24 @@ export type FriendContactItem = {
 };
 
 export type FriendshipStatus = {
+  friendshipId?: string;
   status: string;
+  requesterId?: string;
+  addresseeId?: string;
+  blockedByMe?: boolean;
+  blockedByPeer?: boolean;
+};
+
+export type RelationshipStatusPayload = {
+  status: string;
+  requestId?: string;
+  friendshipId?: string;
+  requesterId?: string;
+  addresseeId?: string;
+  isBlockedByMe?: boolean;
+  isBlockedMe?: boolean;
+  blockedByMe?: boolean;
+  blockedByPeer?: boolean;
 };
 
 export type ConversationItem = {

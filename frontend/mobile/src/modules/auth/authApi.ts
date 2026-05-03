@@ -71,5 +71,14 @@ export async function resetPassword(email: string, code: string, newPassword: st
 
 export function toErrorMessage(error: unknown) {
   const axiosError = error as AxiosError<{ message?: string; error?: string }>;
-  return axiosError.response?.data?.message ?? axiosError.response?.data?.error ?? axiosError.message ?? "Unexpected error";
+  
+  if (axiosError.code === "ERR_NETWORK" || axiosError.message === "Network Error") {
+    return "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và đảm bảo backend đang chạy.";
+  }
+  
+  if (axiosError.code === "ECONNABORTED") {
+    return "Kết nối bị quá hạn (timeout). Vui lòng thử lại.";
+  }
+
+  return axiosError.response?.data?.message ?? axiosError.response?.data?.error ?? axiosError.message ?? "Lỗi không xác định";
 }

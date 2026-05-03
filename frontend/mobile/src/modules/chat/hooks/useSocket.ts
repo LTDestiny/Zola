@@ -2,12 +2,21 @@ import { useEffect, useRef, useCallback } from "react";
 import { Alert } from "react-native";
 import { socketService, type ChatRealtimeEvent } from "@/modules/chat/socket/socketService";
 import { reconnectManager } from "@/modules/chat/socket/reconnectManager";
-import { getConversations, getMessages, markConversationRead } from "@/modules/chat/api/chatApi";
+import { 
+  getConversations, 
+  getMessages, 
+  markConversationRead,
+  getFriends,
+  getPendingFriendRequests,
+  getSentPendingFriendRequests,
+  getBlockedUsers,
+} from "@/modules/chat/api/chatApi";
 import { useChatStore } from "@/modules/chat/store/chatStore";
 import { usePresenceStore } from "@/modules/chat/store/presenceStore";
 import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
 import { useAuthStore } from "@/modules/auth/authStore";
 import { useSocketStore } from "@/modules/chat/store/socketStore";
+import { useRelationshipStore } from "@/modules/chat/store/relationshipStore";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTION-READY SOCKET HOOK - FIXES ALL REALTIME BUGS
@@ -189,21 +198,111 @@ export function useSocket() {
     }
 
     // ─── FRIENDSHIP EVENTS (no conversationId) ───────────────────────────────
-    if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
+    if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED" || event.eventType === "friend_request_received") {
       log("friend", "👥 Friend request received");
       useFriendRequestStore.getState().increment();
       Alert.alert("Lời mời kết bạn", "Bạn có lời mời kết bạn mới!");
+      
+      const { me } = useAuthStore.getState();
+      if (event.actorId) {
+        useRelationshipStore.getState().fetchEntry(event.actorId, me?.id);
+      }
+      // Refresh received list
+      getPendingFriendRequests().then(res => {
+        useRelationshipStore.getState().setReceivedRequests(res.data ?? []);
+      });
       return;
     }
 
-    if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED") {
+    if (event.eventType === "FRIENDSHIP_REQUEST_SENT" || event.eventType === "friend_request_sent") {
+      log("friend", "📤 Friend request sent from another device");
+      const { me } = useAuthStore.getState();
+      if (event.targetId) {
+        useRelationshipStore.getState().fetchEntry(event.targetId, me?.id);
+      }
+      // Refresh sent list
+      getSentPendingFriendRequests().then(res => {
+        useRelationshipStore.getState().setSentRequests(res.data ?? []);
+      });
+      return;
+    }
+
+    if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED" || event.eventType === "friend_request_accepted") {
       log("friend", "✅ Friend request accepted");
-      Alert.alert("Kết bạn thành công", "Lời mời kết bạn của bạn đã được chấp nhận!");
+      Alert.alert("Kết bạn thành công", "Lời mời kết bạn đã được chấp nhận!");
+      
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      
+      // Refresh friends and requests lists
+      getFriends().then(res => useRelationshipStore.getState().setFriends(res.data ?? []));
+      getPendingFriendRequests().then(res => useRelationshipStore.getState().setReceivedRequests(res.data ?? []));
+      getSentPendingFriendRequests().then(res => useRelationshipStore.getState().setSentRequests(res.data ?? []));
       return;
     }
 
-    if (event.eventType === "FRIENDSHIP_REQUEST_DECLINED") {
-      log("friend", "❌ Friend request declined");
+    if (
+      event.eventType === "FRIENDSHIP_REQUEST_DECLINED" ||
+      event.eventType === "FRIENDSHIP_REQUEST_REJECTED" ||
+      event.eventType === "friend_request_rejected"
+    ) {
+      log("friend", "❌ Friend request declined/rejected");
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      getPendingFriendRequests().then(res => useRelationshipStore.getState().setReceivedRequests(res.data ?? []));
+      return;
+    }
+
+    if (event.eventType === "FRIENDSHIP_REQUEST_CANCELLED" || event.eventType === "friend_request_cancelled") {
+      log("friend", "🚫 Friend request cancelled");
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      getPendingFriendRequests().then(res => useRelationshipStore.getState().setReceivedRequests(res.data ?? []));
+      getSentPendingFriendRequests().then(res => useRelationshipStore.getState().setSentRequests(res.data ?? []));
+      return;
+    }
+
+    if (event.eventType === "FRIENDSHIP_REMOVED" || event.eventType === "friendship_removed") {
+      log("friend", "💔 Friendship removed");
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      getFriends().then(res => useRelationshipStore.getState().setFriends(res.data ?? []));
+      return;
+    }
+
+    if (event.eventType === "USER_BLOCKED" || event.eventType === "user_blocked") {
+      log("block", "🚫 User blocked");
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      getBlockedUsers().then(res => useRelationshipStore.getState().setBlockedUsers(res.data ?? []));
+      // Blocks also affect friend status
+      getFriends().then(res => useRelationshipStore.getState().setFriends(res.data ?? []));
+      return;
+    }
+
+    if (event.eventType === "USER_UNBLOCKED" || event.eventType === "user_unblocked") {
+      log("block", "🔓 User unblocked");
+      const { me } = useAuthStore.getState();
+      const targetId = event.actorId || event.targetId;
+      if (targetId) {
+        useRelationshipStore.getState().fetchEntry(targetId, me?.id);
+      }
+      getBlockedUsers().then(res => useRelationshipStore.getState().setBlockedUsers(res.data ?? []));
       return;
     }
 

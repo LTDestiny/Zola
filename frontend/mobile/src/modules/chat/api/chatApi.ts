@@ -10,6 +10,7 @@ import type {
   MessagePageData,
   MessageType,
   PendingFriendRequestItem,
+  RelationshipStatusPayload,
   UpdateGroupSettingsInput,
   UpdateUserProfileInput,
   UserPresenceItem,
@@ -18,6 +19,19 @@ import type {
 
 let supportsConversationReadEndpoint: boolean | null = null;
 let supportsMessageReadEndpoint: boolean | null = null;
+let supportsBlockedUsersEndpoint: boolean | null = null;
+
+function shouldFallbackLegacyEndpoint(error: unknown): boolean {
+  const axiosError = error as AxiosError;
+  const status = axiosError.response?.status;
+  return status === 404 || status === 405;
+}
+
+function isCompatibilityStatus(error: unknown, statuses: number[]) {
+  const axiosError = error as AxiosError;
+  const status = axiosError.response?.status;
+  return typeof status === "number" && statuses.includes(status);
+}
 
 type ConversationPayload = Partial<ConversationItem> & {
   id: string;
@@ -151,6 +165,38 @@ export async function getFriendshipStatus(targetUserId: string) {
   return response.data;
 }
 
+export async function getRelationshipStatus(targetUserId: string) {
+  try {
+    const response = await httpClient.get<ApiResponse<RelationshipStatusPayload>>(
+      `/api/v1/users/friendships/status/${targetUserId}`,
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const legacy = await getFriendshipStatus(targetUserId);
+    return {
+      ...legacy,
+      data: {
+        ...legacy.data,
+        requestId: legacy.data?.friendshipId,
+        isBlockedByMe: legacy.data?.blockedByMe ?? false,
+        isBlockedMe: legacy.data?.blockedByPeer ?? false,
+      },
+    };
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to fetch relationship status");
+}
+
 export async function addFriend(addresseeId: string) {
   const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>("/api/v1/users/friendships", {
     addresseeId,
@@ -158,9 +204,86 @@ export async function addFriend(addresseeId: string) {
   return response.data;
 }
 
+export async function sendFriendRequest(targetUserId: string) {
+  try {
+    return await addFriend(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
+      `/api/v1/users/friendships/${targetUserId}/request`,
+      {},
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to send friend request");
+}
+
 export async function getPendingFriendRequests() {
-  const response = await httpClient.get<ApiResponse<PendingFriendRequestItem[]>>("/api/v1/users/friendships/pending");
-  return response.data;
+  const paths = ["/api/v1/users/friendships/requests/received", "/api/v1/users/friendships/pending"];
+  let latestError: unknown;
+
+  for (const path of paths) {
+    try {
+      const response = await httpClient.get<ApiResponse<PendingFriendRequestItem[]>>(path);
+      return response.data;
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405, 501])) {
+        throw error;
+      }
+    }
+  }
+
+  if (latestError && !isCompatibilityStatus(latestError, [404, 405, 501])) {
+    throw latestError;
+  }
+
+  return {
+    success: true,
+    message: "Pending friend requests endpoint unavailable, fallback to empty list",
+    data: [],
+  };
+}
+
+export async function getSentPendingFriendRequests() {
+  const paths = [
+    "/api/v1/users/friendships/requests/sent",
+    "/api/v1/users/friendships/pending/sent",
+    "/api/v1/users/friendships/sent-pending",
+  ];
+  let latestError: unknown;
+
+  for (const path of paths) {
+    try {
+      const response = await httpClient.get<ApiResponse<PendingFriendRequestItem[]>>(path);
+      return response.data;
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405, 501])) {
+        throw error;
+      }
+    }
+  }
+
+  if (latestError && !isCompatibilityStatus(latestError, [404, 405, 501])) {
+    throw latestError;
+  }
+
+  return {
+    success: true,
+    message: "Sent pending friend requests endpoint unavailable, fallback to empty list",
+    data: [],
+  };
 }
 
 export async function getPendingFriendRequestsUnreadCount() {
@@ -176,6 +299,145 @@ export async function markPendingFriendRequestsRead() {
 export async function getFriends() {
   const response = await httpClient.get<ApiResponse<FriendContactItem[]>>("/api/v1/users/friendships/friends");
   return response.data;
+}
+
+export async function removeFriend(friendshipId: string) {
+  const response = await httpClient.delete<ApiResponse<{ friendshipId: string; status: string }>>(
+    `/api/v1/users/friendships/${friendshipId}`,
+  );
+  return response.data;
+}
+
+export async function getBlockedUsers() {
+  if (supportsBlockedUsersEndpoint === false) {
+    return {
+      success: true,
+      message: "Blocked-users endpoint unavailable, compatibility mode enabled",
+      data: [] as Array<{ userId: string }>,
+    };
+  }
+
+  try {
+    const response = await httpClient.get<ApiResponse<Array<{ userId: string }>>>("/api/v1/users/friendships/blocks");
+    supportsBlockedUsersEndpoint = true;
+    return response.data;
+  } catch (error) {
+    if (isCompatibilityStatus(error, [404, 405])) {
+      try {
+        const fallback = await httpClient.get<ApiResponse<Array<{ userId: string }>>>("/api/v1/users/friendships/block");
+        supportsBlockedUsersEndpoint = true;
+        return fallback.data;
+      } catch (fallbackError) {
+        if (isCompatibilityStatus(fallbackError, [404, 405])) {
+          supportsBlockedUsersEndpoint = false;
+          return {
+            success: true,
+            message: "Blocked-users endpoint unavailable, fallback to empty list",
+            data: [],
+          };
+        }
+        throw fallbackError;
+      }
+    }
+    throw error;
+  }
+}
+
+export async function blockUser(targetUserId: string) {
+  try {
+    const response = await httpClient.post<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/${targetUserId}/block`, {});
+    return {
+      ...response.data,
+      data: {
+        ...response.data.data,
+        status: String(response.data.data?.status ?? "BLOCKED"),
+        blockedByMe: response.data.data?.blockedByMe ?? true,
+      },
+    };
+  } catch (error) {
+    if (!isCompatibilityStatus(error, [404, 405])) {
+      throw error;
+    }
+  }
+
+  const body = { targetUserId };
+  const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatus>>> = [
+    async () => (await httpClient.post<ApiResponse<FriendshipStatus>>("/api/v1/users/friendships/block", body)).data,
+    async () => (await httpClient.post<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/block/${targetUserId}`, {})).data,
+    async () => (await httpClient.put<ApiResponse<FriendshipStatus>>("/api/v1/users/friendships/block", body)).data,
+    async () => (await httpClient.put<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/block/${targetUserId}`, {})).data,
+  ];
+
+  let latestError: unknown;
+  for (const request of fallbacks) {
+    try {
+      const result = await request();
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          status: String(result.data?.status ?? "BLOCKED"),
+          blockedByMe: result.data?.blockedByMe ?? true,
+        },
+      };
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405])) {
+        throw error;
+      }
+    }
+  }
+
+  throw latestError;
+}
+
+export async function unblockUser(targetUserId: string) {
+  try {
+    const response = await httpClient.delete<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/${targetUserId}/block`);
+    return {
+      ...response.data,
+      data: {
+        ...response.data.data,
+        status: String(response.data.data?.status ?? "NONE"),
+        blockedByMe: response.data.data?.blockedByMe ?? false,
+      },
+    };
+  } catch (error) {
+    if (!isCompatibilityStatus(error, [404, 405])) {
+      throw error;
+    }
+  }
+
+  const fallbacks: Array<() => Promise<ApiResponse<FriendshipStatus>>> = [
+    async () => (await httpClient.delete<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/block/${targetUserId}`)).data,
+    async () =>
+      (await httpClient.post<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/unblock/${targetUserId}`, {})).data,
+    async () => (await httpClient.post<ApiResponse<FriendshipStatus>>("/api/v1/users/friendships/unblock", { targetUserId })).data,
+    async () =>
+      (await httpClient.post<ApiResponse<FriendshipStatus>>(`/api/v1/users/friendships/block/${targetUserId}/unblock`, {})).data,
+  ];
+
+  let latestError: unknown;
+  for (const request of fallbacks) {
+    try {
+      const result = await request();
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          status: String(result.data?.status ?? "NONE"),
+          blockedByMe: result.data?.blockedByMe ?? false,
+        },
+      };
+    } catch (error) {
+      latestError = error;
+      if (!isCompatibilityStatus(error, [404, 405])) {
+        throw error;
+      }
+    }
+  }
+
+  throw latestError;
 }
 
 export async function acceptFriendRequest(friendshipId: string) {
@@ -194,10 +456,75 @@ export async function declineFriendRequest(friendshipId: string) {
   return response.data;
 }
 
-export async function removeFriend(friendshipId: string) {
-  const response = await httpClient.delete<ApiResponse<{ friendshipId: string; status: string }>>(
-    `/api/v1/users/friendships/${friendshipId}`,
+export async function cancelFriendRequest(friendshipId: string) {
+  try {
+    const response = await httpClient.delete<ApiResponse<{ friendshipId: string; status: string }>>(
+      `/api/v1/users/friendships/requests/${friendshipId}`,
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const response = await httpClient.post<ApiResponse<{ friendshipId: string; status: string }>>(
+      `/api/v1/users/friendships/${friendshipId}/cancel`,
+      {},
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const legacyResponse = await httpClient.delete<ApiResponse<{ friendshipId: string; status: string }>>(
+    `/api/v1/users/friendships/${friendshipId}/cancel`,
   );
+  return legacyResponse.data;
+}
+
+export async function cancelFriendRequestForUser(targetUserId: string, requestId?: string | null) {
+  let resolvedRequestId = requestId ? String(requestId).trim() : "";
+  if (!resolvedRequestId) {
+    const status = await getRelationshipStatus(targetUserId);
+    resolvedRequestId = String(status.data?.requestId ?? status.data?.friendshipId ?? "").trim();
+  }
+
+  if (!resolvedRequestId) {
+    const notFoundError = new Error("No pending friend request found for this user");
+    (notFoundError as Error & { code?: string }).code = "RELATIONSHIP_REQUEST_NOT_FOUND";
+    throw notFoundError;
+  }
+
+  return cancelFriendRequest(resolvedRequestId);
+}
+
+export async function blockRelationshipUser(targetUserId: string) {
+  try {
+    return await blockUser(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const response = await httpClient.post<ApiResponse<FriendshipStatus>>(`/api/v1/users/blocks/${targetUserId}`, {});
+  return response.data;
+}
+
+export async function unblockRelationshipUser(targetUserId: string) {
+  try {
+    return await unblockUser(targetUserId);
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const response = await httpClient.delete<ApiResponse<FriendshipStatus>>(`/api/v1/users/blocks/${targetUserId}`);
   return response.data;
 }
 

@@ -53,7 +53,8 @@ export function LoginScreen({ navigation }: Props) {
   };
 
   const submit = async () => {
-    if (!email.includes("@") || password.length < 6) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail.includes("@") || password.length < 6) {
       Alert.alert("Thông báo", "Email hoặc mật khẩu không hợp lệ");
       return;
     }
@@ -61,7 +62,7 @@ export function LoginScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const response = await loginWithEmailPassword({
-        email,
+        email: trimmedEmail,
         password,
         deviceName: "ios-app",
         deviceType: "MOBILE",

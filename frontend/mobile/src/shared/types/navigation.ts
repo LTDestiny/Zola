@@ -11,10 +11,11 @@ export type ChatStackParamList = {
   ChatList: undefined;
   ChatDetail: { conversation: ConversationItem };
   GroupSettings: { conversation: ConversationItem };
+  UserProfile: { userId: string };
 };
 
 export type RootTabParamList = {
   Chats: undefined;
-  FriendRequests: undefined;
+  Contacts: undefined;
   Profile: undefined;
 };

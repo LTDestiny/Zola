@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -60,6 +62,8 @@ import {
   getConversationDisplayName,
   getPeerUserId,
 } from "@/modules/chat/utils/conversationUtils";
+import { useRelationshipStore } from "@/modules/chat/store/relationshipStore";
+import { markConversationRead as apiMarkRead } from "@/modules/chat/api/chatApi";
 import { useSocketStore } from "@/modules/chat/store/socketStore";
 import { socketService, type CallRealtimeEvent } from "@/modules/chat/socket/socketService";
 import type { ChatStackParamList } from "@/shared/types/navigation";
@@ -186,6 +190,11 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     [conversation, meId],
   );
 
+  const relationship = useRelationshipStore(
+    useCallback((s) => (peerUserId ? s.entries[peerUserId] : null), [peerUserId]),
+  );
+  const isBlocked = relationship?.status === "BLOCKED_BY_ME" || relationship?.status === "BLOCKED_ME";
+
   const presenceState = usePresenceStore(
     useCallback((s) => (peerUserId ? s.presenceMap[peerUserId] : null), [peerUserId]),
   );
@@ -299,11 +308,26 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     setActiveConversation(conversationId);
     void loadInitial();
 
+    if (peerUserId) {
+      void useRelationshipStore.getState().fetchEntry(peerUserId, meId);
+    }
+
     return () => {
       setActiveConversation(null);
       clearCallRuntime();
     };
-  }, [clearCallRuntime, conversationId, loadInitial, setActiveConversation]);
+  }, [clearCallRuntime, conversationId, loadInitial, setActiveConversation, peerUserId, meId]);
+
+  // Mark as read when messages change or focus
+  useEffect(() => {
+    if (messages.length > 0) {
+      const newest = messages[messages.length - 1];
+      if (newest.senderId !== meId) {
+        void apiMarkRead(conversationId, newest.id).catch(() => {});
+        useChatStore.getState().markReadLocal(conversationId);
+      }
+    }
+  }, [messages, conversationId, meId]);
 
   const loadGroupSettings = useCallback(async () => {
     if (conversationType !== "group") {
@@ -1051,8 +1075,13 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     : null;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}> 
-      <View style={styles.header}>
+    <View style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={0}
+      >
+        <View style={[styles.header, { paddingTop: insets.top }]}>
         <Pressable
           onPress={() => navigation.goBack()}
           style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
@@ -1145,16 +1174,32 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       />
 
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom || spacing.md }]}>
-        {shouldShowComposer ? (
-        <MessageInput
-          onSend={onSend}
-          onPickImage={() => void onPickImage()}
-          onPickFile={() => void onPickFile()}
-          onCamera={() => Alert.alert("Camera", "Bạn có thể mở rộng bằng expo-camera")}
-          onRecordAudio={() => Alert.alert("Audio", "Bạn có thể mở rộng bằng expo-av")}
-          onTextChange={onTextChange}
-          onSendComplete={onSendMessage}
-        />
+        {isBlocked ? (
+          <View style={styles.blockBanner}>
+            <Text style={styles.blockBannerText}>
+              {relationship?.status === "BLOCKED_BY_ME"
+                ? "Bạn đã chặn người này. Bỏ chặn để gửi tin nhắn."
+                : "Người này đã chặn bạn hoặc không thể nhận tin nhắn."}
+            </Text>
+            {relationship?.status === "BLOCKED_BY_ME" && (
+              <Pressable
+                onPress={() => navigation.navigate("UserProfile", { userId: peerUserId! })}
+                style={styles.unblockLink}
+              >
+                <Text style={styles.unblockLinkText}>Bỏ chặn</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : shouldShowComposer ? (
+          <MessageInput
+            onSend={onSend}
+            onPickImage={() => void onPickImage()}
+            onPickFile={() => void onPickFile()}
+            onCamera={() => Alert.alert("Camera", "Bạn có thể mở rộng bằng expo-camera")}
+            onRecordAudio={() => Alert.alert("Audio", "Bạn có thể mở rộng bằng expo-av")}
+            onTextChange={onTextChange}
+            onSendComplete={onSendMessage}
+          />
         ) : (
           <View style={styles.permissionBanner}>
             <Text style={styles.permissionBannerTitle}>
@@ -1256,6 +1301,8 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      </KeyboardAvoidingView>
 
       <InAppCallOverlay
         incomingCall={incomingCallView}
@@ -1429,6 +1476,26 @@ const styles = StyleSheet.create({
     color: "#8A4B00",
     marginTop: spacing.xs,
     lineHeight: 18,
+  },
+  blockBanner: {
+    backgroundColor: "rgba(255, 59, 48, 0.1)",
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  blockBannerText: {
+    ...typography.caption1,
+    color: colors.danger,
+    textAlign: "center",
+  },
+  unblockLink: {
+    marginTop: spacing.xs,
+  },
+  unblockLinkText: {
+    ...typography.caption1,
+    color: colors.primary,
+    fontWeight: "700",
   },
   modalOverlay: {
     flex: 1,

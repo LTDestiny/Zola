@@ -1,5 +1,5 @@
 import { memo, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import type { MessageItem } from "@/shared/types/api";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 import { formatTime } from "@/modules/chat/utils/format";
@@ -19,6 +19,11 @@ function summarizeReactions(reactions: string[] | undefined) {
     buckets.set(emoji, (buckets.get(emoji) ?? 0) + 1);
   }
   return Array.from(buckets.entries());
+}
+
+function isImageFile(url: string) {
+  const ext = url.split(".").pop()?.toLowerCase();
+  return ["jpg", "jpeg", "png", "webp", "gif"].includes(ext ?? "");
 }
 
 function MessageBubbleComponent({
@@ -66,11 +71,21 @@ function MessageBubbleComponent({
           ) : (
             <>
               {message.fileUrl && (
-                <View style={styles.fileContainer}>
-                  <Text style={styles.fileIcon}>📎</Text>
-                  <Text style={[styles.fileName, mine && styles.fileNameMine]} numberOfLines={1}>
-                    {message.fileName ?? "Tệp đính kèm"}
-                  </Text>
+                <View style={styles.mediaContainer}>
+                  {isImageFile(message.fileUrl) ? (
+                    <Image 
+                      source={{ uri: message.fileUrl }} 
+                      style={styles.messageImage} 
+                      resizeMode="cover" 
+                    />
+                  ) : (
+                    <View style={styles.fileContainer}>
+                      <Text style={styles.fileIcon}>📎</Text>
+                      <Text style={[styles.fileName, mine && styles.fileNameMine]} numberOfLines={1}>
+                        {message.fileName ?? "Tệp đính kèm"}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
               <Text style={[styles.content, textStyle]}>{message.content}</Text>
@@ -95,7 +110,7 @@ function MessageBubbleComponent({
             </Text>
             {mine && (
               <Text style={[styles.status, mine && styles.statusMine]}>
-                {(message.seenBy?.length ?? 0) > 1 ? "seen" : "sent"}
+                {(message.seenBy?.length ?? 0) > 1 || message.isRead ? "Đã xem" : "Đã gửi"}
               </Text>
             )}
           </View>
@@ -152,6 +167,15 @@ const styles = StyleSheet.create({
   },
   editedLabelMine: {
     color: "rgba(255, 255, 255, 0.75)",
+  },
+  mediaContainer: {
+    marginBottom: spacing.xs,
+  },
+  messageImage: {
+    width: 200,
+    height: 150,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.bgSecondary,
   },
   fileContainer: {
     flexDirection: "row",
