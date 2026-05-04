@@ -657,9 +657,9 @@ export function GroupChat({
 
     const completed = onCreateReminder
       ? await onCreateReminder({
-          title: trimmedTitle,
-          when: reminderTimeDraft || null,
-        })
+        title: trimmedTitle,
+        when: reminderTimeDraft || null,
+      })
       : await onSendTemplateMessage?.("REMINDER");
 
     if (completed !== false) {
@@ -1007,21 +1007,23 @@ export function GroupChat({
                                 <p className="truncate text-[10px] text-amber-100/85">{item.preview}</p>
                               )}
                             </div>
-                            <span className="shrink-0">
-                              <button
-                                type="button"
-                                disabled={!canPinBoardItems}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (canPinBoardItems) {
-                                    onUnpinPinnedMessage?.(item.sourceMessageId);
-                                  }
-                                }}
-                                className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
-                              >
-                                {language === "vi" ? "Bo ghim" : "Unpin"}
-                              </button>
-                            </span>
+                            {item.itemType === "pin" && (
+                              <span className="shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={!canPinBoardItems}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (canPinBoardItems) {
+                                      onUnpinPinnedMessage?.(item.sourceMessageId);
+                                    }
+                                  }}
+                                  className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
+                                >
+                                  {language === "vi" ? "Bo ghim" : "Unpin"}
+                                </button>
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1547,13 +1549,13 @@ export function GroupChat({
                           </div>
 
                           <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => onMentionMember?.(memberId)}
-                                className="grid h-8 w-8 place-items-center rounded-lg border border-amber-300/40 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10"
-                              >
-                                @
-                              </button>
+                            <button
+                              type="button"
+                              onClick={() => onMentionMember?.(memberId)}
+                              className="grid h-8 w-8 place-items-center rounded-lg border border-amber-300/40 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10"
+                            >
+                              @
+                            </button>
                             {canManageThisMember && (
                               <button
                                 type="button"
@@ -2114,39 +2116,39 @@ export function GroupChat({
           )}
 
           {panelView === "default" && (
-          <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3">
-            <div className="flex items-center gap-2 text-rose-200">
-              <AlertTriangle size={15} />
-              <p className="text-sm font-semibold">
-                {language === "vi" ? "Bao cao va roi nhom" : "Report and leave"}
-              </p>
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
-              >
-                {language === "vi" ? "Bao xau" : "Report"}
-              </button>
-              <button
-                type="button"
-                onClick={() => onLeaveGroup?.()}
-                className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
-              >
-                {language === "vi" ? "Roi nhom" : "Leave"}
-              </button>
-            </div>
-            {isOwner && (
-              <button
-                type="button"
-                onClick={() => onDeleteGroup?.()}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white"
-              >
-                <Trash2 size={14} />
-                <span>{language === "vi" ? "Giai tan nhom" : "Delete group"}</span>
-              </button>
-            )}
-          </section>
+            <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3">
+              <div className="flex items-center gap-2 text-rose-200">
+                <AlertTriangle size={15} />
+                <p className="text-sm font-semibold">
+                  {language === "vi" ? "Bao cao va roi nhom" : "Report and leave"}
+                </p>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
+                >
+                  {language === "vi" ? "Bao xau" : "Report"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLeaveGroup?.()}
+                  className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
+                >
+                  {language === "vi" ? "Roi nhom" : "Leave"}
+                </button>
+              </div>
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteGroup?.()}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  <Trash2 size={14} />
+                  <span>{language === "vi" ? "Giai tan nhom" : "Delete group"}</span>
+                </button>
+              )}
+            </section>
           )}
         </div>
       </aside>

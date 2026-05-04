@@ -80,6 +80,9 @@ public class ConversationDocument {
     @Field("pending_members")
     private List<PendingGroupMemberItem> pendingMembers;
 
+    @Field("pinned_user_ids")
+    private java.util.Set<String> pinnedUserIds;
+
     @Field("last_message")
     private String lastMessage;
 
@@ -338,5 +341,12 @@ public class ConversationDocument {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+    public java.util.Set<String> getPinnedUserIds() {
+        return pinnedUserIds == null ? java.util.Collections.emptySet() : pinnedUserIds;
+    }
+
+    public void setPinnedUserIds(java.util.Set<String> pinnedUserIds) {
+        this.pinnedUserIds = pinnedUserIds;
     }
 }

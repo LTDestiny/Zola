@@ -41,6 +41,7 @@ import {
   markConversationRead,
   getUsersPresence,
   markPendingFriendRequestsRead,
+  pinGroupMessage,
   removeFriend,
   removeGroupMember,
   readMessage,
@@ -52,6 +53,7 @@ import {
   setGroupAdmin,
   toApiErrorMessage,
   unblockRelationshipUser,
+  unpinGroupMessage,
   updateMyProfile,
   updateGroupSettings,
   type FriendshipStatusPayload,
@@ -348,7 +350,7 @@ function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
   try {
     const payload = JSON.parse(message.content) as Record<string, unknown>;
     const kind = String(payload?.kind ?? "").toUpperCase();
-    if (kind !== "PIN_MESSAGE" && kind !== "UNPIN_MESSAGE" && kind !== "BOARD_NOTE") {
+    if (kind !== "BOARD_NOTE") {
       return null;
     }
 
@@ -357,24 +359,19 @@ function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
       return null;
     }
 
-    const pinToTop = kind === "UNPIN_MESSAGE"
-      ? false
-      : kind === "PIN_MESSAGE"
-        ? true
-        : Boolean(payload?.pinToTop);
+    const pinToTop = Boolean(payload?.pinToTop);
     const title = String(payload?.title ?? "").trim();
     const preview = String(payload?.preview ?? payload?.note ?? "").trim();
     const createdAtRaw = String(payload?.createdAt ?? message.createdAt ?? "");
     const createdAtMs = Date.parse(createdAtRaw);
-    const itemType = kind === "BOARD_NOTE" ? "note" : "pin";
 
     return {
       id: message.id,
-      kind: kind as "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE",
-      itemType,
+      kind: "BOARD_NOTE",
+      itemType: "note",
       pinToTop,
       sourceMessageId,
-      title: title || (kind === "UNPIN_MESSAGE" ? "Unpinned message" : kind === "BOARD_NOTE" ? "Group note" : "Pinned message"),
+      title: title || "Group note",
       preview,
       createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
     };
@@ -1780,51 +1777,28 @@ export function ChatPage() {
     if (!canPinBoardItems) {
       setBannerMessage(
         language === "vi"
-          ? "Chi truong/pho nhom moi duoc ghim tin nhan"
-          : "Only owner/admin can pin messages",
+          ? "Ban khong duoc phep ghim tin nhan trong nhom nay"
+          : "You are not allowed to pin messages in this group",
       );
       return;
     }
 
-    if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
+    if (activePinnedMessageItems.some((item) => item.sourceMessageId === targetMessage.id)) {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
     }
-    if (activePinnedBoardItems.length >= 3) {
+    if (activePinnedMessageItems.length >= 3) {
       setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
-    const title =
-      language === "vi"
-        ? "Tin nhan da duoc ghim"
-        : "Pinned message";
-
-    const payload = {
-      kind: "PIN_MESSAGE",
-      sourceMessageId: targetMessage.id,
-      title,
-      preview,
-      createdAt: nowIso,
-    };
-
     try {
-      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
-        type: "NOTE",
-      });
-
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-
+      const result = await pinGroupMessage(activeConversationId, targetMessage.id);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [activeConversationId]: result.data,
+      }));
       setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
-      await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -1840,34 +1814,13 @@ export function ChatPage() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const title =
-      language === "vi"
-        ? "Tin nhan da duoc bo ghim"
-        : "Unpinned message";
-
-    const payload = {
-      kind: "UNPIN_MESSAGE",
-      sourceMessageId: normalizedSourceId,
-      title,
-      createdAt: nowIso,
-    };
-
     try {
-      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
-        type: "NOTE",
-      });
-
-      setMessages((prev) => {
-        const exists = prev.some((item) => item.id === result.data.id);
-        if (exists) {
-          return prev;
-        }
-        return [...prev, result.data];
-      });
-
+      const result = await unpinGroupMessage(activeConversationId, normalizedSourceId);
+      setGroupSettingsMap((prev) => ({
+        ...prev,
+        [activeConversationId]: result.data,
+      }));
       setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
-      await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -4786,7 +4739,7 @@ export function ChatPage() {
                 );
                 setRelationshipEntry({
                   targetUserId: requesterId,
-                  status: "INCOMING_REQUEST",
+                  status: "INCOMING_PENDING",
                   requestId: friendshipId,
                   friendshipId,
                   requesterId,
@@ -5045,7 +4998,7 @@ export function ChatPage() {
                 );
                 setRelationshipEntry({
                   targetUserId: counterpartyUserId,
-                  status: "FRIEND",
+                  status: "FRIENDS",
                   requestId: null,
                   friendshipId: friendshipId ?? null,
                   requesterId: requesterId ?? null,
@@ -5093,6 +5046,20 @@ export function ChatPage() {
           ) {
             void fetchConversations({ silent: true });
           }
+          return;
+        }
+
+        if (event.eventType === "GROUP_STATE_CHANGED") {
+          try {
+            const payload = event.payload ? JSON.parse(event.payload) : null;
+            const conversationId = String(payload?.conversationId ?? "").trim();
+            if (conversationId) {
+              void refreshGroupSettings(conversationId);
+            }
+          } catch {
+            // Ignore malformed sync payloads and fall back to the periodic refreshes.
+          }
+          void fetchConversations({ silent: true });
           return;
         }
 
@@ -7339,7 +7306,7 @@ export function ChatPage() {
           requestDirection: null,
         };
       }
-      if (storedRelationship.status === "FRIEND") {
+      if (storedRelationship.status === "FRIENDS") {
         return {
           kind: normalizedUserId === myProfile?.id ? "self" : "friend",
           status: "ACCEPTED",
@@ -7347,7 +7314,7 @@ export function ChatPage() {
           requestDirection: null,
         };
       }
-      if (storedRelationship.status === "INCOMING_REQUEST") {
+      if (storedRelationship.status === "INCOMING_PENDING") {
         return {
           kind: "pending_received",
           status: "PENDING",
@@ -7355,7 +7322,7 @@ export function ChatPage() {
           requestDirection: "incoming",
         };
       }
-      if (storedRelationship.status === "OUTGOING_REQUEST") {
+      if (storedRelationship.status === "OUTGOING_PENDING") {
         return {
           kind: "pending_sent",
           status: "PENDING",
@@ -7618,7 +7585,7 @@ export function ChatPage() {
       : null;
 
   const isActiveDirectPeerFriend = Boolean(
-    activeDirectPeerUserId && activePeerRelationship.status === "FRIEND",
+    activeDirectPeerUserId && activePeerRelationship.status === "FRIENDS",
   );
   const isActiveDirectPeerBlockedByMe = Boolean(
     activeDirectPeerUserId && activePeerRelationship.status === "BLOCKED_BY_ME",
@@ -7640,7 +7607,7 @@ export function ChatPage() {
       activePeerRelationship.status === "NONE",
   );
   const activeIncomingPendingFriendRequest = activeDirectPeerUserId
-    ? activePeerRelationship.status === "INCOMING_REQUEST"
+    ? activePeerRelationship.status === "INCOMING_PENDING"
       ? {
           friendshipId:
             activePeerRelationship.requestId ??
@@ -7657,7 +7624,7 @@ export function ChatPage() {
         ) ?? null
     : null;
   const activeSentPendingFriendRequest = activeDirectPeerUserId
-    ? activePeerRelationship.status === "OUTGOING_REQUEST"
+    ? activePeerRelationship.status === "OUTGOING_PENDING"
       ? {
           friendshipId:
             activePeerRelationship.requestId ??
@@ -7684,7 +7651,7 @@ export function ChatPage() {
       : activeIncomingPendingFriendRequest
         ? "incoming-request"
         : activeSentPendingFriendRequest ||
-            activePeerRelationship.status === "OUTGOING_REQUEST" ||
+            activePeerRelationship.status === "OUTGOING_PENDING" ||
             normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
           ? "outgoing-request"
           : "add-or-block";
@@ -7746,41 +7713,54 @@ export function ChatPage() {
     ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
     : false;
 
+  const activePinnedMessageItems = useMemo(() => {
+    if (activeConversationForView?.type !== "group") {
+      return [] as PinnedBoardItem[];
+    }
+
+    return (groupSettingsMap[activeConversationForView.id]?.pinnedMessages ?? []).map(
+      (item) => ({
+        id: `pin:${item.sourceMessageId}`,
+        itemType: "pin" as const,
+        sourceMessageId: item.sourceMessageId,
+        title: item.title,
+        preview: item.preview,
+        createdAtMs: item.createdAtMs,
+      }),
+    );
+  }, [
+    activeConversationForView?.id,
+    activeConversationForView?.type,
+    groupSettingsMap,
+  ]);
+
   const activePinnedBoardItems = useMemo(() => {
     if (activeConversationForView?.type !== "group") {
       return [] as PinnedBoardItem[];
     }
 
-    const orderedEvents = messages
+    const pinnedNotes = messages
       .map((item) => parsePinBoardEvent(item))
       .filter((item): item is PinBoardEvent => Boolean(item))
-      .sort((a, b) => a.createdAtMs - b.createdAtMs);
+      .filter((item) => item.pinToTop)
+      .map((item) => ({
+        id: item.id,
+        itemType: "note" as const,
+        sourceMessageId: item.sourceMessageId,
+        title: item.title,
+        preview: item.preview,
+        createdAtMs: item.createdAtMs,
+      }));
 
-    const pinnedBySource = new Map<string, PinnedBoardItem>();
-
-    for (const event of orderedEvents) {
-      if (event.kind === "UNPIN_MESSAGE") {
-        pinnedBySource.delete(event.sourceMessageId);
-        continue;
-      }
-
-      if (!event.pinToTop) {
-        pinnedBySource.delete(event.sourceMessageId);
-        continue;
-      }
-
-      pinnedBySource.set(event.sourceMessageId, {
-        id: event.id,
-        itemType: event.itemType,
-        sourceMessageId: event.sourceMessageId,
-        title: event.title,
-        preview: event.preview,
-        createdAtMs: event.createdAtMs,
-      });
-    }
-
-    return Array.from(pinnedBySource.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
-  }, [messages, activeConversationForView?.id, activeConversationForView?.type]);
+    return [...activePinnedMessageItems, ...pinnedNotes].sort(
+      (a, b) => b.createdAtMs - a.createdAtMs,
+    );
+  }, [
+    activePinnedMessageItems,
+    messages,
+    activeConversationForView?.id,
+    activeConversationForView?.type,
+  ]);
 
   const latestPinnedSummary = useMemo(() => {
     const latest = activePinnedBoardItems[0];

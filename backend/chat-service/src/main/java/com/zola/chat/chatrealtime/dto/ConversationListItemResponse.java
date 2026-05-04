@@ -17,6 +17,7 @@ public record ConversationListItemResponse(
     List<String> admins,
     String ownerId,
     String otherUserId,
-    boolean isOnline
+    boolean isOnline,
+    boolean isPinned
 ) {
 }

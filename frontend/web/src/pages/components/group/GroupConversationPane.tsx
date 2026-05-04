@@ -818,7 +818,12 @@ export function GroupConversationPane({
   }, [localMessages, normalizedMessageSearchQuery]);
 
   const pinnedSourceMessageIdSet = useMemo(
-    () => new Set((pinnedMessages ?? []).map((item) => item.sourceMessageId)),
+    () =>
+      new Set(
+        (pinnedMessages ?? [])
+          .filter((item) => item.itemType === "pin")
+          .map((item) => item.sourceMessageId),
+      ),
     [pinnedMessages],
   );
 
@@ -1580,26 +1585,28 @@ export function GroupConversationPane({
                       </p>
                       {item.preview && <p className="truncate text-[11px] text-amber-100/85">{item.preview}</p>}
                     </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const sourceMessage = localMessages.find((msg) => msg.id === item.sourceMessageId);
-                        void onUnpinMessage?.(
-                          sourceMessage ?? {
-                            id: item.sourceMessageId,
-                            text: item.preview || item.title,
-                            senderId: currentUserId,
-                            timestamp: "",
-                            status: "sent",
-                            type: "text",
-                          },
-                        );
-                      }}
-                      className="mt-1 rounded border border-rose-300/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/15"
-                    >
-                      {language === "vi" ? "Bo ghim" : "Unpin"}
-                    </button>
+                    {item.itemType === "pin" && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const sourceMessage = localMessages.find((msg) => msg.id === item.sourceMessageId);
+                          void onUnpinMessage?.(
+                            sourceMessage ?? {
+                              id: item.sourceMessageId,
+                              text: item.preview || item.title,
+                              senderId: currentUserId,
+                              timestamp: "",
+                              status: "sent",
+                              type: "text",
+                            },
+                          );
+                        }}
+                        className="mt-1 rounded border border-rose-300/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/15"
+                      >
+                        {language === "vi" ? "Bo ghim" : "Unpin"}
+                      </button>
+                    )}
                   </div>
                 ))
               )}

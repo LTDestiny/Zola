@@ -8,14 +8,14 @@ import {
 describe("relationship utils", () => {
   it("maps outgoing pending requests from v2 payload", () => {
     const entry = normalizeRelationshipPayload("user-b", {
-      status: "OUTGOING_REQUEST",
+      status: "OUTGOING_PENDING",
       requestId: "req-1",
       friendshipId: "req-1",
       requesterId: "user-a",
       addresseeId: "user-b",
     }, "user-a");
 
-    expect(entry.status).toBe("OUTGOING_REQUEST");
+    expect(entry.status).toBe("OUTGOING_PENDING");
     expect(entry.requestId).toBe("req-1");
     expect(relationshipToLegacyFriendshipStatus(entry)).toBe("PENDING");
   });
@@ -28,7 +28,7 @@ describe("relationship utils", () => {
       addresseeId: "user-a",
     }, "user-a");
 
-    expect(entry.status).toBe("INCOMING_REQUEST");
+    expect(entry.status).toBe("INCOMING_PENDING");
     expect(entry.requestId).toBe("req-2");
   });
 
@@ -66,7 +66,7 @@ describe("relationship utils", () => {
       ],
     });
 
-    expect(entry.status).toBe("OUTGOING_REQUEST");
+    expect(entry.status).toBe("OUTGOING_PENDING");
     expect(entry.requestId).toBe("req-outgoing");
     expect(entry.addresseeId).toBe("user-b");
   });

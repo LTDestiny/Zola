@@ -30,10 +30,12 @@ function MessageBubbleComponent({
   message,
   mine,
   onLongPress,
+  isPinned = false,
 }: {
   message: MessageItem;
   mine: boolean;
   onLongPress: () => void;
+  isPinned?: boolean;
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -105,6 +107,7 @@ function MessageBubbleComponent({
             </View>
           )}
           <View style={styles.metaRow}>
+            {isPinned && <Text style={[styles.pinIcon, mine && styles.pinIconMine]}>📌</Text>}
             <Text style={[styles.time, mine && styles.timeMine]}>
               {formatTime(message.createdAt)}
             </Text>
@@ -244,5 +247,13 @@ const styles = StyleSheet.create({
   },
   statusMine: {
     color: "rgba(255, 255, 255, 0.7)",
+  },
+  pinIcon: {
+    fontSize: 10,
+    marginRight: 2,
+    opacity: 0.8,
+  },
+  pinIconMine: {
+    opacity: 1,
   },
 });

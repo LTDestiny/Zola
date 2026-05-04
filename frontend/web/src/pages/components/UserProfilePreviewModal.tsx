@@ -85,10 +85,13 @@ function friendshipLabel(
   if (normalized === "FRIEND") {
     return language === "vi" ? "Ban be" : "Friends";
   }
-  if (normalized === "OUTGOING_REQUEST") {
+  if (normalized === "FRIENDS") {
+    return language === "vi" ? "Ban be" : "Friends";
+  }
+  if (normalized === "OUTGOING_REQUEST" || normalized === "OUTGOING_PENDING") {
     return language === "vi" ? "Da gui loi moi" : "Request sent";
   }
-  if (normalized === "INCOMING_REQUEST") {
+  if (normalized === "INCOMING_REQUEST" || normalized === "INCOMING_PENDING") {
     return language === "vi" ? "Loi moi den" : "Incoming request";
   }
   if (normalized === "BLOCKED_BY_ME") {
@@ -152,15 +155,18 @@ export function UserProfilePreviewModal({
     blockedByPeer || normalizedRelationshipStatus === "BLOCKED_ME";
   const isIncomingPending =
     normalizedRelationshipStatus === "INCOMING_REQUEST" ||
+    normalizedRelationshipStatus === "INCOMING_PENDING" ||
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "incoming";
   const isOutgoingPending =
     normalizedRelationshipStatus === "OUTGOING_REQUEST" ||
+    normalizedRelationshipStatus === "OUTGOING_PENDING" ||
     normalizedFriendshipStatus === "PENDING" &&
     friendRequestDirection === "outgoing";
   const isBlocked = isBlockedByMe || isBlockedByPeer;
   const isFriend =
     normalizedRelationshipStatus === "FRIEND" ||
+    normalizedRelationshipStatus === "FRIENDS" ||
     normalizedFriendshipStatus === "ACCEPTED";
   const isStrangerProfile =
     !isCurrentUser &&

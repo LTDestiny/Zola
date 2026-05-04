@@ -91,7 +91,12 @@ export type ConversationItem = {
   otherUserId?: string | null;
 };
 
-export type GroupSettings = {
+  pinnedMessages?: Array<{
+    sourceMessageId: string;
+    title: string;
+    preview: string;
+    createdAtMs: number;
+  }>;
   conversationId: string;
   name: string;
   avatar: string | null;

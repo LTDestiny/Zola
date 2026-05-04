@@ -1,0 +1,2 @@
+ALTER TABLE conversation ADD COLUMN user1_is_pinned BOOLEAN DEFAULT FALSE;
+ALTER TABLE conversation ADD COLUMN user2_is_pinned BOOLEAN DEFAULT FALSE;

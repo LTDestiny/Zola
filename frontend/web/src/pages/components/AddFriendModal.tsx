@@ -75,7 +75,7 @@ export function AddFriendModal({
             value={friendEmail}
             onChange={(event) => onFriendEmailChange(event.target.value)}
             placeholder="email@example.com"
-            className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
+            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
           />
           <button
             type="button"

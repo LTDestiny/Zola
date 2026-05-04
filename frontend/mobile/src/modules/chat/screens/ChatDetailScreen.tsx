@@ -21,9 +21,11 @@ import {
   editMessage,
   forwardMessage,
   getGroupSettings,
+  pinGroupMessage,
   recallMessage,
   removeReaction,
   sendMessage,
+  unpinGroupMessage,
 } from "@/modules/chat/api/chatApi";
 import {
   inferMessageType,
@@ -46,6 +48,7 @@ import {
 } from "@/modules/chat/call/callCapability";
 import { MessageBubble } from "@/modules/chat/components/MessageBubble";
 import { MessageInput } from "@/modules/chat/components/MessageInput";
+import { PinnedMessagesBanner } from "@/modules/chat/components/PinnedMessagesBanner";
 import { PresenceBadge } from "@/modules/chat/components/PresenceBadge";
 import { TypingIndicator } from "@/modules/chat/components/TypingIndicator";
 import { useMessages } from "@/modules/chat/hooks/useMessages";
@@ -862,6 +865,43 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     }
 
     if (!isRecalled) {
+      if (conversationType === "group") {
+        const canPin =
+          resolvedGroupSettings.isOwner ||
+          resolvedGroupSettings.isAdmin ||
+          resolvedGroupSettings.allowMembersPinBoardItems;
+        
+        const isPinned = groupSettings?.pinnedMessages?.some(p => p.sourceMessageId === message.id);
+
+        if (canPin) {
+          if (isPinned) {
+            actions.push({
+              label: "Bỏ ghim",
+              handler: async () => {
+                try {
+                  await unpinGroupMessage(conversationId, message.id);
+                  void loadGroupSettings();
+                } catch {
+                  Alert.alert("Thông báo", "Không thể bỏ ghim tin nhắn");
+                }
+              },
+            });
+          } else {
+            actions.push({
+              label: "Ghim",
+              handler: async () => {
+                try {
+                  await pinGroupMessage(conversationId, message.id);
+                  void loadGroupSettings();
+                } catch {
+                  Alert.alert("Thông báo", "Không thể ghim tin nhắn");
+                }
+              },
+            });
+          }
+        }
+      }
+
       actions.push({
         label: "Chuyển tiếp",
         handler: () => {
@@ -982,21 +1022,43 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   const reversed = useMemo(() => [...messages].reverse(), [messages]);
 
-  const renderItem = useCallback(({ item }: { item: MessageItem }) => (
-    <View style={styles.messageRow}>
-      <MessageBubble
-        message={item}
-        mine={item.senderId === meId}
-        onLongPress={() => onLongPressMessage(item)}
-      />
-    </View>
-  ), [meId, onLongPressMessage]);
+  const renderItem = useCallback(({ item }: { item: MessageItem }) => {
+    const isPinned = groupSettings?.pinnedMessages?.some(p => p.sourceMessageId === item.id);
+    return (
+      <View style={styles.messageRow}>
+        <MessageBubble
+          message={item}
+          mine={item.senderId === meId}
+          onLongPress={() => onLongPressMessage(item)}
+          isPinned={isPinned}
+        />
+      </View>
+    );
+  }, [groupSettings?.pinnedMessages, meId, onLongPressMessage]);
 
   const onEndReached = useCallback(() => {
     if (hasMore && !loading) {
       void loadMore();
     }
   }, [hasMore, loadMore, loading]);
+
+  const scrollToMessage = useCallback((messageId: string) => {
+    const index = reversed.findIndex((m) => m.id === messageId);
+    if (index !== -1) {
+      flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+    } else {
+      Alert.alert("Thông báo", "Tin nhắn này không còn trong danh sách hiển thị.");
+    }
+  }, [reversed]);
+
+  const onUnpinMessagePinned = useCallback(async (messageId: string) => {
+    try {
+      await unpinGroupMessage(conversationId, messageId);
+      void loadGroupSettings();
+    } catch {
+      Alert.alert("Thông báo", "Không thể bỏ ghim tin nhắn");
+    }
+  }, [conversationId, loadGroupSettings]);
 
   const extraData = useMemo(() => {
     const lastMsg = messages[messages.length - 1];
@@ -1135,6 +1197,15 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           )}
         </View>
       </View>
+
+      {conversationType === "group" && groupSettings?.pinnedMessages && groupSettings.pinnedMessages.length > 0 && (
+        <PinnedMessagesBanner
+          pinnedMessages={groupSettings.pinnedMessages}
+          onPress={scrollToMessage}
+          onUnpin={onUnpinMessagePinned}
+          canUnpin={resolvedGroupSettings.isOwner || resolvedGroupSettings.isAdmin}
+        />
+      )}
 
       {groupCallNotice && !activeCall && conversationType === "group" && (
         <View style={styles.callNoticeBanner}>

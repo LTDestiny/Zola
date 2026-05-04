@@ -48,6 +48,12 @@ public class ConversationEntity {
     @Column(name = "user2_last_read_message_id", length = 128)
     private String user2LastReadMessageId;
 
+    @Column(name = "user1_is_pinned", nullable = false)
+    private boolean user1IsPinned;
+
+    @Column(name = "user2_is_pinned", nullable = false)
+    private boolean user2IsPinned;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -199,5 +205,39 @@ public class ConversationEntity {
             return user2LastReadMessageId;
         }
         return null;
+    }
+
+    public boolean isPinnedBy(String userId) {
+        if (user1Id.equals(userId)) {
+            return user1IsPinned;
+        }
+        if (user2Id.equals(userId)) {
+            return user2IsPinned;
+        }
+        return false;
+    }
+
+    public void setPinned(String userId, boolean pinned) {
+        if (user1Id.equals(userId)) {
+            user1IsPinned = pinned;
+        } else if (user2Id.equals(userId)) {
+            user2IsPinned = pinned;
+        }
+    }
+
+    public boolean isUser1IsPinned() {
+        return user1IsPinned;
+    }
+
+    public void setUser1IsPinned(boolean user1IsPinned) {
+        this.user1IsPinned = user1IsPinned;
+    }
+
+    public boolean isUser2IsPinned() {
+        return user2IsPinned;
+    }
+
+    public void setUser2IsPinned(boolean user2IsPinned) {
+        this.user2IsPinned = user2IsPinned;
     }
 }

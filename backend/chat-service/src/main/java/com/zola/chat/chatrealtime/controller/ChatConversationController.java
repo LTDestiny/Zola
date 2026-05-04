@@ -342,6 +342,36 @@ public class ChatConversationController {
         return ApiResponse.ok("Message unpinned", response);
     }
 
+    @PostMapping("/conversations/{conversationId}/pin")
+    public ApiResponse<ConversationListItemResponse> pinConversation(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.pinConversation(userId, conversationId);
+        // Emit sync event for real-time update across sessions of the same user
+        messagingTemplate.convertAndSendToUser(
+            userId,
+            "/queue/sync",
+            new SyncEventMessage(userId, "chat-pin", "CONVERSATION_PINNED", conversationId.toString(), Instant.now())
+        );
+        return ApiResponse.ok("Conversation pinned", response);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}/pin")
+    public ApiResponse<ConversationListItemResponse> unpinConversation(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
+        // Emit sync event
+        messagingTemplate.convertAndSendToUser(
+            userId,
+            "/queue/sync",
+            new SyncEventMessage(userId, "chat-pin", "CONVERSATION_UNPINNED", conversationId.toString(), Instant.now())
+        );
+        return ApiResponse.ok("Conversation unpinned", response);
+    }
+
     @DeleteMapping("/conversations/{conversationId}")
     public ApiResponse<Map<String, Object>> deleteGroup(
         @RequestHeader("X-User-Id") String userId,

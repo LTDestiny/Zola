@@ -126,24 +126,30 @@ export type BlockedUserItem = {
 };
 
 export type FriendshipStatusPayload = {
-  friendshipId?: string;
+  friendshipId?: string | null;
   status: string;
-  requesterId?: string;
-  addresseeId?: string;
-  blockedByMe?: boolean;
-  blockedByPeer?: boolean;
+  requesterId?: string | null;
+  addresseeId?: string | null;
+  senderId?: string | null;
+  receiverId?: string | null;
+  blockedByMe?: boolean | null;
+  blockedByPeer?: boolean | null;
+  isBlockedByMe?: boolean | null;
+  isBlockedMe?: boolean | null;
 };
 
 export type RelationshipStatusPayload = {
   status: string;
-  requestId?: string;
-  friendshipId?: string;
-  requesterId?: string;
-  addresseeId?: string;
-  isBlockedByMe?: boolean;
-  isBlockedMe?: boolean;
-  blockedByMe?: boolean;
-  blockedByPeer?: boolean;
+  requestId?: string | null;
+  friendshipId?: string | null;
+  requesterId?: string | null;
+  addresseeId?: string | null;
+  senderId?: string | null;
+  receiverId?: string | null;
+  isBlockedByMe?: boolean | null;
+  isBlockedMe?: boolean | null;
+  blockedByMe?: boolean | null;
+  blockedByPeer?: boolean | null;
 };
 
 export type UserPresenceItem = {
@@ -348,7 +354,23 @@ export async function getRelationshipStatus(targetUserId: string) {
     }
   }
 
-  throw new Error("Unable to fetch relationship status");
+  return {
+    success: true,
+    message: "Relationship status endpoint unavailable, fallback to NONE",
+    data: {
+      status: "NONE",
+      requestId: null,
+      friendshipId: null,
+      requesterId: null,
+      addresseeId: null,
+      senderId: null,
+      receiverId: null,
+      isBlockedByMe: false,
+      isBlockedMe: false,
+      blockedByMe: false,
+      blockedByPeer: false,
+    } satisfies RelationshipStatusPayload,
+  };
 }
 
 export async function addFriend(addresseeId: string) {
@@ -936,6 +958,20 @@ export async function pinGroupMessage(conversationId: string, sourceMessageId: s
 export async function unpinGroupMessage(conversationId: string, messageId: string) {
   const response = await httpClient.delete<ApiResponse<GroupSettings>>(
     `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
+  );
+  return response.data;
+}
+
+export async function pinConversation(conversationId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/pin`,
+  );
+  return response.data;
+}
+
+export async function unpinConversation(conversationId: string) {
+  const response = await httpClient.delete<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/pin`,
   );
   return response.data;
 }

@@ -23,6 +23,13 @@ export function normalizeFriendshipStatus(status: string | null | undefined): Fr
     return normalized as FriendshipStatus;
   }
   if (normalized === "CANCELED") return "CANCELLED";
+  if (normalized === "FRIENDS" || normalized === "FRIEND") return "ACCEPTED";
+  if (normalized === "OUTGOING_PENDING" || normalized === "INCOMING_PENDING") {
+    return "PENDING";
+  }
+  if (normalized === "BLOCKED_BY_ME" || normalized === "BLOCKED_ME") {
+    return "BLOCKED";
+  }
   if (normalized === "DELETED") return "NONE";
   return "NONE";
 }

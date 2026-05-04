@@ -1,4 +1,4 @@
-package com.zola.chat.chatrealtime.service;
+﻿package com.zola.chat.chatrealtime.service;
 
 import com.zola.chat.chatrealtime.dto.ChatDeleteForMeRequest;
 import com.zola.chat.chatrealtime.dto.ChatEditRequest;
@@ -21,6 +21,7 @@ import com.zola.chat.document.PendingGroupMemberItem;
 import com.zola.chat.document.PinnedMessageItem;
 import com.zola.chat.exception.ForbiddenOperationException;
 import com.zola.chat.exception.ResourceNotFoundException;
+import com.zola.chat.integration.UserRelationshipClient;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
 import com.zola.chat.infrastructure.persistence.mongo.MessageDocument;
 import com.zola.chat.presence.PresenceManager;
@@ -65,6 +66,7 @@ public class ChatRealtimeService {
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
+    private final UserRelationshipClient userRelationshipClient;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
 
@@ -87,6 +89,7 @@ public class ChatRealtimeService {
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
+        UserRelationshipClient userRelationshipClient,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
         @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
     ) {
@@ -96,6 +99,7 @@ public class ChatRealtimeService {
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
+        this.userRelationshipClient = userRelationshipClient;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
     }
@@ -665,6 +669,15 @@ public class ChatRealtimeService {
             .filter(item -> !normalizedMessageId.equals(item.getSourceMessageId()))
             .collect(Collectors.toCollection(ArrayList::new));
 
+        if (nextPinnedMessages.size() == normalizePinnedMessages(conversation).size()) {
+            boolean messageExists = messageRepository.findByConversationIdAndId(conversation.getId(), normalizedMessageId)
+                .isPresent();
+            if (!messageExists) {
+                throw new ResourceNotFoundException("Message not found");
+            }
+            return toGroupSettingsPayload(conversation, actorId);
+        }
+
         conversation.setPinnedMessages(sortPinnedMessagesDescending(nextPinnedMessages));
         conversation.setUpdatedAt(Instant.now());
         groupConversationRepository.save(conversation);
@@ -862,6 +875,12 @@ public class ChatRealtimeService {
         Optional<ConversationEntity> targetPrivateConversation = conversationRepository.findOptionalById(request.targetConversationId());
         ConversationDocument targetGroupConversation = targetPrivateConversation
             .isEmpty() ? findGroupConversation(request.targetConversationId().toString()) : null;
+        String targetReceiverId = targetPrivateConversation
+            .map(target -> resolvePeerUserId(target, senderId))
+            .orElse(null);
+        if (targetReceiverId != null) {
+            ensurePrivateMessagingAllowed(senderId, targetReceiverId);
+        }
 
         MessageDocument original = messageRepository.findByConversationIdAndId(request.sourceConversationId().toString(), request.messageId())
             .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
@@ -870,9 +889,7 @@ public class ChatRealtimeService {
         forwarded.setConversationId(request.targetConversationId().toString());
         forwarded.setId(generateMessageId());
         forwarded.setSenderId(senderId);
-        forwarded.setReceiverId(targetPrivateConversation
-            .map(target -> resolvePeerUserId(target, senderId))
-            .orElse(null));
+        forwarded.setReceiverId(targetReceiverId);
         forwarded.setType("FORWARD");
         forwarded.setContent(original.getContent());
         forwarded.setParentMessageId(original.getId());
@@ -1008,6 +1025,50 @@ public class ChatRealtimeService {
         );
     }
 
+    @Transactional
+    public ConversationListItemResponse pinConversation(String userId, UUID conversationId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            ConversationEntity entity = privateConversation.get();
+            ensureMember(entity, userId);
+            entity.setPinned(userId, true);
+            entity.setUpdatedAt(Instant.now());
+            conversationRepository.save(entity);
+            return getConversationListItem(userId, conversationId);
+        }
+
+        ConversationDocument groupConversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(groupConversation, userId);
+        Set<String> pinnedUserIds = new HashSet<>(groupConversation.getPinnedUserIds());
+        pinnedUserIds.add(userId);
+        groupConversation.setPinnedUserIds(pinnedUserIds);
+        groupConversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(groupConversation);
+        return toGroupConversationListItem(groupConversation, userId);
+    }
+
+    @Transactional
+    public ConversationListItemResponse unpinConversation(String userId, UUID conversationId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            ConversationEntity entity = privateConversation.get();
+            ensureMember(entity, userId);
+            entity.setPinned(userId, false);
+            entity.setUpdatedAt(Instant.now());
+            conversationRepository.save(entity);
+            return getConversationListItem(userId, conversationId);
+        }
+
+        ConversationDocument groupConversation = findGroupConversation(conversationId.toString());
+        ensureGroupMember(groupConversation, userId);
+        Set<String> pinnedUserIds = new HashSet<>(groupConversation.getPinnedUserIds());
+        pinnedUserIds.remove(userId);
+        groupConversation.setPinnedUserIds(pinnedUserIds);
+        groupConversation.setUpdatedAt(Instant.now());
+        groupConversationRepository.save(groupConversation);
+        return toGroupConversationListItem(groupConversation, userId);
+    }
+
     public List<MessagePayload> getMessages(String userId, UUID conversationId) {
         ensureConversationMember(conversationId, userId);
 
@@ -1027,9 +1088,7 @@ public class ChatRealtimeService {
             .filter(conversation -> CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType())))
             .toList();
 
-        // Batch-fetch peer presence to avoid N+1 Redis calls
         Set<String> peerIds = new LinkedHashSet<>();
-
         privateEntities.stream()
             .map(e -> e.getUser1Id().equals(userId) ? e.getUser2Id() : e.getUser1Id())
             .distinct()
@@ -1063,7 +1122,8 @@ public class ChatRealtimeService {
                 List.of(),
                 null,
                 peerUserId,
-                online
+                online,
+                entity.isPinnedBy(userId)
             ));
         }
 
@@ -1097,7 +1157,8 @@ public class ChatRealtimeService {
                 admins,
                 ownerId,
                 ownerId,
-                anyMemberOnline
+                anyMemberOnline,
+                conversation.getPinnedUserIds().contains(userId)
             ));
         }
 
@@ -1129,7 +1190,8 @@ public class ChatRealtimeService {
                 List.of(),
                 null,
                 peerUserId,
-                online
+                online,
+                entity.isPinnedBy(userId)
             );
         }
 
@@ -1276,7 +1338,6 @@ public class ChatRealtimeService {
             message.edited()
         );
     }
-
     public MessagesPageResponse getMessagesHttp(String userId, UUID conversationId, String cursor, int limit) {
         List<MessagePayload> messages = getMessages(userId, conversationId).stream()
             .sorted(Comparator
@@ -1569,6 +1630,7 @@ public class ChatRealtimeService {
             throw new ForbiddenOperationException("Message content must not be blank");
         }
         String receiverId = resolvePeerUserId(conversation, senderId);
+        ensurePrivateMessagingAllowed(senderId, receiverId);
         Instant now = Instant.now();
 
         MessageDocument item = new MessageDocument();
@@ -2037,6 +2099,16 @@ public class ChatRealtimeService {
 
     private String generateMessageId() {
         return Instant.now().toEpochMilli() + "-" + UUID.randomUUID();
+    }
+
+    private void ensurePrivateMessagingAllowed(String senderId, String receiverId) {
+        if (senderId == null || receiverId == null || senderId.isBlank() || receiverId.isBlank()) {
+            return;
+        }
+
+        if (userRelationshipClient.isMessagingBlocked(senderId, receiverId)) {
+            throw new ForbiddenOperationException("Messaging is blocked between these users");
+        }
     }
 
     private void ensureWithinWindow(String createdAtRaw, long windowSeconds, String errorMessage) {

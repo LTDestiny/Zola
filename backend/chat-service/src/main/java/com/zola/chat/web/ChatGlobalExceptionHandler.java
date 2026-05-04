@@ -1,6 +1,7 @@
 package com.zola.chat.web;
 
 import com.zola.chat.exception.ForbiddenOperationException;
+import com.zola.chat.exception.RelationshipValidationException;
 import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.common.response.ApiResponse;
 import java.time.Instant;
@@ -27,6 +28,12 @@ public class ChatGlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Object> handleBadRequest(IllegalArgumentException ex) {
+        return new ApiResponse<>(false, ex.getMessage(), null, Instant.now());
+    }
+
+    @ExceptionHandler(RelationshipValidationException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Object> handleRelationshipValidationFailure(RelationshipValidationException ex) {
         return new ApiResponse<>(false, ex.getMessage(), null, Instant.now());
     }
 }

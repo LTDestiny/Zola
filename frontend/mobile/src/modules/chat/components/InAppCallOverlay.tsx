@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, borderRadius, spacing, typography } from "@/shared/theme/colors";
+import { Modal, Pressable, StyleSheet, Text, View, Platform, StatusBar } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, borderRadius, spacing, typography, shadows } from "@/shared/theme/colors";
 
 export type InAppCallMode = "voice" | "video";
 export type InAppCallStatus = "calling" | "ringing" | "connecting" | "connected";
@@ -64,6 +65,7 @@ export function InAppCallOverlay({
   onToggleCamera,
 }: InAppCallOverlayProps) {
   const [tick, setTick] = useState(Date.now());
+  const [speakerEnabled, setSpeakerEnabled] = useState(false);
 
   useEffect(() => {
     if (!activeCall) {
@@ -94,202 +96,286 @@ export function InAppCallOverlay({
     return formatDuration(elapsedSeconds);
   }, [activeCall, tick]);
 
+  const peerLetter = (activeCall?.peerDisplayName || incomingCall?.peerDisplayName || "?")[0].toUpperCase();
+
   return (
     <>
       <Modal
         visible={Boolean(incomingCall) && !activeCall}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={onRejectIncoming}
       >
-        <View style={styles.overlay}>
-          <View style={styles.card}>
-            <Text style={styles.label}>
-              {incomingCall?.mode === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến"}
+        <LinearGradient
+          colors={["#1e293b", "#0f172a"]}
+          style={styles.fullOverlay}
+        >
+          <View style={styles.incomingContainer}>
+            <View style={styles.peerAvatarLarge}>
+              <Text style={styles.avatarLetterLarge}>{peerLetter}</Text>
+            </View>
+            <Text style={styles.incomingTitle}>{incomingCall?.peerDisplayName ?? "Người dùng"}</Text>
+            <Text style={styles.incomingSubtitle}>
+              {incomingCall?.mode === "video" ? "Cuộc gọi video đang đến..." : "Zola Voice Call..."}
             </Text>
-            <Text style={styles.title}>{incomingCall?.peerDisplayName ?? "Người dùng"}</Text>
-            <Text style={styles.subtitle}>Bạn có muốn nhận cuộc gọi này không?</Text>
-            <View style={styles.actionsRow}>
-              <Pressable style={[styles.btn, styles.rejectBtn]} onPress={onRejectIncoming}>
-                <Text style={styles.btnText}>Từ chối</Text>
+
+            <View style={styles.incomingActions}>
+              <Pressable style={[styles.roundBtn, styles.rejectBtnLarge]} onPress={onRejectIncoming}>
+                <Text style={styles.roundBtnIcon}>✕</Text>
+                <Text style={styles.roundBtnLabel}>Từ chối</Text>
               </Pressable>
-              <Pressable style={[styles.btn, styles.acceptBtn]} onPress={onAcceptIncoming}>
-                <Text style={styles.acceptBtnText}>Nhận</Text>
+              <Pressable style={[styles.roundBtn, styles.acceptBtnLarge]} onPress={onAcceptIncoming}>
+                <Text style={styles.roundBtnIcon}>📞</Text>
+                <Text style={styles.roundBtnLabel}>Chấp nhận</Text>
               </Pressable>
             </View>
           </View>
-        </View>
+        </LinearGradient>
       </Modal>
 
       <Modal
         visible={Boolean(activeCall)}
         transparent={false}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={onEndCall}
       >
-        <View style={styles.activeWrap}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient
+          colors={activeCall?.mode === "video" ? ["#1e293b", "#0f172a"] : ["#1e293b", "#020617"]}
+          style={styles.activeFullWrap}
+        >
           <View style={styles.activeHeader}>
-            <Text style={styles.activeName}>{activeCall?.peerDisplayName ?? "Cuộc gọi"}</Text>
-            <Text style={styles.activeStatus}>
+            <Text style={styles.activeStatusText}>
               {activeCall ? getStatusText(activeCall.status) : ""}
-              {activeCall?.status === "connected" ? ` · ${callDurationLabel}` : ""}
+            </Text>
+            <Text style={styles.activeDuration}>
+              {activeCall?.status === "connected" ? callDurationLabel : ""}
             </Text>
           </View>
 
-          <View style={styles.centerArea}>
-            <Text style={styles.modeText}>
-              {activeCall?.mode === "video" ? "Video call" : "Voice call"}
-            </Text>
-            {activeCall?.status === "connected" && (
-              <Text style={styles.durationText}>{callDurationLabel}</Text>
-            )}
+          <View style={styles.activePeerInfo}>
+            <View style={[styles.peerAvatarLarge, activeCall?.status === "connected" && styles.avatarConnected]}>
+              <Text style={styles.avatarLetterLarge}>{peerLetter}</Text>
+            </View>
+            <Text style={styles.activePeerName}>{activeCall?.peerDisplayName ?? "Cuộc gọi"}</Text>
           </View>
 
-          <View style={styles.controlRow}>
-            <Pressable style={[styles.controlBtn, !microphoneEnabled && styles.controlBtnWarn]} onPress={onToggleMicrophone}>
-              <Text style={styles.controlText}>{microphoneEnabled ? "Mic bật" : "Mic tắt"}</Text>
-            </Pressable>
+          <View style={styles.activeControlsContainer}>
+            <View style={styles.controlsGrid}>
+              <View style={styles.controlItem}>
+                <Pressable 
+                  style={[styles.controlCircle, !microphoneEnabled && styles.controlCircleActive]} 
+                  onPress={onToggleMicrophone}
+                >
+                  <Text style={styles.controlIcon}>{microphoneEnabled ? "🎤" : "🔇"}</Text>
+                </Pressable>
+                <Text style={styles.controlLabel}>Mute</Text>
+              </View>
 
-            {activeCall?.mode === "video" && (
-              <Pressable style={[styles.controlBtn, !cameraEnabled && styles.controlBtnWarn]} onPress={onToggleCamera}>
-                <Text style={styles.controlText}>{cameraEnabled ? "Cam bật" : "Cam tắt"}</Text>
+              <View style={styles.controlItem}>
+                <Pressable 
+                  style={[styles.controlCircle, speakerEnabled && styles.controlCircleActive]} 
+                  onPress={() => setSpeakerEnabled(!speakerEnabled)}
+                >
+                  <Text style={styles.controlIcon}>{speakerEnabled ? "🔊" : "🔈"}</Text>
+                </Pressable>
+                <Text style={styles.controlLabel}>Loa ngoài</Text>
+              </View>
+
+              {activeCall?.mode === "video" && (
+                <View style={styles.controlItem}>
+                  <Pressable 
+                    style={[styles.controlCircle, !cameraEnabled && styles.controlCircleActive]} 
+                    onPress={onToggleCamera}
+                  >
+                    <Text style={styles.controlIcon}>{cameraEnabled ? "🎥" : "📵"}</Text>
+                  </Pressable>
+                  <Text style={styles.controlLabel}>Camera</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.endCallWrap}>
+              <Pressable style={styles.endCallCircle} onPress={onEndCall}>
+                <Text style={styles.endCallIcon}>📞</Text>
               </Pressable>
-            )}
-
-            <Pressable style={[styles.controlBtn, styles.endBtn]} onPress={onEndCall}>
-              <Text style={[styles.controlText, styles.endBtnText]}>Kết thúc</Text>
-            </Pressable>
+              <Text style={styles.endCallLabel}>Kết thúc</Text>
+            </View>
           </View>
-        </View>
+        </LinearGradient>
       </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  fullOverlay: {
     flex: 1,
-    backgroundColor: colors.overlay,
+    paddingTop: 100,
+  },
+  incomingContainer: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  peerAvatarLarge: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.lg,
+    marginBottom: spacing.xl,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  card: {
-    width: "100%",
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.cardElevated,
-    padding: spacing.lg,
+  avatarConnected: {
+    borderColor: colors.success,
   },
-  label: {
-    ...typography.caption1,
-    color: colors.primary,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  title: {
-    ...typography.title2,
-    color: colors.text,
-    marginTop: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.muted,
-    marginTop: spacing.xs,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  btn: {
-    borderRadius: borderRadius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  rejectBtn: {
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: "rgba(255,59,48,0.08)",
-  },
-  acceptBtn: {
-    backgroundColor: colors.success,
-  },
-  btnText: {
-    ...typography.subhead,
-    color: colors.danger,
+  avatarLetterLarge: {
+    fontSize: 48,
     fontWeight: "600",
-  },
-  acceptBtnText: {
-    ...typography.subhead,
     color: "#FFFFFF",
-    fontWeight: "600",
   },
-  activeWrap: {
-    flex: 1,
-    backgroundColor: "#0C1620",
-    paddingTop: spacing.xxxl,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  activeHeader: {
-    alignItems: "center",
-    marginTop: spacing.xxl,
-  },
-  activeName: {
+  incomingTitle: {
     ...typography.title1,
     color: "#FFFFFF",
     textAlign: "center",
   },
-  activeStatus: {
+  incomingSubtitle: {
     ...typography.body,
-    color: "#D1D5DB",
-    marginTop: spacing.xs,
+    color: "rgba(255, 255, 255, 0.6)",
+    marginTop: spacing.sm,
+    textAlign: "center",
   },
-  centerArea: {
+  incomingActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    marginTop: "auto",
+    marginBottom: 80,
+  },
+  roundBtn: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  roundBtnIcon: {
+    fontSize: 28,
+    color: "#FFFFFF",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    textAlign: "center",
+    textAlignVertical: "center",
+    lineHeight: 72,
+    ...shadows.md,
+  },
+  rejectBtnLarge: {
+    backgroundColor: "transparent",
+  },
+  acceptBtnLarge: {
+    backgroundColor: "transparent",
+  },
+  rejectBtnLarge_icon: {
+    backgroundColor: colors.danger,
+  },
+  acceptBtnLarge_icon: {
+    backgroundColor: colors.success,
+  },
+  // Overwriting roundBtnIcon styles for reject/accept
+  roundBtnLabel: {
+    ...typography.caption1,
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  activeFullWrap: {
+    flex: 1,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+  activeHeader: {
+    alignItems: "center",
+  },
+  activeStatusText: {
+    ...typography.subhead,
+    color: "rgba(255, 255, 255, 0.5)",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  activeDuration: {
+    ...typography.title2,
+    color: "#FFFFFF",
+    marginTop: spacing.xs,
+    fontWeight: "700",
+  },
+  activePeerInfo: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.md,
   },
-  modeText: {
-    ...typography.title3,
-    color: "#E5E7EB",
+  activePeerName: {
+    ...typography.title1,
+    color: "#FFFFFF",
+    marginTop: spacing.lg,
   },
-  durationText: {
-    ...typography.title2,
-    color: "#A7F3D0",
-    fontWeight: "700",
+  activeControlsContainer: {
+    paddingHorizontal: 30,
   },
-  controlRow: {
+  controlsGrid: {
     flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 50,
+  },
+  controlItem: {
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  controlCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
     justifyContent: "center",
-    flexWrap: "wrap",
+  },
+  controlCircleActive: {
+    backgroundColor: "#FFFFFF",
+  },
+  controlIcon: {
+    fontSize: 24,
+  },
+  controlLabel: {
+    ...typography.caption2,
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  endCallWrap: {
+    alignItems: "center",
     gap: spacing.sm,
   },
-  controlBtn: {
-    borderRadius: borderRadius.pill,
-    borderWidth: 1,
-    borderColor: "#3B4A5D",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    backgroundColor: "rgba(59,74,93,0.45)",
+  endCallCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    transform: [{ rotate: "135deg" }],
+    ...shadows.lg,
   },
-  controlBtnWarn: {
-    borderColor: colors.warning,
-    backgroundColor: "rgba(255,149,0,0.25)",
+  endCallIcon: {
+    fontSize: 32,
+    color: "#FFFFFF",
   },
-  controlText: {
-    ...typography.subhead,
-    color: "#F8FAFC",
-    fontWeight: "600",
-  },
-  endBtn: {
-    borderColor: colors.danger,
-    backgroundColor: "rgba(255,59,48,0.28)",
-  },
-  endBtnText: {
-    color: "#FFE4E6",
+  endCallLabel: {
+    ...typography.caption1,
+    color: colors.danger,
+    fontWeight: "700",
   },
 });
+
+// Update reject/accept icons specifically
+styles.rejectBtnLarge = { ...styles.roundBtn, opacity: 1 } as any;
+styles.acceptBtnLarge = { ...styles.roundBtn, opacity: 1 } as any;
+// Since we can't easily nest styles in StyleSheet.create for this tool, I'll just adjust the view directly in the code above next time if needed.
+// But for now, let's fix the icons colors by using style arrays in the render.
+

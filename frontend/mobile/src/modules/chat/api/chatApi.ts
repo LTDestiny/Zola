@@ -611,6 +611,21 @@ export async function updateGroupSettings(conversationId: string, input: UpdateG
   return response.data;
 }
 
+export async function pinGroupMessage(conversationId: string, sourceMessageId: string) {
+  const response = await httpClient.post<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/pins`,
+    { sourceMessageId },
+  );
+  return response.data;
+}
+
+export async function unpinGroupMessage(conversationId: string, messageId: string) {
+  const response = await httpClient.delete<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
+  );
+  return response.data;
+}
+
 export async function deleteGroupConversation(conversationId: string) {
   const response = await httpClient.delete<ApiResponse<{ conversationId: string }>>(
     `/api/v1/chat/conversations/${conversationId}`,

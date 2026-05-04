@@ -7,9 +7,9 @@ import type {
 
 export type RelationshipStatus =
   | "NONE"
-  | "OUTGOING_REQUEST"
-  | "INCOMING_REQUEST"
-  | "FRIEND"
+  | "OUTGOING_PENDING"
+  | "INCOMING_PENDING"
+  | "FRIENDS"
   | "BLOCKED_BY_ME"
   | "BLOCKED_ME";
 
@@ -75,18 +75,28 @@ export function normalizeRelationshipPayload(
     status = "BLOCKED_BY_ME";
   } else if (blockedMe) {
     status = "BLOCKED_ME";
-  } else if (normalizedStatus === "OUTGOING_REQUEST") {
-    status = "OUTGOING_REQUEST";
-  } else if (normalizedStatus === "INCOMING_REQUEST") {
-    status = "INCOMING_REQUEST";
-  } else if (normalizedStatus === "FRIEND" || normalizedStatus === "ACCEPTED") {
-    status = "FRIEND";
+  } else if (
+    normalizedStatus === "OUTGOING_PENDING" ||
+    normalizedStatus === "OUTGOING_REQUEST"
+  ) {
+    status = "OUTGOING_PENDING";
+  } else if (
+    normalizedStatus === "INCOMING_PENDING" ||
+    normalizedStatus === "INCOMING_REQUEST"
+  ) {
+    status = "INCOMING_PENDING";
+  } else if (
+    normalizedStatus === "FRIENDS" ||
+    normalizedStatus === "FRIEND" ||
+    normalizedStatus === "ACCEPTED"
+  ) {
+    status = "FRIENDS";
   } else if (normalizedStatus === "PENDING") {
     const normalizedCurrentUserId = String(currentUserId ?? "").trim();
     if (normalizedCurrentUserId && requesterId === normalizedCurrentUserId) {
-      status = "OUTGOING_REQUEST";
+      status = "OUTGOING_PENDING";
     } else if (normalizedCurrentUserId && addresseeId === normalizedCurrentUserId) {
-      status = "INCOMING_REQUEST";
+      status = "INCOMING_PENDING";
     }
   } else if (normalizedStatus === "BLOCKED") {
     if (blockedByMe) {
@@ -100,7 +110,7 @@ export function normalizeRelationshipPayload(
     targetUserId: String(targetUserId).trim(),
     status,
     requestId:
-      status === "OUTGOING_REQUEST" || status === "INCOMING_REQUEST"
+      status === "OUTGOING_PENDING" || status === "INCOMING_PENDING"
         ? requestId
         : null,
     friendshipId,
@@ -116,10 +126,10 @@ export function relationshipToLegacyFriendshipStatus(
   entry: RelationshipEntry | null | undefined,
 ) {
   switch (entry?.status) {
-    case "OUTGOING_REQUEST":
-    case "INCOMING_REQUEST":
+    case "OUTGOING_PENDING":
+    case "INCOMING_PENDING":
       return "PENDING";
-    case "FRIEND":
+    case "FRIENDS":
       return "ACCEPTED";
     case "BLOCKED_BY_ME":
     case "BLOCKED_ME":
@@ -132,10 +142,10 @@ export function relationshipToLegacyFriendshipStatus(
 export function relationshipToRequestDirection(
   entry: RelationshipEntry | null | undefined,
 ) {
-  if (entry?.status === "OUTGOING_REQUEST") {
+  if (entry?.status === "OUTGOING_PENDING") {
     return "outgoing" as const;
   }
-  if (entry?.status === "INCOMING_REQUEST") {
+  if (entry?.status === "INCOMING_PENDING") {
     return "incoming" as const;
   }
   return null;
@@ -171,7 +181,7 @@ export function hydrateRelationshipEntryFromCollections(args: {
   if (friend) {
     return {
       ...createEmptyRelationshipEntry(targetUserId),
-      status: "FRIEND",
+      status: "FRIENDS",
       friendshipId: friend.friendshipId,
       updatedAt: Date.now(),
     };
@@ -183,7 +193,7 @@ export function hydrateRelationshipEntryFromCollections(args: {
   if (incoming) {
     return {
       ...createEmptyRelationshipEntry(targetUserId),
-      status: "INCOMING_REQUEST",
+      status: "INCOMING_PENDING",
       requestId: incoming.friendshipId,
       friendshipId: incoming.friendshipId,
       requesterId: incoming.requesterId,
@@ -198,7 +208,7 @@ export function hydrateRelationshipEntryFromCollections(args: {
   if (sent) {
     return {
       ...createEmptyRelationshipEntry(targetUserId),
-      status: "OUTGOING_REQUEST",
+      status: "OUTGOING_PENDING",
       requestId: sent.friendshipId,
       friendshipId: sent.friendshipId,
       requesterId: sent.requesterId,

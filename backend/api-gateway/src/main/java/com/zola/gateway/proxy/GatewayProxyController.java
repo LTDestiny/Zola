@@ -259,12 +259,24 @@ public class GatewayProxyController {
         HttpServletRequest request
     ) {
         String userId = currentUserId(request);
-        return getMap(
-            userServiceUrl + "/api/v1/users/friendships/status/{targetUserId}",
-            null,
-            Map.of("targetUserId", targetUserId),
-            Map.of("X-User-Id", userId)
-        );
+        try {
+            return getMap(
+                userServiceUrl + "/api/v1/users/friendships/status/{targetUserId}",
+                null,
+                Map.of("targetUserId", targetUserId),
+                Map.of("X-User-Id", userId)
+            );
+        } catch (ResponseStatusException ex) {
+            if (!isLegacyRouteMismatch(ex)) {
+                throw ex;
+            }
+            return getMap(
+                userServiceUrl + "/api/v1/users/friendships/status?targetUserId={targetUserId}",
+                null,
+                Map.of("targetUserId", targetUserId),
+                Map.of("X-User-Id", userId)
+            );
+        }
     }
 
     @PostMapping("/users/friendships")
