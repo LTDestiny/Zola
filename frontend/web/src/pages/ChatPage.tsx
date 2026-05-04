@@ -16,8 +16,10 @@ import {
   addReaction,
   addGroupMember,
   blockRelationshipUser,
+  unblockRelationshipUser,
   cancelFriendRequest,
   cancelFriendRequestForUser,
+  approveGroupMember,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -41,19 +43,21 @@ import {
   markConversationRead,
   getUsersPresence,
   markPendingFriendRequestsRead,
-  pinGroupMessage,
   removeFriend,
   removeGroupMember,
   readMessage,
+  rejectGroupMember,
   recallMessage,
   removeReaction,
   searchUserByEmail,
   sendMessage,
   sendFriendRequest,
   setGroupAdmin,
-  toApiErrorMessage,
-  unblockRelationshipUser,
+  pinGroupMessage,
+  pinConversation,
   unpinGroupMessage,
+  unpinConversation,
+  toApiErrorMessage,
   updateMyProfile,
   updateGroupSettings,
   type FriendshipStatusPayload,
@@ -319,7 +323,7 @@ type PinnedBoardItem = {
 
 type PinBoardEvent = {
   id: string;
-  kind: "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE";
+  kind: "BOARD_NOTE" | "PIN_MESSAGE";
   itemType: "pin" | "note";
   pinToTop: boolean;
   sourceMessageId: string;
@@ -343,35 +347,31 @@ const BANNER_AUTO_HIDE_MS = 2000;
 
 function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
   const rawType = (message.type ?? "TEXT").toUpperCase();
-  if (rawType !== "NOTE") {
-    return null;
-  }
+  if (rawType !== "NOTE") return null;
 
   try {
     const payload = JSON.parse(message.content) as Record<string, unknown>;
     const kind = String(payload?.kind ?? "").toUpperCase();
-    if (kind !== "BOARD_NOTE") {
-      return null;
-    }
+
+    if (kind !== "BOARD_NOTE" && kind !== "PIN_MESSAGE") return null;
 
     const sourceMessageId = String(payload?.sourceMessageId ?? message.id ?? "").trim();
-    if (!sourceMessageId || !message.id) {
-      return null;
-    }
+    if (!sourceMessageId || !message.id) return null;
 
     const pinToTop = Boolean(payload?.pinToTop);
     const title = String(payload?.title ?? "").trim();
     const preview = String(payload?.preview ?? payload?.note ?? "").trim();
     const createdAtRaw = String(payload?.createdAt ?? message.createdAt ?? "");
     const createdAtMs = Date.parse(createdAtRaw);
+    const itemType = kind === "BOARD_NOTE" ? "note" : "pin";
 
     return {
       id: message.id,
-      kind: "BOARD_NOTE",
-      itemType: "note",
-      pinToTop,
+      kind: kind as "BOARD_NOTE" | "PIN_MESSAGE",
+      itemType,
+      pinToTop: itemType === "pin" ? true : pinToTop,
       sourceMessageId,
-      title: title || "Group note",
+      title: title || (itemType === "note" ? "Group note" : "Pinned message"),
       preview,
       createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
     };
@@ -569,6 +569,7 @@ export function ChatPage() {
   const setConversationList = useChatStore((state) => state.setConversations);
   const setActiveConversationId = useChatStore((state) => state.setSelectedConversationId);
   const upsertConversation = useChatStore((state) => state.upsertConversation);
+  const removeConversation = useChatStore((state) => state.removeConversation);
   const markConversationReadLocal = useChatStore((state) => state.markConversationRead);
   const syncTotalUnread = useChatStore((state) => state.syncTotalUnread);
   const lastReadSyncedMessageByConversationRef = useRef<Record<string, string>>({});
@@ -1275,6 +1276,20 @@ export function ChatPage() {
     }
   }, [groupPreferenceMap]);
 
+  useEffect(() => {
+    if (!bannerMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setBannerMessage((current) => (current === bannerMessage ? "" : current));
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bannerMessage]);
+
   const refreshGroupSettings = useCallback(async (conversationId: string) => {
     try {
       const result = await getGroupSettings(conversationId);
@@ -1361,50 +1376,70 @@ export function ChatPage() {
   }, [hiddenConversationPin, language]);
 
   const updateGroupPreference = useCallback(
-    (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
-      setGroupPreferenceMap((prev) => {
-        const current = prev[conversationId] ?? {
-          muted: false,
-          pinned: false,
-          hidden: false,
-        };
+    async (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
+      const current = groupPreferenceMap[conversationId] ?? {
+        muted: false,
+        pinned: false,
+        hidden: false,
+      };
 
-        const requestsPin = patch.pinned === true;
-        const isAlreadyPinned = Boolean(current.pinned);
-        if (requestsPin && !isAlreadyPinned) {
-          const pinnedCount = Object.values(prev).filter((item) => item?.pinned).length;
-          if (pinnedCount >= 3) {
-            setBannerMessage(
-              language === "vi"
-                ? "Chi duoc ghim toi da 3 hoi thoai"
-                : "You can pin up to 3 conversations only",
-            );
-            return prev;
-          }
+      const requestsPin = patch.pinned === true;
+      if (requestsPin && !current.pinned) {
+        const pinnedCount = Object.values(groupPreferenceMap).filter((item) => item?.pinned).length;
+        if (pinnedCount >= 3) {
+          setBannerMessage(
+            language === "vi"
+              ? "Chi duoc ghim toi da 3 hoi thoai"
+              : "You can pin up to 3 conversations only",
+          );
+          return;
+        }
+      }
+
+      if (patch.hidden === true && !current.hidden) {
+        const ensuredPin = ensureHiddenConversationPin();
+        if (!ensuredPin) {
+          return;
         }
 
-        if (patch.hidden === true && !current.hidden) {
-          const ensuredPin = ensureHiddenConversationPin();
-          if (!ensuredPin) {
-            return prev;
-          }
-
-          if (hiddenConversationPin && !verifyHiddenConversationPin()) {
-            return prev;
-          }
+        if (hiddenConversationPin && !verifyHiddenConversationPin()) {
+          return;
         }
+      }
 
-        const nextItem = {
-          ...current,
-          ...patch,
-        };
-        return {
-          ...prev,
-          [conversationId]: nextItem,
-        };
-      });
+      const nextItem = {
+        ...current,
+        ...patch,
+      };
+
+      setGroupPreferenceMap((prev) => ({
+        ...prev,
+        [conversationId]: nextItem,
+      }));
+
+      if (patch.pinned !== undefined && patch.pinned !== current.pinned) {
+        try {
+          if (patch.pinned) {
+            await pinConversation(conversationId);
+          } else {
+            await unpinConversation(conversationId);
+          }
+        } catch (error) {
+          setGroupPreferenceMap((prev) => ({
+            ...prev,
+            [conversationId]: current,
+          }));
+          setBannerMessage(toApiErrorMessage(error));
+        }
+      }
     },
-    [ensureHiddenConversationPin, hiddenConversationPin, language, verifyHiddenConversationPin],
+    [
+      ensureHiddenConversationPin,
+      groupPreferenceMap,
+      hiddenConversationPin,
+      language,
+      verifyHiddenConversationPin,
+    ],
   );
 
   const onAddGroupMembers = async (userIds: string[]) => {
@@ -1417,13 +1452,20 @@ export function ChatPage() {
     );
 
     const memberSet = new Set(activeGroupMembers);
-    const idsToAdd = uniqueUserIds.filter((userId) => !memberSet.has(userId));
+    const pendingMemberSet = new Set(
+      (groupSettingsMap[activeConversationId]?.pendingParticipants ?? [])
+        .map((item) => item.userId?.trim())
+        .filter(Boolean),
+    );
+    const idsToAdd = uniqueUserIds.filter(
+      (userId) => !memberSet.has(userId) && !pendingMemberSet.has(userId),
+    );
 
     if (idsToAdd.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Nhung nguoi da chon da co trong nhom"
-          : "Selected users are already in this group",
+          ? "Nhung nguoi da chon da co trong nhom hoac dang cho duyet"
+          : "Selected users are already in the group or pending approval",
       );
       return false;
     }
@@ -1445,10 +1487,20 @@ export function ChatPage() {
       }
 
       if (failedCount === 0) {
+        const requireApproval =
+          groupSettingsMap[activeConversationId]?.requireApprovalToJoin ?? false;
+        const actorCanApproveDirectly = Boolean(
+          groupSettingsMap[activeConversationId]?.isOwner ||
+          groupSettingsMap[activeConversationId]?.isAdmin,
+        );
         setBannerMessage(
-          language === "vi"
-            ? `Da them ${successCount} thanh vien`
-            : `Added ${successCount} member(s)`,
+          requireApproval && !actorCanApproveDirectly
+            ? language === "vi"
+              ? `Da gui ${successCount} yeu cau cho duyet`
+              : `Submitted ${successCount} approval request(s)`
+            : language === "vi"
+              ? `Da them ${successCount} thanh vien`
+              : `Added ${successCount} member(s)`,
         );
         return true;
       }
@@ -1497,6 +1549,40 @@ export function ChatPage() {
     }
   };
 
+  const onApprovePendingGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    try {
+      await approveGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da duyet thanh vien" : "Member approved",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onRejectPendingGroupMember = async (userId: string) => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    try {
+      await rejectGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(
+        language === "vi" ? "Da tu choi thanh vien" : "Member rejected",
+      );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
   const onToggleGroupAdmin = async (userId: string, admin: boolean) => {
     if (!activeConversationId) {
       return;
@@ -1531,6 +1617,11 @@ export function ChatPage() {
     requireApprovalToJoin?: boolean;
     highlightAdminMessages?: boolean;
     allowMemberInvite?: boolean;
+    allowMemberEditGroupInfo?: boolean;
+    allowMemberPinBoardItems?: boolean;
+    allowMemberCreateNotes?: boolean;
+    allowMemberCreateReminders?: boolean;
+    allowMemberCreatePolls?: boolean;
     transferOwnerId?: string;
     successMessageVi?: string;
     successMessageEn?: string;
@@ -1643,6 +1734,24 @@ export function ChatPage() {
 
   const onLeaveActiveGroup = async () => {
     if (!activeConversationId) {
+      return;
+    }
+    const effectiveOwnerId =
+      activeGroupSettings?.ownerId ?? activeConversationForView?.ownerId ?? null;
+    const effectiveParticipants =
+      activeGroupSettings?.participants ??
+      activeConversationForView?.participants ??
+      [];
+    if (
+      myProfile?.id &&
+      effectiveOwnerId === myProfile.id &&
+      effectiveParticipants.length > 1
+    ) {
+      setBannerMessage(
+        language === "vi"
+          ? "Ban phai chuyen quyen truong nhom truoc khi roi nhom"
+          : "Transfer ownership before leaving this group",
+      );
       return;
     }
     try {
@@ -1772,7 +1881,8 @@ export function ChatPage() {
     const canPinBoardItems = Boolean(
       activeSettings?.isOwner ||
       activeSettings?.isAdmin ||
-      activeSettings?.allowMembersPinBoardItems,
+      activeSettings?.allowMembersPinBoardItems ||
+      activeSettings?.allowMemberPinBoardItems,
     );
     if (!canPinBoardItems) {
       setBannerMessage(
@@ -1783,22 +1893,57 @@ export function ChatPage() {
       return;
     }
 
-    if (activePinnedMessageItems.some((item) => item.sourceMessageId === targetMessage.id)) {
+    const currentPinnedMessages = activeSettings?.pinnedMessages ?? [];
+
+    if (currentPinnedMessages.some((item) => item.sourceMessageId === targetMessage.id)) {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
     }
-    if (activePinnedMessageItems.length >= 3) {
+    if (currentPinnedMessages.length >= 3) {
       setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
       return;
     }
 
+    const nowIso = new Date().toISOString();
+    const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
+    const title =
+      language === "vi"
+        ? "Tin nhan da duoc ghim"
+        : "Pinned message";
+
+    const payload = {
+      kind: "PIN_MESSAGE",
+      sourceMessageId: targetMessage.id,
+      title,
+      preview,
+      createdAt: nowIso,
+    };
+
     try {
-      const result = await pinGroupMessage(activeConversationId, targetMessage.id);
+      const pinResult = await pinGroupMessage(activeConversationId, targetMessage.id);
       setGroupSettingsMap((prev) => ({
         ...prev,
-        [activeConversationId]: result.data,
+        [activeConversationId]: pinResult.data,
       }));
+
+      try {
+        const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+          type: "NOTE",
+        });
+
+        setMessages((prev) => {
+          const exists = prev.some((item) => item.id === result.data.id);
+          if (exists) {
+            return prev;
+          }
+          return [...prev, result.data];
+        });
+      } catch (error) {
+        setBannerMessage(toApiErrorMessage(error));
+      }
+
       setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
+      await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -1809,10 +1954,29 @@ export function ChatPage() {
       return;
     }
 
-    const normalizedSourceId = sourceMessageId.trim();
+    const normalizedSourceId = String(sourceMessageId ?? "").trim();
     if (!normalizedSourceId) {
       return;
     }
+
+    const previousSettings = groupSettingsMap[activeConversationId] ?? null;
+
+    setGroupSettingsMap((prev) => {
+      const currentSettings = prev[activeConversationId];
+      if (!currentSettings) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [activeConversationId]: {
+          ...currentSettings,
+          pinnedMessages: (currentSettings.pinnedMessages ?? []).filter(
+            (item) => item.sourceMessageId !== normalizedSourceId,
+          ),
+        },
+      };
+    });
 
     try {
       const result = await unpinGroupMessage(activeConversationId, normalizedSourceId);
@@ -1820,29 +1984,45 @@ export function ChatPage() {
         ...prev,
         [activeConversationId]: result.data,
       }));
+
+      const payload = {
+        kind: "UNPIN_MESSAGE",
+        sourceMessageId: normalizedSourceId,
+        title: language === "vi" ? "Tin nhan da bo ghim" : "Unpinned message",
+        preview: "",
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        const noteResult = await sendMessage(activeConversationId, JSON.stringify(payload), {
+          type: "NOTE",
+        });
+        setMessages((prev) => {
+          const exists = prev.some((item) => item.id === noteResult.data.id);
+          if (exists) {
+            return prev;
+          }
+          return [...prev, noteResult.data];
+        });
+        await fetchConversations({ silent: true });
+      } catch (error) {
+        setBannerMessage(toApiErrorMessage(error));
+      }
+
       setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
     } catch (error) {
+      if (previousSettings) {
+        setGroupSettingsMap((prev) => ({
+          ...prev,
+          [activeConversationId]: previousSettings,
+        }));
+      }
       setBannerMessage(toApiErrorMessage(error));
     }
   };
 
   const onCreateGroupBoardNote = async (noteText: string, pinToTop: boolean) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
-      return;
-    }
-
-    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
-    const canCreateNotes = Boolean(
-      activeSettings?.isOwner ||
-      activeSettings?.isAdmin ||
-      activeSettings?.allowMembersCreateNotes,
-    );
-    if (!canCreateNotes) {
-      setBannerMessage(
-        language === "vi"
-          ? "Chi truong/pho nhom moi duoc tao ghi chu"
-          : "Only owner/admin can create notes",
-      );
       return;
     }
 
@@ -1897,10 +2077,7 @@ export function ChatPage() {
     const activeSettings = groupSettingsMap[activeConversationId] ?? null;
     const isCurrentOwner = Boolean(activeSettings?.isOwner);
     const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
-    const canCreatePolls = Boolean(
-      isCurrentOwner || isCurrentAdmin || activeSettings?.allowMembersCreatePolls,
-    );
-    if (!canCreatePolls) {
+    if (!isCurrentOwner && !isCurrentAdmin) {
       setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
       return false;
     }
@@ -1992,21 +2169,6 @@ export function ChatPage() {
 
   const onCreateGroupReminder = async (input: { title: string; when?: string | null }) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
-      return false;
-    }
-
-    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
-    const canCreateReminders = Boolean(
-      activeSettings?.isOwner ||
-      activeSettings?.isAdmin ||
-      activeSettings?.allowMembersCreateNotes,
-    );
-    if (!canCreateReminders) {
-      setBannerMessage(
-        language === "vi"
-          ? "Chi truong/pho nhom moi duoc tao nhac hen"
-          : "Only owner/admin can create reminders",
-      );
       return false;
     }
 
@@ -3905,15 +4067,25 @@ export function ChatPage() {
   ]);
 
   const sidebarChats = useMemo<ChatListItem[]>(() => {
+    const sortPinnedFirst = (items: ChatListItem[]) =>
+      [...items].sort((left, right) => {
+        const leftPinned = left.isPinned ? 1 : 0;
+        const rightPinned = right.isPinned ? 1 : 0;
+        if (leftPinned !== rightPinned) {
+          return rightPinned - leftPinned;
+        }
+        return (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0);
+      });
+
     if (activeMessageWorkspaceView === "stranger-inbox") {
-      return strangerSidebarChats;
+      return sortPinnedFirst(strangerSidebarChats);
     }
 
     const nextItems = strangerInboxEntry
       ? [...defaultSidebarChats, strangerInboxEntry]
       : [...defaultSidebarChats];
 
-    return nextItems.sort((left, right) => (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0));
+    return sortPinnedFirst(nextItems);
   }, [
     activeMessageWorkspaceView,
     defaultSidebarChats,
@@ -3934,30 +4106,8 @@ export function ChatPage() {
         setIsLoadingConversations(true);
       }
       const result = await getConversations();
-      const incomingItems = result.data ?? [];
+      const items = result.data ?? [];
       const activeId = activeConversationIdRef.current;
-
-      let items = incomingItems;
-      if (silent && activeId && !incomingItems.some((item) => item.id === activeId)) {
-        const existingActive = useChatStore
-          .getState()
-          .conversations.find((item) => item.id === activeId);
-        if (existingActive) {
-          items = [
-            ...incomingItems,
-            {
-              ...existingActive,
-              type: existingActive.type ?? "private",
-              avatar: existingActive.avatar ?? null,
-              unreadCount: existingActive.unreadCount ?? 0,
-              lastReadAt: existingActive.lastReadAt ?? null,
-              lastReadMessageId: existingActive.lastReadMessageId ?? null,
-              admins: existingActive.admins ?? [],
-              ownerId: existingActive.ownerId ?? null,
-            },
-          ];
-        }
-      }
 
       setConversationList(items);
 
@@ -4012,13 +4162,14 @@ export function ChatPage() {
       // Only clear selection if the selected conversation no longer exists
       // ═══════════════════════════════════════════════════════════════════════
       if (
-        !silent &&
         activeId &&
         !items.some((conversation) => conversation.id === activeId)
       ) {
         hasUserOpenedConversationRef.current = false;
         manuallyOpenedConversationIdRef.current = null;
         setActiveConversationId(null);  // Clear, don't auto-select first
+        setMessages([]);
+        setNextCursor(null);
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -4250,20 +4401,29 @@ export function ChatPage() {
       try {
         const result = await joinGroupByInviteCode(inviteCode);
         const joinedConversationId = result.data.id;
+        const joinedAsMember = (result.data.participants ?? []).includes(myProfile.id);
 
         await fetchConversations({ silent: true });
 
-        hasUserOpenedConversationRef.current = true;
-        manuallyOpenedConversationIdRef.current = joinedConversationId;
-        pendingReadSyncOnOpenRef.current = true;
         setActiveTab("messages");
-        setActiveConversationId(joinedConversationId);
-
-        setBannerMessage(
-          language === "vi"
-            ? "Da tham gia nhom tu link moi"
-            : "Joined group from invite link",
-        );
+        if (joinedAsMember) {
+          hasUserOpenedConversationRef.current = true;
+          manuallyOpenedConversationIdRef.current = joinedConversationId;
+          pendingReadSyncOnOpenRef.current = true;
+          setActiveConversationId(joinedConversationId);
+          setBannerMessage(
+            language === "vi"
+              ? "Da tham gia nhom tu link moi"
+              : "Joined group from invite link",
+          );
+        } else {
+          setActiveConversationId(null);
+          setBannerMessage(
+            language === "vi"
+              ? "Yeu cau tham gia nhom da duoc gui, vui long cho truong/pho nhom duyet"
+              : "Join request submitted. Please wait for admin approval",
+          );
+        }
       } catch (error) {
         setBannerMessage(toApiErrorMessage(error));
       } finally {
@@ -4437,6 +4597,113 @@ export function ChatPage() {
         const selectedConversationId =
           useChatStore.getState().selectedConversationId ??
           activeConversationIdRef.current;
+        const currentUserId = myUserIdRef.current;
+
+        if (
+          event.eventType === "GROUP_MEMBERSHIP_UPDATED" &&
+          currentUserId &&
+          event.affectedUserId === currentUserId
+        ) {
+          const groupName =
+            event.conversation?.name ??
+            event.conversationName ??
+            (language === "vi" ? "nhom" : "group");
+
+          if (
+            event.membershipAction === "ADDED" ||
+            event.membershipAction === "APPROVED"
+          ) {
+            if (event.conversation) {
+              upsertConversation({
+                ...event.conversation,
+                type: "group",
+              });
+            }
+            if (event.groupSettings) {
+              setGroupSettingsMap((prev) => ({
+                ...prev,
+                [event.conversationId]: event.groupSettings as GroupSettings,
+              }));
+            }
+
+            const client = realtimeClientRef.current;
+            if (client && client.isConnected()) {
+              client.syncConversationSubscriptions(
+                Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
+              );
+            }
+
+            setBannerMessage(
+              event.membershipAction === "APPROVED"
+                ? language === "vi"
+                  ? `Ban da duoc duyet vao ${groupName}`
+                  : `You were approved to join ${groupName}`
+                : language === "vi"
+                  ? `Ban vua duoc them vao ${groupName}`
+                  : `You were added to ${groupName}`,
+            );
+            scheduleConversationsRefresh();
+            return;
+          }
+
+          if (
+            event.membershipAction === "REMOVED" ||
+            event.membershipAction === "LEFT"
+          ) {
+            removeConversation(event.conversationId);
+            setGroupSettingsMap((prev) => {
+              const next = { ...prev };
+              delete next[event.conversationId];
+              return next;
+            });
+
+            if (activeConversationIdRef.current === event.conversationId) {
+              setActiveConversationId(null);
+              setMessages([]);
+              setNextCursor(null);
+            }
+
+            const client = realtimeClientRef.current;
+            if (client && client.isConnected()) {
+              client.syncConversationSubscriptions(
+                conversationIdsRef.current.filter((id) => id !== event.conversationId),
+              );
+            }
+
+            setBannerMessage(
+              event.membershipAction === "LEFT"
+                ? language === "vi"
+                  ? `Ban da roi ${groupName}`
+                  : `You left ${groupName}`
+                : language === "vi"
+                  ? `Ban da bi xoa khoi ${groupName}`
+                  : `You were removed from ${groupName}`,
+            );
+            scheduleConversationsRefresh();
+            return;
+          }
+        }
+
+        if (event.eventType === "GROUP_SETTINGS_UPDATED" && event.groupSettings) {
+          setGroupSettingsMap((prev) => ({
+            ...prev,
+            [event.conversationId]: event.groupSettings as GroupSettings,
+          }));
+          upsertConversation({
+            id: event.conversationId,
+            type: "group",
+            name: event.groupSettings.name,
+            avatar: event.groupSettings.avatar,
+            ownerId: event.groupSettings.ownerId,
+            admins: event.groupSettings.admins,
+            participants: event.groupSettings.participants,
+          });
+
+          if (typeof event.totalUnreadCount === "number") {
+            syncTotalUnread(event.totalUnreadCount);
+          }
+          return;
+        }
 
         const isTypingEvent =
           event.eventType === "TYPING" ||
@@ -4492,6 +4759,10 @@ export function ChatPage() {
               client.syncConversationSubscriptions(
                 Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
               );
+            }
+
+            if (selectedConversationId === event.conversationId) {
+              void refreshGroupSettings(event.conversationId);
             }
           }
           if (typeof event.totalUnreadCount === "number") {
@@ -4699,6 +4970,17 @@ export function ChatPage() {
           lastMessageAt: normalizedMessage.createdAt,
           unreadCount: unreadPatch,
         });
+
+        if (
+          normalizedMessage.type?.toUpperCase() === "SYSTEM" &&
+          event.conversationId
+        ) {
+          void fetchConversations({ silent: true });
+          void refreshGroupSettings(event.conversationId);
+          if (activeConversationIdRef.current === event.conversationId) {
+            void reloadConversationMessagesWithRetry(event.conversationId);
+          }
+        }
 
         if (event.conversationId) {
           const client = realtimeClientRef.current;
@@ -5046,20 +5328,6 @@ export function ChatPage() {
           ) {
             void fetchConversations({ silent: true });
           }
-          return;
-        }
-
-        if (event.eventType === "GROUP_STATE_CHANGED") {
-          try {
-            const payload = event.payload ? JSON.parse(event.payload) : null;
-            const conversationId = String(payload?.conversationId ?? "").trim();
-            if (conversationId) {
-              void refreshGroupSettings(conversationId);
-            }
-          } catch {
-            // Ignore malformed sync payloads and fall back to the periodic refreshes.
-          }
-          void fetchConversations({ silent: true });
           return;
         }
 
@@ -7575,7 +7843,47 @@ export function ChatPage() {
   const activeConversationForView = activeConversation
     ? {
       ...activeConversation,
-      name: getConversationDisplayName(activeConversation),
+      ...(activeConversation.type === "group"
+        ? {
+            participants:
+              groupSettingsMap[activeConversation.id]?.participants ??
+              activeConversation.participants,
+            admins:
+              groupSettingsMap[activeConversation.id]?.admins ??
+              activeConversation.admins,
+            ownerId:
+              groupSettingsMap[activeConversation.id]?.ownerId ??
+              activeConversation.ownerId,
+            avatar:
+              groupSettingsMap[activeConversation.id]?.avatar ??
+              activeConversation.avatar,
+            name:
+              groupSettingsMap[activeConversation.id]?.name ??
+              activeConversation.name,
+          }
+        : {}),
+      name: getConversationDisplayName(
+        activeConversation.type === "group" && groupSettingsMap[activeConversation.id]
+          ? {
+              ...activeConversation,
+              participants:
+                groupSettingsMap[activeConversation.id]?.participants ??
+                activeConversation.participants,
+              admins:
+                groupSettingsMap[activeConversation.id]?.admins ??
+                activeConversation.admins,
+              ownerId:
+                groupSettingsMap[activeConversation.id]?.ownerId ??
+                activeConversation.ownerId,
+              avatar:
+                groupSettingsMap[activeConversation.id]?.avatar ??
+                activeConversation.avatar,
+              name:
+                groupSettingsMap[activeConversation.id]?.name ??
+                activeConversation.name,
+            }
+          : activeConversation,
+      ),
     }
     : null;
 
@@ -7739,28 +8047,51 @@ export function ChatPage() {
       return [] as PinnedBoardItem[];
     }
 
+    const pinnedBySource = new Map<string, PinnedBoardItem>();
+
+    const settingsPinnedMessages =
+      activeConversationForView?.type === "group"
+        ? groupSettingsMap[activeConversationForView.id]?.pinnedMessages ?? []
+        : [];
+
+    for (const item of settingsPinnedMessages) {
+      const sourceMessageId = String(item.sourceMessageId ?? "").trim();
+      if (!sourceMessageId) {
+        continue;
+      }
+      pinnedBySource.set(sourceMessageId, {
+        id: `pin-${sourceMessageId}`,
+        itemType: "pin",
+        sourceMessageId,
+        title: String(item.title ?? "").trim() || (language === "vi" ? "Tin nhan da ghim" : "Pinned message"),
+        preview: String(item.preview ?? "").trim(),
+        createdAtMs: Number.isFinite(item.createdAtMs) ? item.createdAtMs : 0,
+      });
+    }
+
     const pinnedNotes = messages
       .map((item) => parsePinBoardEvent(item))
       .filter((item): item is PinBoardEvent => Boolean(item))
-      .filter((item) => item.pinToTop)
-      .map((item) => ({
-        id: item.id,
-        itemType: "note" as const,
-        sourceMessageId: item.sourceMessageId,
-        title: item.title,
-        preview: item.preview,
-        createdAtMs: item.createdAtMs,
-      }));
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
 
-    return [...activePinnedMessageItems, ...pinnedNotes].sort(
-      (a, b) => b.createdAtMs - a.createdAtMs,
-    );
-  }, [
-    activePinnedMessageItems,
-    messages,
-    activeConversationForView?.id,
-    activeConversationForView?.type,
-  ]);
+    for (const event of pinnedNotes) {
+      if (!event.pinToTop) {
+        pinnedBySource.delete(event.sourceMessageId);
+        continue;
+      }
+
+      pinnedBySource.set(event.sourceMessageId, {
+        id: event.id,
+        itemType: event.itemType,
+        sourceMessageId: event.sourceMessageId,
+        title: event.title,
+        preview: event.preview,
+        createdAtMs: event.createdAtMs,
+      });
+    }
+
+    return Array.from(pinnedBySource.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
+  }, [messages, activeConversationForView?.id, activeConversationForView?.type, groupSettingsMap, language]);
 
   const latestPinnedSummary = useMemo(() => {
     const latest = activePinnedBoardItems[0];
@@ -7903,14 +8234,31 @@ export function ChatPage() {
 
   const remoteCallStreamList = useMemo(() => Object.values(remoteCallStreams), [remoteCallStreams]);
 
-  const activeGroupMembers = activeConversationForView?.type === "group"
-    ? activeConversationForView.participants ?? []
-    : [];
-
   const activeGroupSettings =
     activeConversationForView?.type === "group"
       ? groupSettingsMap[activeConversationForView.id] ?? null
       : null;
+
+  const activeGroupMembers = activeConversationForView?.type === "group"
+    ? activeGroupSettings?.participants ??
+      activeConversationForView.participants ??
+      []
+    : [];
+
+  const activeGroupPendingMembers = activeConversationForView?.type === "group"
+    ? groupSettingsMap[activeConversationForView.id]?.pendingParticipants ?? []
+    : [];
+
+  const canComposeInActiveConversation = activeConversationForView?.type === "group"
+    ? !activeGroupSettings?.onlyAdminsCanMessage ||
+      Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)
+    : true;
+
+  const composeBlockedMessage = activeConversationForView?.type === "group" && !canComposeInActiveConversation
+    ? language === "vi"
+      ? "Chỉ trưởng nhóm và phó nhóm được gửi tin nhắn vào nhóm này"
+      : "Only the owner and admins can send messages in this group"
+    : null;
 
   const canComposeGroupMessage = (() => {
     if (activeConversationForView?.type !== "group") {
@@ -9220,6 +9568,7 @@ export function ChatPage() {
                 conversation={activeConversationForView}
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
+                pendingMembers={activeGroupPendingMembers}
                 friendContacts={friendContacts}
                 pinnedMessages={activePinnedBoardItems}
                 onOpenPinnedMessage={(sourceMessageId: string) => {
@@ -9262,6 +9611,11 @@ export function ChatPage() {
                   requireApprovalToJoin?: boolean;
                   highlightAdminMessages?: boolean;
                   allowMemberInvite?: boolean;
+                  allowMemberEditGroupInfo?: boolean;
+                  allowMemberPinBoardItems?: boolean;
+                  allowMemberCreateNotes?: boolean;
+                  allowMemberCreateReminders?: boolean;
+                  allowMemberCreatePolls?: boolean;
                   transferOwnerId?: string;
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
@@ -9274,6 +9628,12 @@ export function ChatPage() {
                 isUpdatingGroupProfile={isUpdatingGroupProfile}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
+                }}
+                onApprovePendingMember={(userId: string) => {
+                  void onApprovePendingGroupMember(userId);
+                }}
+                onRejectPendingMember={(userId: string) => {
+                  void onRejectPendingGroupMember(userId);
                 }}
                 onToggleAdmin={(userId: string, admin: boolean) => {
                   void onToggleGroupAdmin(userId, admin);
@@ -9349,17 +9709,29 @@ export function ChatPage() {
                     void onPinGroupMessage(targetMessage);
                   }}
                   onUnpinMessage={(targetMessage) => {
-                    void onUnpinGroupMessage(targetMessage.id);
+                    const resolvedSourceMessageId = String(
+                      (targetMessage as { id?: string; sourceMessageId?: string }).id ??
+                      (targetMessage as { id?: string; sourceMessageId?: string }).sourceMessageId ??
+                      "",
+                    ).trim();
+                    if (!resolvedSourceMessageId) {
+                      return;
+                    }
+                    void onUnpinGroupMessage(resolvedSourceMessageId);
                   }}
+                  canPinMessages={Boolean(
+                    activeGroupSettings?.isOwner ||
+                    activeGroupSettings?.isAdmin ||
+                    activeGroupSettings?.allowMembersPinBoardItems ||
+                    activeGroupSettings?.allowMemberPinBoardItems,
+                  )}
                   onVotePollMessage={(targetMessage, optionId) => {
                     void onVoteGroupPoll(targetMessage, optionId);
                   }}
                   onClosePollMessage={(targetMessage) => {
                     void onCloseGroupPoll(targetMessage);
                   }}
-                  canManageGroupPoll={Boolean(
-                    activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin,
-                  )}
+                  canManageGroupPoll={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)}
                   pinnedMessages={activePinnedBoardItems}
                   latestPinnedSummary={latestPinnedSummary}
                   scrollToMessageRequest={scrollToMessageRequest}

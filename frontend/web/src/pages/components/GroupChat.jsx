@@ -195,9 +195,7 @@ export function GroupChat({
   const isOwner = Boolean(
     settings?.isOwner ?? (currentUserId && ownerId && currentUserId === ownerId),
   );
-  const isAdmin = Boolean(
-    settings?.isAdmin ?? (currentUserId && adminIds.includes(currentUserId)),
-  );
+  const isAdmin = Boolean(settings?.isAdmin ?? (currentUserId && adminIds.includes(currentUserId)));
   const canOpenManage = isOwner || isAdmin;
   const canInviteMembers = canOpenManage || Boolean(settings?.allowMemberInvite);
   const canEditSecuritySettings = canOpenManage;
@@ -1007,23 +1005,21 @@ export function GroupChat({
                                 <p className="truncate text-[10px] text-amber-100/85">{item.preview}</p>
                               )}
                             </div>
-                            {item.itemType === "pin" && (
-                              <span className="shrink-0">
-                                <button
-                                  type="button"
-                                  disabled={!canPinBoardItems}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    if (canPinBoardItems) {
-                                      onUnpinPinnedMessage?.(item.sourceMessageId);
-                                    }
-                                  }}
-                                  className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
-                                >
-                                  {language === "vi" ? "Bo ghim" : "Unpin"}
-                                </button>
-                              </span>
-                            )}
+                            <span className="shrink-0">
+                              <button
+                                type="button"
+                                disabled={!canPinBoardItems}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (canPinBoardItems) {
+                                    onUnpinPinnedMessage?.(item.sourceMessageId);
+                                  }
+                                }}
+                                className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
+                              >
+                                {language === "vi" ? "Bo ghim" : "Unpin"}
+                              </button>
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -2041,13 +2037,13 @@ export function GroupChat({
                   </div>
 
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span>{language === "vi" ? "Danh dau tin nhan tu truong/pho nhom" : "Only owner/admin can send"}</span>
+                    <span>{language === "vi" ? "Danh dau tin nhan tu truong/pho nhom" : "Highlight owner/admin messages"}</span>
                     <input
                       type="checkbox"
-                      checked={Boolean(settings?.onlyAdminsCanMessage)}
+                      checked={Boolean(settings?.highlightAdminMessages)}
                       disabled={!canEditSecuritySettings}
                       onChange={(event) => {
-                        void onUpdateSettings?.({ onlyAdminsCanMessage: event.target.checked });
+                        void onUpdateSettings?.({ highlightAdminMessages: event.target.checked });
                       }}
                     />
                   </div>
@@ -2056,7 +2052,7 @@ export function GroupChat({
                     <span>{language === "vi" ? "Cho phep dung link tham gia nhom" : "Allow invite by link"}</span>
                     <input
                       type="checkbox"
-                      checked={Boolean(settings?.allowMemberInvite ?? true)}
+                      checked={Boolean(settings?.allowMemberInvite)}
                       disabled={!canEditSecuritySettings}
                       onChange={(event) => {
                         void onUpdateSettings?.({ allowMemberInvite: event.target.checked });

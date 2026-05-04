@@ -963,8 +963,62 @@ public class GatewayProxyController {
         );
     }
 
+    @PostMapping("/chat/conversations/{conversationId}/pin")
+    public ApiResponse<Object> pinConversation(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pin",
+            Map.of(),
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @DeleteMapping("/chat/conversations/{conversationId}/pin")
+    public ApiResponse<Object> unpinConversation(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pin",
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/pin/unpin")
+    public ApiResponse<Object> unpinConversationCompatibility(
+        @PathVariable("conversationId") String conversationId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pin",
+            Map.of("conversationId", conversationId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @DeleteMapping("/chat/conversations/{conversationId}/pins/{messageId}")
     public ApiResponse<Object> unpinGroupMessage(
+        @PathVariable("conversationId") String conversationId,
+        @PathVariable("messageId") String messageId,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return deleteMap(
+            chatServiceUrl + "/api/v1/chat/conversations/{conversationId}/pins/{messageId}",
+            Map.of("conversationId", conversationId, "messageId", messageId),
+            Map.of("X-User-Id", userId)
+        );
+    }
+
+    @PostMapping("/chat/conversations/{conversationId}/pins/{messageId}/unpin")
+    public ApiResponse<Object> unpinGroupMessageCompatibility(
         @PathVariable("conversationId") String conversationId,
         @PathVariable("messageId") String messageId,
         HttpServletRequest request

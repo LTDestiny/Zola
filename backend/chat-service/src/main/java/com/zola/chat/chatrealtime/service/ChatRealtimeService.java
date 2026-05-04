@@ -1,4 +1,4 @@
-﻿package com.zola.chat.chatrealtime.service;
+package com.zola.chat.chatrealtime.service;
 
 import com.zola.chat.chatrealtime.dto.ChatDeleteForMeRequest;
 import com.zola.chat.chatrealtime.dto.ChatEditRequest;
@@ -284,6 +284,7 @@ public class ChatRealtimeService {
                 List.of(),
                 null,
                 null,
+                false,
                 false
             );
             deleteConversationAndMessages(conversation.getId());
@@ -481,8 +482,13 @@ public class ChatRealtimeService {
         UUID conversationId,
         String name,
         String avatar,
-        Boolean onlyAdminsCanMessage,
+        Boolean allowMembersEditGroupProfile,
+        Boolean allowMembersPinBoardItems,
+        Boolean allowMembersCreateNotes,
+        Boolean allowMembersCreatePolls,
+        Boolean allowMembersSendMessages,
         Boolean requireApprovalToJoin,
+        Boolean highlightAdminMessages,
         Boolean allowMemberInvite,
         Boolean allowMemberEditGroupInfo,
         Boolean allowMemberPinBoardItems,
@@ -522,8 +528,13 @@ public class ChatRealtimeService {
             }
         }
 
-        if (onlyAdminsCanMessage != null
+        if (allowMembersEditGroupProfile != null
+            || allowMembersPinBoardItems != null
+            || allowMembersCreateNotes != null
+            || allowMembersCreatePolls != null
+            || allowMembersSendMessages != null
             || requireApprovalToJoin != null
+            || highlightAdminMessages != null
             || allowMemberInvite != null
             || allowMemberEditGroupInfo != null
             || allowMemberPinBoardItems != null
@@ -535,8 +546,28 @@ public class ChatRealtimeService {
                 throw new ForbiddenOperationException("Only owner or admin can update group settings");
             }
 
-            if (onlyAdminsCanMessage != null) {
-                conversation.setOnlyAdminsCanMessage(onlyAdminsCanMessage);
+            if (allowMembersEditGroupProfile != null) {
+                conversation.setAllowMembersEditGroupProfile(allowMembersEditGroupProfile);
+                changed = true;
+            }
+            if (allowMembersPinBoardItems != null) {
+                conversation.setAllowMembersPinBoardItems(allowMembersPinBoardItems);
+                changed = true;
+            }
+            if (allowMembersCreateNotes != null) {
+                conversation.setAllowMembersCreateNotes(allowMembersCreateNotes);
+                changed = true;
+            }
+            if (allowMembersCreatePolls != null) {
+                conversation.setAllowMembersCreatePolls(allowMembersCreatePolls);
+                changed = true;
+            }
+            if (allowMembersSendMessages != null) {
+                conversation.setAllowMembersSendMessages(allowMembersSendMessages);
+                changed = true;
+            }
+            if (highlightAdminMessages != null) {
+                conversation.setHighlightAdminMessages(highlightAdminMessages);
                 changed = true;
             }
             if (requireApprovalToJoin != null) {
@@ -668,15 +699,6 @@ public class ChatRealtimeService {
         List<PinnedMessageItem> nextPinnedMessages = normalizePinnedMessages(conversation).stream()
             .filter(item -> !normalizedMessageId.equals(item.getSourceMessageId()))
             .collect(Collectors.toCollection(ArrayList::new));
-
-        if (nextPinnedMessages.size() == normalizePinnedMessages(conversation).size()) {
-            boolean messageExists = messageRepository.findByConversationIdAndId(conversation.getId(), normalizedMessageId)
-                .isPresent();
-            if (!messageExists) {
-                throw new ResourceNotFoundException("Message not found");
-            }
-            return toGroupSettingsPayload(conversation, actorId);
-        }
 
         conversation.setPinnedMessages(sortPinnedMessagesDescending(nextPinnedMessages));
         conversation.setUpdatedAt(Instant.now());
@@ -1824,7 +1846,8 @@ public class ChatRealtimeService {
             normalizeAdmins(conversation),
             conversation.getOwnerId(),
             conversation.getOwnerId(),
-            false
+            false,
+            conversation.getPinnedUserIds().contains(requesterId)
         );
     }
 
@@ -1837,7 +1860,13 @@ public class ChatRealtimeService {
         payload.put("admins", normalizeAdmins(conversation));
         payload.put("participants", normalizeMembers(conversation));
         payload.put("onlyAdminsCanMessage", conversation.isOnlyAdminsCanMessage());
+        payload.put("allowMembersEditGroupProfile", conversation.isAllowMembersEditGroupProfile());
+        payload.put("allowMembersPinBoardItems", conversation.isAllowMembersPinBoardItems());
+        payload.put("allowMembersCreateNotes", conversation.isAllowMembersCreateNotes());
+        payload.put("allowMembersCreatePolls", conversation.isAllowMembersCreatePolls());
+        payload.put("allowMembersSendMessages", conversation.isAllowMembersSendMessages());
         payload.put("requireApprovalToJoin", conversation.isRequireApprovalToJoin());
+        payload.put("highlightAdminMessages", conversation.isHighlightAdminMessages());
         payload.put("allowMemberInvite", conversation.isAllowMemberInvite());
         payload.put("allowMemberEditGroupInfo", conversation.isAllowMemberEditGroupInfo());
         payload.put("allowMemberPinBoardItems", conversation.isAllowMemberPinBoardItems());

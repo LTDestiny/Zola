@@ -1057,18 +1057,21 @@ export function GroupConversationPane({
       return;
     }
 
-    const elementId = `chat-message-${messageId}`;
     window.requestAnimationFrame(() => {
-      const target = document.getElementById(elementId);
+      const target =
+        document.getElementById(`chat-message-${messageId}`) ??
+        document.getElementById(`msg-${messageId}`);
       if (!target) {
         return;
       }
 
       target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("bg-sky-500/20", "transition-colors", "duration-1000");
       setHighlightedMessageId(messageId);
       window.setTimeout(() => {
+        target.classList.remove("bg-sky-500/20");
         setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
-      }, 1400);
+      }, 2000);
     });
   };
 

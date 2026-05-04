@@ -325,6 +325,33 @@ public class ChatConversationController {
         return ApiResponse.ok("Message pinned", response);
     }
 
+    @PostMapping("/conversations/{conversationId}/pin")
+    public ApiResponse<ConversationListItemResponse> pinConversation(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.pinConversation(userId, conversationId);
+        return ApiResponse.ok("Conversation pinned", response);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}/pin")
+    public ApiResponse<ConversationListItemResponse> unpinConversation(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
+        return ApiResponse.ok("Conversation unpinned", response);
+    }
+
+    @PostMapping("/conversations/{conversationId}/pin/unpin")
+    public ApiResponse<ConversationListItemResponse> unpinConversationCompatibility(
+        @RequestHeader("X-User-Id") String userId,
+        @PathVariable("conversationId") UUID conversationId
+    ) {
+        ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
+        return ApiResponse.ok("Conversation unpinned", response);
+    }
+
     @DeleteMapping("/conversations/{conversationId}/pins/{messageId}")
     public ApiResponse<Map<String, Object>> unpinMessage(
         @RequestHeader("X-User-Id") String userId,
@@ -339,37 +366,24 @@ public class ChatConversationController {
             "GROUP_STATE_CHANGED",
             "{\"conversationId\":\"" + conversationId + "\",\"action\":\"PINNED_UPDATED\",\"actorId\":\"" + userId + "\"}"
         );
-        return ApiResponse.ok("Message unpinned", response);
+        return ApiResponse.ok("Group settings updated", response);
     }
 
-    @PostMapping("/conversations/{conversationId}/pin")
-    public ApiResponse<ConversationListItemResponse> pinConversation(
+    @PostMapping("/conversations/{conversationId}/pins/{messageId}/unpin")
+    public ApiResponse<Map<String, Object>> unpinMessageCompatibility(
         @RequestHeader("X-User-Id") String userId,
-        @PathVariable("conversationId") UUID conversationId
+        @PathVariable("conversationId") UUID conversationId,
+        @PathVariable("messageId") String messageId
     ) {
-        ConversationListItemResponse response = chatRealtimeService.pinConversation(userId, conversationId);
-        // Emit sync event for real-time update across sessions of the same user
-        messagingTemplate.convertAndSendToUser(
-            userId,
-            "/queue/sync",
-            new SyncEventMessage(userId, "chat-pin", "CONVERSATION_PINNED", conversationId.toString(), Instant.now())
+        Map<String, Object> response = chatRealtimeService.unpinGroupMessage(userId, conversationId, messageId);
+        emitUnreadSyncEvents(conversationId, null);
+        emitGroupSettingsUpdatedEvent(conversationId, userId);
+        emitGroupSyncEvent(
+            chatRealtimeService.listConversationMembers(conversationId),
+            "GROUP_STATE_CHANGED",
+            "{\"conversationId\":\"" + conversationId + "\",\"action\":\"PINNED_UPDATED\",\"actorId\":\"" + userId + "\"}"
         );
-        return ApiResponse.ok("Conversation pinned", response);
-    }
-
-    @DeleteMapping("/conversations/{conversationId}/pin")
-    public ApiResponse<ConversationListItemResponse> unpinConversation(
-        @RequestHeader("X-User-Id") String userId,
-        @PathVariable("conversationId") UUID conversationId
-    ) {
-        ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
-        // Emit sync event
-        messagingTemplate.convertAndSendToUser(
-            userId,
-            "/queue/sync",
-            new SyncEventMessage(userId, "chat-pin", "CONVERSATION_UNPINNED", conversationId.toString(), Instant.now())
-        );
-        return ApiResponse.ok("Conversation unpinned", response);
+        return ApiResponse.ok("Group settings updated", response);
     }
 
     @DeleteMapping("/conversations/{conversationId}")

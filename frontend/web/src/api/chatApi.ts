@@ -956,10 +956,22 @@ export async function pinGroupMessage(conversationId: string, sourceMessageId: s
 }
 
 export async function unpinGroupMessage(conversationId: string, messageId: string) {
-  const response = await httpClient.delete<ApiResponse<GroupSettings>>(
-    `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
+  try {
+    const response = await httpClient.delete<ApiResponse<GroupSettings>>(
+      `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const fallbackResponse = await httpClient.post<ApiResponse<GroupSettings>>(
+    `/api/v1/chat/conversations/${conversationId}/pins/${messageId}/unpin`,
+    {},
   );
-  return response.data;
+  return fallbackResponse.data;
 }
 
 export async function pinConversation(conversationId: string) {
@@ -970,10 +982,22 @@ export async function pinConversation(conversationId: string) {
 }
 
 export async function unpinConversation(conversationId: string) {
-  const response = await httpClient.delete<ApiResponse<ConversationItem>>(
-    `/api/v1/chat/conversations/${conversationId}/pin`,
+  try {
+    const response = await httpClient.delete<ApiResponse<ConversationItem>>(
+      `/api/v1/chat/conversations/${conversationId}/pin`,
+    );
+    return response.data;
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const fallbackResponse = await httpClient.post<ApiResponse<ConversationItem>>(
+    `/api/v1/chat/conversations/${conversationId}/pin/unpin`,
+    {},
   );
-  return response.data;
+  return fallbackResponse.data;
 }
 
 export async function deleteGroupConversation(conversationId: string) {
