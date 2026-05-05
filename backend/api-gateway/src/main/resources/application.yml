@@ -1,5 +1,10 @@
 server:
   port: 18080
+  ssl:
+    enabled: ${API_GATEWAY_SSL_ENABLED:false}
+    key-store: ${API_GATEWAY_SSL_KEY_STORE:}
+    key-store-password: ${API_GATEWAY_SSL_KEY_STORE_PASSWORD:}
+    key-store-type: ${API_GATEWAY_SSL_KEY_STORE_TYPE:PKCS12}
   error:
     include-message: always
 

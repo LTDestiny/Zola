@@ -43,7 +43,7 @@ export function Sidebar({
   onCreateGroup,
 }: SidebarProps) {
   return (
-    <div className="flex shrink-0">
+    <div className="flex w-full shrink-0 flex-col md:w-auto md:flex-row">
       <MiniNav
         active={active}
         onChange={onTabChange}
@@ -51,7 +51,7 @@ export function Sidebar({
         contactsBadge={contactsBadge}
       />
       {showChatList && (
-      <ChatList
+        <ChatList
           language={language}
           chats={chats}
           selectedChatId={selectedChatId}

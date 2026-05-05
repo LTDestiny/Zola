@@ -130,6 +130,9 @@ services:
       USER_SERVICE_URL: http://user-service:8082
       CHAT_SERVICE_URL: http://chat-service:8083
       FILE_SERVICE_URL: http://file-service:8084
+      API_GATEWAY_SSL_ENABLED: ${API_GATEWAY_SSL_ENABLED:-false}
+      API_GATEWAY_SSL_KEY_STORE: ${API_GATEWAY_SSL_KEY_STORE:-}
+      API_GATEWAY_SSL_KEY_STORE_PASSWORD: ${API_GATEWAY_SSL_KEY_STORE_PASSWORD:-}
     depends_on:
       - auth-service
       - user-service
@@ -189,6 +192,7 @@ services:
       dockerfile: chat-service/Dockerfile
     ports:
       - "8083:8083"
+      - "18443:18443"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
       DB_USER: ${DB_USER:-postgres}
@@ -197,6 +201,10 @@ services:
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      CHAT_SERVICE_SSL_ENABLED: ${CHAT_SERVICE_SSL_ENABLED:-false}
+      CHAT_SERVICE_SSL_PORT: ${CHAT_SERVICE_SSL_PORT:-18443}
+      CHAT_SERVICE_SSL_KEY_STORE: ${CHAT_SERVICE_SSL_KEY_STORE:-}
+      CHAT_SERVICE_SSL_KEY_STORE_PASSWORD: ${CHAT_SERVICE_SSL_KEY_STORE_PASSWORD:-}
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
@@ -312,9 +320,9 @@ services:
     ports:
       - "3000:80"
     environment:
-      VITE_API_URL: http://localhost:18080
-      VITE_WS_URL: ws://localhost:8083/ws
-      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:localhost:3478?transport=udp","turn:localhost:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
+      VITE_API_URL: https://192.168.11.195:18080
+      VITE_WS_URL: wss://192.168.11.195:18443/ws
+      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:192.168.11.195:3478?transport=udp","turn:192.168.11.195:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
 
 volumes:
   postgres_data:

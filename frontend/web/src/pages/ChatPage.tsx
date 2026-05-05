@@ -81,6 +81,8 @@ import { useLanguage } from "../i18n/language";
 import { AddFriendModal } from "./components/AddFriendModal";
 import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
+import { GroupCallNotice } from "./components/GroupCallNotice";
+import { UploadLimitModal } from "./components/UploadLimitModal";
 import {
   InAppCallOverlay,
   type ActiveCallView,
@@ -2470,10 +2472,19 @@ export function ChatPage() {
   const acquireLocalStream = useCallback(
     async (mode: InAppCallMode) => {
       if (!navigator.mediaDevices?.getUserMedia) {
+        const isInsecureIpAccess =
+          typeof window !== "undefined" &&
+          window.location.protocol !== "https:" &&
+          window.location.hostname !== "localhost" &&
+          window.location.hostname !== "127.0.0.1";
         throw new Error(
-          language === "vi"
-            ? "Trinh duyet khong ho tro cuoc goi"
-            : "This browser does not support in-app calling",
+          isInsecureIpAccess
+            ? language === "vi"
+              ? "Trinh duyet chan camera/micro khi truy cap bang IP qua HTTP. Hay dung HTTPS hoac cap quyen insecure origin cho dia chi nay."
+              : "The browser blocks camera/microphone on HTTP IP access. Use HTTPS or allow this insecure origin."
+            : language === "vi"
+              ? "Trinh duyet khong ho tro cuoc goi"
+              : "This browser does not support in-app calling",
         );
       }
 
@@ -8362,7 +8373,7 @@ export function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--color-zola-page)] text-slate-100">
+    <div className="flex h-screen flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:flex-row">
       <Sidebar
         language={language}
         active={activeTab}
@@ -9544,22 +9555,13 @@ export function ChatPage() {
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
             {showJoinGroupCallNotice && activeGroupCallNotice && (
-              <div className="z-20 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 sm:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-emerald-100">
-                    {activeGroupCallNoticeDescription}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void onJoinGroupCallFromNotice(activeGroupCallNotice);
-                    }}
-                    className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-400"
-                  >
-                    {language === "vi" ? "Tham gia cuoc goi" : "Join call"}
-                  </button>
-                </div>
-              </div>
+              <GroupCallNotice
+                language={language}
+                description={activeGroupCallNoticeDescription}
+                onJoin={() => {
+                  void onJoinGroupCallFromNotice(activeGroupCallNotice);
+                }}
+              />
             )}
 
             {activeConversationForView?.type === "group" ? (
@@ -10063,27 +10065,11 @@ export function ChatPage() {
         </div>
       )}
 
-      {uploadLimitModalMessage && (
-        <div className="fixed inset-0 z-60 grid place-items-center bg-slate-900/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-semibold text-slate-900">
-              {language === "vi" ? "Vuot gioi han dung luong" : "File size limit exceeded"}
-            </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
-              {uploadLimitModalMessage}
-            </p>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setUploadLimitModalMessage(null)}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UploadLimitModal
+        language={language}
+        message={uploadLimitModalMessage}
+        onClose={() => setUploadLimitModalMessage(null)}
+      />
     </div>
   );
 }

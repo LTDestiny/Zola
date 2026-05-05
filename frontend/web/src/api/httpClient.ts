@@ -6,8 +6,21 @@ import {
 } from "../auth/token";
 import { env } from "../shared/env";
 
-const defaultApiBaseUrl =
-  env.VITE_API_URL ?? "http://192.168.11.195:18080";
+function resolveApiBaseUrl() {
+  if (env.VITE_API_URL) {
+    return env.VITE_API_URL;
+  }
+
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    const port = "18080";
+    return `${protocol}//${window.location.hostname}:${port}`;
+  }
+
+  return "http://127.0.0.1:8080";
+}
+
+const defaultApiBaseUrl = resolveApiBaseUrl();
 const fallbackApiBaseUrl = defaultApiBaseUrl.includes("localhost")
   ? defaultApiBaseUrl.replace("localhost", "127.0.0.1")
   : undefined;
