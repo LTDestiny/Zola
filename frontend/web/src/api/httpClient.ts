@@ -7,7 +7,7 @@ import {
 import { env } from "../shared/env";
 
 const defaultApiBaseUrl =
-  env.VITE_API_URL ?? "http://127.0.0.1:8080";
+  env.VITE_API_URL ?? "http://192.168.11.195:18080";
 const fallbackApiBaseUrl = defaultApiBaseUrl.includes("localhost")
   ? defaultApiBaseUrl.replace("localhost", "127.0.0.1")
   : undefined;

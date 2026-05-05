@@ -44,7 +44,6 @@ services:
       retries: 10
 
   postgres:
-    profiles: ["local-pg-bootstrap"]
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: postgres
@@ -74,7 +73,6 @@ services:
       retries: 20
 
   db-bootstrap:
-    profiles: ["local-pg-bootstrap"]
     image: postgres:15-alpine
     depends_on:
       postgres:
@@ -90,7 +88,7 @@ services:
       [
         "sh",
         "-c",
-        "chmod +x /bootstrap/postgres-bootstrap.sh && /bootstrap/postgres-bootstrap.sh",
+        "sh /bootstrap/postgres-bootstrap.sh",
       ]
     restart: "no"
 
@@ -124,7 +122,7 @@ services:
       dockerfile: api-gateway/Dockerfile
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_PORT:-18080}:18080"
     environment:
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
@@ -161,6 +159,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       MAIL_FROM: ${MAIL_FROM:-noreply@zola.app}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -178,6 +178,8 @@ services:
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -196,6 +198,8 @@ services:
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       mongo-bootstrap:
         condition: service_completed_successfully
       redis:
@@ -216,6 +220,8 @@ services:
       REDIS_HOST: redis
       TURN_SECRET: ${TURN_SECRET}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -238,6 +244,8 @@ services:
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
 
@@ -256,6 +264,8 @@ services:
       MONGO_URI: ${AI_MONGO_URI:-mongodb://mongodb:27017/zola_ai_db}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       mongo-bootstrap:
         condition: service_completed_successfully
 
@@ -273,6 +283,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${NOTIFICATION_DB_NAME:-zola_notification_db}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -288,6 +300,9 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
 
   zola-web:
     profiles: ["web"]
@@ -297,7 +312,7 @@ services:
     ports:
       - "3000:80"
     environment:
-      VITE_API_URL: http://localhost:8080
+      VITE_API_URL: http://localhost:18080
       VITE_WS_URL: ws://localhost:8083/ws
       VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:localhost:3478?transport=udp","turn:localhost:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
 

@@ -40,6 +40,9 @@ public class GatewayJwtFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
         String path = request.getRequestURI();
         return PUBLIC_PREFIXES.stream().anyMatch(path::startsWith);
     }
