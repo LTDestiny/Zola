@@ -33,6 +33,7 @@ public class SecurityConfig {
         configuration.setAllowedOriginPatterns(List.of(
             "http://localhost:*",
             "https://localhost:*",
+            "https://appassets.androidplatform.net",
             "http://127.0.0.1:*",
             "https://127.0.0.1:*",
             "http://192.168.*.*:*",

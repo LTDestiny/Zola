@@ -19,7 +19,8 @@ export type AuthTokenPayload = {
 type ErrorResponseShape = {
   message?: string;
   error?: string;
-  errors?: Array<{ defaultMessage?: string }>;
+  detail?: string;
+  errors?: Array<{ defaultMessage?: string; message?: string }>;
 };
 
 export async function registerWithEmail(input: {
@@ -122,9 +123,10 @@ export function toErrorMessage(error: unknown): string {
   }
 
   const payload = axiosError.response?.data;
-  const firstValidationError = payload?.errors?.[0]?.defaultMessage;
+  const firstValidationError =
+    payload?.errors?.[0]?.defaultMessage ?? payload?.errors?.[0]?.message;
   const backendMessage =
-    payload?.message ?? firstValidationError ?? payload?.error;
+    payload?.message ?? firstValidationError ?? payload?.detail ?? payload?.error;
 
   if (typeof backendMessage === "string") {
     const normalized = backendMessage.toLowerCase();

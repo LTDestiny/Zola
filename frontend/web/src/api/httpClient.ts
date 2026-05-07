@@ -12,12 +12,19 @@ function resolveApiBaseUrl() {
   }
 
   if (typeof window !== "undefined") {
+    if (window.location.hostname === "appassets.androidplatform.net") {
+      return env.VITE_API_PROXY_TARGET ?? "https://10.18.76.36:18080";
+    }
+
+    if (window.location.port === "5173") {
+      return window.location.origin;
+    }
+
     const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-    const port = "18080";
-    return `${protocol}//${window.location.hostname}:${port}`;
+    return `${protocol}//${window.location.hostname}:18080`;
   }
 
-  return "http://127.0.0.1:8080";
+  return "https://127.0.0.1:18080";
 }
 
 const defaultApiBaseUrl = resolveApiBaseUrl();

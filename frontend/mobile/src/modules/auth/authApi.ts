@@ -70,7 +70,12 @@ export async function resetPassword(email: string, code: string, newPassword: st
 }
 
 export function toErrorMessage(error: unknown) {
-  const axiosError = error as AxiosError<{ message?: string; error?: string }>;
+  const axiosError = error as AxiosError<{
+    message?: string;
+    error?: string;
+    detail?: string;
+    errors?: Array<{ defaultMessage?: string; message?: string }>;
+  }>;
   
   if (axiosError.code === "ERR_NETWORK" || axiosError.message === "Network Error") {
     return "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và đảm bảo backend đang chạy.";
@@ -80,5 +85,13 @@ export function toErrorMessage(error: unknown) {
     return "Kết nối bị quá hạn (timeout). Vui lòng thử lại.";
   }
 
-  return axiosError.response?.data?.message ?? axiosError.response?.data?.error ?? axiosError.message ?? "Lỗi không xác định";
+  const payload = axiosError.response?.data;
+  const validationMessage = payload?.errors?.[0]?.defaultMessage ?? payload?.errors?.[0]?.message;
+  const backendMessage = payload?.message ?? validationMessage ?? payload?.detail ?? payload?.error;
+
+  if (typeof backendMessage === "string" && backendMessage.trim()) {
+    return backendMessage;
+  }
+
+  return axiosError.message ?? "Lỗi không xác định";
 }

@@ -1,4 +1,10 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  HashRouter,
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
 import { RequireAuth } from "./auth/RequireAuth";
 import { LanguageProvider } from "./i18n/language";
 import { ChatPage } from "./pages/ChatPage";
@@ -9,9 +15,15 @@ import { PolicyPage } from "./pages/PolicyPage";
 import { RegisterPage } from "./pages/RegisterPage";
 
 export function App() {
+  const Router =
+    typeof window !== "undefined" &&
+    window.location.hostname === "appassets.androidplatform.net"
+      ? HashRouter
+      : BrowserRouter;
+
   return (
     <LanguageProvider>
-      <BrowserRouter>
+      <Router>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -28,7 +40,7 @@ export function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
+      </Router>
     </LanguageProvider>
   );
 }

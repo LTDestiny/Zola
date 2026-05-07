@@ -16,11 +16,11 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: https://192.168.11.195:18080
-      VITE_WS_URL: wss://192.168.11.195:18443/ws
-      VITE_HTTPS_KEY: /certs/192.168.11.195-key.pem
-      VITE_HTTPS_CERT: /certs/192.168.11.195.pem
-      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:192.168.11.195:3478?transport=udp","turn:192.168.11.195:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
+      VITE_API_URL: https://10.18.76.36:18080
+      VITE_WS_URL: wss://10.18.76.36:18443/ws
+      VITE_HTTPS_KEY: /certs/10.18.76.36-key.pem
+      VITE_HTTPS_CERT: /certs/10.18.76.36.pem
+      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:10.18.76.36:3478?transport=udp","turn:10.18.76.36:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     command: >

@@ -1,6 +1,9 @@
 package com.zola.chat.config;
 
 import org.apache.catalina.connector.Connector;
+import org.apache.coyote.http11.Http11NioProtocol;
+import org.apache.tomcat.util.net.SSLHostConfig;
+import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
@@ -28,10 +31,19 @@ public class AdditionalSslConnectorConfig {
             connector.setSecure(true);
             connector.setPort(port);
 
-            connector.setProperty("SSLEnabled", "true");
-            connector.setProperty("keystoreFile", keyStore);
-            connector.setProperty("keystorePass", keyStorePassword);
-            connector.setProperty("keystoreType", keyStoreType);
+            Http11NioProtocol protocol = (Http11NioProtocol) connector.getProtocolHandler();
+            protocol.setSSLEnabled(true);
+
+            SSLHostConfig sslHostConfig = new SSLHostConfig();
+            SSLHostConfigCertificate certificate = new SSLHostConfigCertificate(
+                sslHostConfig,
+                SSLHostConfigCertificate.Type.UNDEFINED
+            );
+            certificate.setCertificateKeystoreFile(keyStore);
+            certificate.setCertificateKeystorePassword(keyStorePassword);
+            certificate.setCertificateKeystoreType(keyStoreType);
+            sslHostConfig.addCertificate(certificate);
+            protocol.addSslHostConfig(sslHostConfig);
 
             factory.addAdditionalTomcatConnectors(connector);
         };

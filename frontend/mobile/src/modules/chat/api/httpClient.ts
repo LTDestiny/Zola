@@ -9,7 +9,11 @@ function resolveApiBaseUrl() {
   
   // If explicitly set to something that is NOT a local/stale IP, use it.
   // We exclude 127.0.0.1 and the potentially stale IP from app.json
-  if (explicit && explicit !== "http://127.0.0.1:8080" && explicit !== "http://172.20.10.2:8080") {
+  if (
+    explicit &&
+    explicit !== "http://127.0.0.1:8080" &&
+    explicit !== "http://172.20.10.2:8080"
+  ) {
     return explicit;
   }
 
@@ -18,15 +22,15 @@ function resolveApiBaseUrl() {
   const host = hostUri?.split(":")[0];
   if (host) {
     console.log(`[httpClient] Resolved API host from Expo: ${host}`);
-    return `http://${host}:8080`;
+    return `https://${host}:18080`;
   }
 
   // Fallback for Android emulator
   if (Platform.OS === "android") {
-    return "http://10.0.2.2:8080";
+    return "https://10.0.2.2:18080";
   }
 
-  return "http://127.0.0.1:8080";
+  return "https://127.0.0.1:18080";
 }
 
 const defaultApiBaseUrl = resolveApiBaseUrl();

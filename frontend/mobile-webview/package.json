@@ -1,0 +1,12 @@
+{
+  "name": "zola-mobile-webview",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:web": "npm --prefix ../web run build",
+    "copy:web": "node scripts/copy-web-dist.js",
+    "build:android": "npm run build:web && npm run copy:web && bash ./gradlew -p . assembleDebug",
+    "install:android": "bash ./gradlew -p . installDebug"
+  }
+}

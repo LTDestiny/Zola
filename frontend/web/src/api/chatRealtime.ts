@@ -16,6 +16,15 @@ const CALL_DEBUG =
 
 function resolveWsUrl() {
   if (typeof window !== "undefined") {
+    if (window.location.hostname === "appassets.androidplatform.net") {
+      return env.VITE_WS_URL ?? "wss://10.18.76.36:18443/ws";
+    }
+
+    if (window.location.port === "5173") {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}/ws`;
+    }
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const port = protocol === "wss:" ? "18443" : "8083";
     return `${protocol}//${window.location.hostname}:${port}/ws`;
