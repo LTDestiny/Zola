@@ -43,7 +43,7 @@ export function Sidebar({
   onCreateGroup,
 }: SidebarProps) {
   return (
-    <div className={`flex w-full shrink-0 flex-col md:w-auto md:flex-row ${selectedChatId ? "max-md:hidden" : ""}`}>
+    <div className={`flex w-full shrink-0 flex-col md:w-auto md:flex-row ${selectedChatId ? "max-md:hidden" : ""} ${showChatList ? "" : "max-md:order-2"}`}>
       <MiniNav
         active={active}
         onChange={onTabChange}
@@ -65,7 +65,7 @@ export function Sidebar({
           showBackButton={chatListShowBackButton}
           onBack={onChatListBack}
           showPrimaryActions={chatListShowPrimaryActions}
-          className={selectedChatId ? "max-md:hidden" : undefined}
+          className={`order-1 md:order-2 ${selectedChatId ? "max-md:hidden" : ""}`}
         />
       )}
     </div>

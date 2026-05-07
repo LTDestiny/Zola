@@ -43,7 +43,7 @@ function navButtonClass(isActive: boolean) {
 
 export function MiniNav({ active, onChange, messageBadge = 0, contactsBadge = 0 }: MiniNavProps) {
     return (
-        <aside className="flex h-14 w-full shrink-0 flex-row border-b border-[var(--color-zola-border-strong)] bg-[var(--color-zola-sidebar)] md:h-screen md:w-[4.25rem] md:flex-col md:border-b-0 md:border-r">
+        <aside className="order-2 flex h-14 w-full shrink-0 flex-row border-t border-[var(--color-zola-border-strong)] bg-[var(--color-zola-sidebar)] md:order-1 md:h-screen md:w-[4.25rem] md:flex-col md:border-b-0 md:border-r md:border-t-0">
             <div className="flex h-14 w-16 items-center justify-center border-r border-[var(--color-zola-border-strong)] md:h-16 md:w-auto md:border-b md:border-r-0">
                 <div className="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-zola-accent)] text-sm font-extrabold tracking-wide text-white shadow-[0_4px_14px_rgba(41,145,255,0.4)]">
                     ZL

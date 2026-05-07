@@ -3,6 +3,7 @@ package com.zola.mobilewebview;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.net.Uri;
 import android.webkit.PermissionRequest;
@@ -16,9 +17,6 @@ import android.webkit.CookieManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler;
 
@@ -30,15 +28,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(15, 23, 42));
+        getWindow().setNavigationBarColor(Color.rgb(15, 23, 42));
+
         webView = new WebView(this);
         setContentView(webView);
-
-        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {
-            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
-            view.setPadding(insets.left, insets.top, insets.right, insets.bottom);
-            return windowInsets;
-        });
-        webView.setClipToPadding(false);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);

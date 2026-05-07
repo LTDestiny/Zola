@@ -8373,7 +8373,7 @@ export function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:h-screen md:flex-row">
+    <div className="zola-mobile-shell box-border flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:h-screen md:flex-row md:p-0">
       <Sidebar
         language={language}
         active={activeTab}
@@ -8414,9 +8414,9 @@ export function ChatPage() {
       />
 
       {activeTab !== "messages" && (
-        <aside className="min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)]">
+        <aside className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)] max-md:order-1">
           {activeTab === "contacts" && (
-            <div className="mx-auto flex h-full w-full max-w-[1500px] gap-5 p-5">
+            <div className="mx-auto flex min-h-full w-full max-w-[1500px] gap-5 p-5 md:h-full">
               <aside className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
                 <div className="border-b border-white/6 px-4 pb-3 pt-4">
                   <div className="flex gap-2">
@@ -9551,9 +9551,9 @@ export function ChatPage() {
         </aside>
       )}
 
-      <main className={activeTab === "messages" ? `min-w-0 flex-1 bg-[#0f1724] ${!activeConversationForView && !isStrangerWorkspaceActive ? "max-md:hidden" : ""}` : "hidden"}>
+      <main className={activeTab === "messages" ? `min-h-0 min-w-0 flex-1 bg-[#0f1724] ${!activeConversationForView && !isStrangerWorkspaceActive ? "max-md:hidden" : ""}` : "hidden"}>
         {activeTab === "messages" ? (
-          <section className="relative flex h-full flex-col overflow-hidden">
+          <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
             {activeConversationForView && (
               <button
                 type="button"

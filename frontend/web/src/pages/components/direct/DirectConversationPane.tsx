@@ -1697,7 +1697,7 @@ export function DirectConversationPane({
 
       <div
         ref={messageListRef}
-        className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d223b_0%,#102841_100%)] px-2 py-4 sm:px-3 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        className={`scrollbar-hide relative min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d223b_0%,#102841_100%)] px-2 py-4 sm:px-3 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
 
         onClickCapture={(event) => {
           focusComposerFromChat(event.target);

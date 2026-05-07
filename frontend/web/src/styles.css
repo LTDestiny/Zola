@@ -114,6 +114,14 @@
     overscroll-behavior: none;
   }
 
+  .zola-mobile-shell {
+    --zola-mobile-top-safe-area: max(env(safe-area-inset-top, 0px), 28px);
+    --zola-mobile-bottom-safe-area: max(env(safe-area-inset-bottom, 0px), 0px);
+    height: 100dvh;
+    padding-top: var(--zola-mobile-top-safe-area);
+    padding-bottom: var(--zola-mobile-bottom-safe-area);
+  }
+
   input,
   textarea,
   select {
