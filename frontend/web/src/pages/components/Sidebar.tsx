@@ -43,7 +43,7 @@ export function Sidebar({
   onCreateGroup,
 }: SidebarProps) {
   return (
-    <div className={`flex w-full shrink-0 flex-col md:w-auto md:flex-row ${selectedChatId ? "max-md:hidden" : ""} ${showChatList ? "" : "max-md:order-2"}`}>
+    <div className={`flex w-full min-h-0 shrink-0 flex-col md:w-auto md:flex-row ${selectedChatId ? "max-md:hidden" : ""} ${showChatList ? "max-md:flex-1" : "max-md:order-2"}`}>
       <MiniNav
         active={active}
         onChange={onTabChange}
