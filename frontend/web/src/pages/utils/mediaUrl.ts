@@ -5,7 +5,20 @@ function looksLikeObjectStorageHost(hostname: string, port: string) {
 
 import { env } from "../../shared/env";
 
-const DEFAULT_API_BASE_URL = env.VITE_API_URL ?? "http://127.0.0.1:8080";
+function resolveDefaultApiBaseUrl() {
+  if (env.VITE_API_URL) {
+    return env.VITE_API_URL;
+  }
+  if (env.VITE_API_PROXY_TARGET) {
+    return env.VITE_API_PROXY_TARGET;
+  }
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return "http://127.0.0.1:8080";
+}
+
+const DEFAULT_API_BASE_URL = resolveDefaultApiBaseUrl();
 
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");

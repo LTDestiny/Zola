@@ -65,6 +65,7 @@ export function Sidebar({
           showBackButton={chatListShowBackButton}
           onBack={onChatListBack}
           showPrimaryActions={chatListShowPrimaryActions}
+          className={selectedChatId ? "max-md:hidden" : undefined}
         />
       )}
     </div>

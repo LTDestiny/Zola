@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.net.Uri;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -11,6 +12,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler;
 
@@ -39,7 +43,30 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                WebResourceResponse response = assetLoader.shouldInterceptRequest(request.getUrl());
+                if (response != null) {
+                    return response;
+                }
+                Uri uri = request.getUrl();
+                if ("appassets.androidplatform.net".equals(uri.getHost())) {
+                    try {
+                        InputStream inputStream = getAssets().open("public/index.html");
+                        byte[] bytes = new byte[inputStream.available()];
+                        inputStream.read(bytes);
+                        inputStream.close();
+                        String html = new String(bytes, StandardCharsets.UTF_8)
+                                .replace("src=\"./assets/", "src=\"/assets/public/assets/")
+                                .replace("href=\"./assets/", "href=\"/assets/public/assets/");
+                        return new WebResourceResponse(
+                                "text/html",
+                                "UTF-8",
+                                new java.io.ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8))
+                        );
+                    } catch (IOException ignored) {
+                        return null;
+                    }
+                }
+                return null;
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {

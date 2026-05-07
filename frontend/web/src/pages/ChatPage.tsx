@@ -9551,9 +9551,21 @@ export function ChatPage() {
         </aside>
       )}
 
-      <main className={activeTab === "messages" ? "min-w-0 flex-1 bg-[#0f1724]" : "hidden"}>
+      <main className={activeTab === "messages" ? `min-w-0 flex-1 bg-[#0f1724] ${!activeConversationForView && !isStrangerWorkspaceActive ? "max-md:hidden" : ""}` : "hidden"}>
         {activeTab === "messages" ? (
           <section className="relative flex h-full flex-col overflow-hidden">
+            {activeConversationForView && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveConversationId(null);
+                  setMessages([]);
+                }}
+                className="absolute left-3 top-3 z-30 rounded-full border border-white/10 bg-slate-950/75 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-lg backdrop-blur md:hidden"
+              >
+                {language === "vi" ? "‹ Danh sach" : "‹ Chats"}
+              </button>
+            )}
             {showJoinGroupCallNotice && activeGroupCallNotice && (
               <GroupCallNotice
                 language={language}

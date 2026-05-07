@@ -26,23 +26,6 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zolaadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-zolaadmin123}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   postgres:
     image: postgres:15-alpine
     environment:
@@ -249,17 +232,15 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET:-zola-shared-files-dev}
-      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-zolaadmin}
-      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-zolaadmin123}
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
-      S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
+      S3_PATH_STYLE: ${S3_PATH_STYLE:-false}
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
-      minio:
-        condition: service_healthy
 
   ai-service:
     profiles: ["extended"]
@@ -331,4 +312,3 @@ services:
 volumes:
   postgres_data:
   mongo_data:
-  minio_data:
