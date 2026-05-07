@@ -43,7 +43,7 @@ export function Sidebar({
   onCreateGroup,
 }: SidebarProps) {
   return (
-    <div className="flex w-full shrink-0 flex-col md:w-auto md:flex-row">
+    <div className={`flex w-full shrink-0 flex-col md:w-auto md:flex-row ${selectedChatId ? "max-md:hidden" : ""}`}>
       <MiniNav
         active={active}
         onChange={onTabChange}

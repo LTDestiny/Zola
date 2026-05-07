@@ -1345,17 +1345,17 @@ export function GroupConversationPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#081a33]">
-      <header className="flex h-16 items-center justify-between border-b border-[#1f4673] bg-[#0f2a4d] px-4 sm:px-5">
-        <div className="flex items-center gap-3">
-          <div className="relative h-10 w-10">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#1f4673] bg-[#0f2a4d] px-3 sm:h-16 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="relative h-9 w-9 shrink-0 sm:h-10 sm:w-10">
             {activeConversationAvatarUrl ? (
               <img
                 src={activeConversationAvatarUrl}
                 alt={activeConversation.name}
-                className="h-10 w-10 rounded-full border border-slate-600/60 object-cover"
+                className="h-9 w-9 rounded-full border border-slate-600/60 object-cover sm:h-10 sm:w-10"
               />
             ) : (
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200">
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200 sm:h-10 sm:w-10">
                 {activeConversation.name.slice(0, 2).toUpperCase()}
               </div>
             )}
@@ -1363,9 +1363,9 @@ export function GroupConversationPane({
               className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#182433] ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-500"}`}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold text-slate-100">
+              <h3 className="max-w-[42vw] truncate text-sm font-semibold text-slate-100 sm:max-w-none sm:text-base">
                 {activeConversation.name}
               </h3>
               {activeConversationPinned && (
@@ -1388,18 +1388,18 @@ export function GroupConversationPane({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-slate-300">
+        <div className="flex shrink-0 items-center gap-0.5 text-slate-300 sm:gap-1">
           <button
             type="button"
             onClick={onVoiceCall}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
           >
             <Phone size={18} />
           </button>
           <button
             type="button"
             onClick={() => setIsMessageSearchOpen((prev) => !prev)}
-            className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
+            className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
             title={language === "vi" ? "Tim tin nhan" : "Search messages"}
             aria-label={language === "vi" ? "Tim tin nhan" : "Search messages"}
           >
@@ -1408,7 +1408,7 @@ export function GroupConversationPane({
           <button
             type="button"
             onClick={onVideoCall}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
           >
             <Video size={18} />
           </button>
@@ -1416,7 +1416,7 @@ export function GroupConversationPane({
             <button
               type="button"
               onClick={onToggleGroupPanel}
-              className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isGroupPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
+              className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isGroupPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
               title={
                 language === "vi"
                   ? "Bat/tat bang dieu khien nhom"
@@ -1433,7 +1433,7 @@ export function GroupConversationPane({
           ) : (
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+              className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
             >
               <Info size={18} />
             </button>

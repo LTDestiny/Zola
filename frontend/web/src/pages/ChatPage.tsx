@@ -8373,7 +8373,7 @@ export function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:flex-row">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:h-screen md:flex-row">
       <Sidebar
         language={language}
         active={activeTab}

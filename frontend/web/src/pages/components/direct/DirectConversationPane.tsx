@@ -1479,8 +1479,8 @@ export function DirectConversationPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-zola-surface)]">
-      <header className="flex h-16 items-center justify-between border-b border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#183654_0%,#14314e_100%)] px-4 sm:px-5">
-        <div className="flex items-center gap-3">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#183654_0%,#14314e_100%)] px-3 sm:h-16 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => {
@@ -1488,16 +1488,16 @@ export function DirectConversationPane({
                 onOpenUserProfile?.(activeConversationPeerId);
               }
             }}
-            className="relative h-10 w-10 shrink-0 rounded-full"
+            className="relative h-9 w-9 shrink-0 rounded-full sm:h-10 sm:w-10"
           >
             {activeConversationAvatarUrl ? (
               <img
                 src={activeConversationAvatarUrl}
                 alt={activeConversation.name}
-                className="h-10 w-10 rounded-full border border-slate-600/60 object-cover"
+                className="h-9 w-9 rounded-full border border-slate-600/60 object-cover sm:h-10 sm:w-10"
               />
             ) : (
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200">
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-200 sm:h-10 sm:w-10">
                 {activeConversation.name.slice(0, 2).toUpperCase()}
               </div>
             )}
@@ -1505,7 +1505,7 @@ export function DirectConversationPane({
               className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#182433] ${activeConversationOnline ? "bg-emerald-500" : "bg-slate-500"}`}
             />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1514,7 +1514,7 @@ export function DirectConversationPane({
                     onOpenUserProfile?.(activeConversationPeerId);
                   }
                 }}
-                className="text-base font-semibold text-slate-100 transition hover:text-sky-300"
+                className="max-w-[42vw] truncate text-sm font-semibold text-slate-100 transition hover:text-sky-300 sm:max-w-none sm:text-base"
               >
                 {activeConversation.name}
               </button>
@@ -1543,12 +1543,12 @@ export function DirectConversationPane({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-slate-300">
+        <div className="flex shrink-0 items-center gap-0.5 text-slate-300 sm:gap-1">
           <button
             type="button"
             onClick={onVoiceCall}
             disabled={!allowComposer}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45 sm:h-9 sm:w-9"
             title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
           >
             <Phone size={18} />
@@ -1556,7 +1556,7 @@ export function DirectConversationPane({
           <button
             type="button"
             onClick={() => setIsMessageSearchOpen((prev) => !prev)}
-            className={`grid h-9 w-9 place-items-center rounded-lg border transition-all duration-200 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
+            className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
             title={language === "vi" ? "Tim tin nhan" : "Search messages"}
             aria-label={language === "vi" ? "Tim tin nhan" : "Search messages"}
           >
@@ -1566,14 +1566,14 @@ export function DirectConversationPane({
             type="button"
             onClick={onVideoCall}
             disabled={!allowComposer}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45 sm:h-9 sm:w-9"
             title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
           >
             <Video size={18} />
           </button>
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
           >
             <Info size={18} />
           </button>
