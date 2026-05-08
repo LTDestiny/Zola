@@ -14,6 +14,25 @@ import { env } from "../shared/env";
 const CALL_DEBUG =
   String(env.VITE_CALL_DEBUG ?? "true").toLowerCase() === "true";
 
+function resolveWsUrl() {
+  if (typeof window !== "undefined") {
+    if (window.location.hostname === "appassets.androidplatform.net") {
+      return env.VITE_WS_URL ?? "wss://10.18.76.36:18443/ws";
+    }
+
+    if (window.location.port === "5173") {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}/ws`;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const port = protocol === "wss:" ? "18443" : "8083";
+    return `${protocol}//${window.location.hostname}:${port}/ws`;
+  }
+
+  return "ws://127.0.0.1:8083/ws";
+}
+
 const CALL_LOG_PATTERN =
   /\/app\/(call\.signal|signal\/call)|\/topic\/call|\/user\/queue\/call|\/queue\/call|CALL_|WEBRTC_|\bERROR\b/i;
 
@@ -205,7 +224,7 @@ export class ChatRealtimeClient {
     this.onCallEvent = handlers.onCallEvent;
     this.onError = handlers.onError;
 
-    const wsUrl = env.VITE_WS_URL ?? "ws://localhost:8083/ws";
+    const wsUrl = env.VITE_WS_URL ?? resolveWsUrl();
     log("constructor", `WebSocket URL: ${wsUrl}`);
 
     this.client = new Client({

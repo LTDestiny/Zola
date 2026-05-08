@@ -12,7 +12,7 @@ function getEnv(key: string, fallback?: string): string | undefined {
 }
 
 export const env = {
-  VITE_API_URL: getEnv("VITE_API_URL", "http://127.0.0.1:8080"),
+  VITE_API_URL: getEnv("VITE_API_URL", "https://127.0.0.1:18080"),
   VITE_WS_URL: getEnv("VITE_WS_URL", "ws://localhost:8083/ws"),
   VITE_WEBRTC_ICE_SERVERS: getEnv("VITE_WEBRTC_ICE_SERVERS"),
   VITE_WEBRTC_FORCE_RELAY: getEnv("VITE_WEBRTC_FORCE_RELAY", "false"),

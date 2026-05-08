@@ -26,25 +26,7 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zolaadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-zolaadmin123}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   postgres:
-    profiles: ["local-pg-bootstrap"]
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: postgres
@@ -74,7 +56,6 @@ services:
       retries: 20
 
   db-bootstrap:
-    profiles: ["local-pg-bootstrap"]
     image: postgres:15-alpine
     depends_on:
       postgres:
@@ -90,7 +71,7 @@ services:
       [
         "sh",
         "-c",
-        "chmod +x /bootstrap/postgres-bootstrap.sh && /bootstrap/postgres-bootstrap.sh",
+        "sh /bootstrap/postgres-bootstrap.sh",
       ]
     restart: "no"
 
@@ -124,7 +105,7 @@ services:
       dockerfile: api-gateway/Dockerfile
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_PORT:-18080}:18080"
     environment:
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
@@ -132,6 +113,11 @@ services:
       USER_SERVICE_URL: http://user-service:8082
       CHAT_SERVICE_URL: http://chat-service:8083
       FILE_SERVICE_URL: http://file-service:8084
+      API_GATEWAY_SSL_ENABLED: ${API_GATEWAY_SSL_ENABLED:-true}
+      API_GATEWAY_SSL_KEY_STORE: /certs/zola-dev-10.18.76.36.p12
+      API_GATEWAY_SSL_KEY_STORE_PASSWORD: ${API_GATEWAY_SSL_KEY_STORE_PASSWORD:-zola-dev}
+    volumes:
+      - ../.devin/certs:/certs:ro
     depends_on:
       - auth-service
       - user-service
@@ -161,6 +147,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       MAIL_FROM: ${MAIL_FROM:-noreply@zola.app}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -178,6 +166,8 @@ services:
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -187,6 +177,7 @@ services:
       dockerfile: chat-service/Dockerfile
     ports:
       - "8083:8083"
+      - "18443:18443"
     environment:
       DB_HOST: ${DB_HOST_DOCKER:-postgres}
       DB_USER: ${DB_USER:-postgres}
@@ -195,7 +186,15 @@ services:
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      CHAT_SERVICE_SSL_ENABLED: ${CHAT_SERVICE_SSL_ENABLED:-false}
+      CHAT_SERVICE_SSL_PORT: ${CHAT_SERVICE_SSL_PORT:-18443}
+      CHAT_SERVICE_SSL_KEY_STORE: /certs/zola-dev-10.18.76.36.p12
+      CHAT_SERVICE_SSL_KEY_STORE_PASSWORD: ${CHAT_SERVICE_SSL_KEY_STORE_PASSWORD:-zola-dev}
+    volumes:
+      - ../.devin/certs:/certs:ro
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       mongo-bootstrap:
         condition: service_completed_successfully
       redis:
@@ -216,6 +215,8 @@ services:
       REDIS_HOST: redis
       TURN_SECRET: ${TURN_SECRET}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -231,15 +232,15 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${FILE_DB_NAME:-zola_file_db}
       S3_BUCKET: ${S3_BUCKET:-zola-shared-files-dev}
-      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-zolaadmin}
-      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-zolaadmin123}
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
-      S3_PATH_STYLE: ${S3_PATH_STYLE:-true}
+      S3_PATH_STYLE: ${S3_PATH_STYLE:-false}
     depends_on:
-      minio:
-        condition: service_healthy
+      db-bootstrap:
+        condition: service_completed_successfully
 
   ai-service:
     profiles: ["extended"]
@@ -256,6 +257,8 @@ services:
       MONGO_URI: ${AI_MONGO_URI:-mongodb://mongodb:27017/zola_ai_db}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       mongo-bootstrap:
         condition: service_completed_successfully
 
@@ -273,6 +276,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${NOTIFICATION_DB_NAME:-zola_notification_db}
     depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -288,6 +293,9 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${ADMIN_DB_NAME:-zola_admin_db}
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
 
   zola-web:
     profiles: ["web"]
@@ -297,11 +305,10 @@ services:
     ports:
       - "3000:80"
     environment:
-      VITE_API_URL: http://localhost:8080
-      VITE_WS_URL: ws://localhost:8083/ws
-      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:localhost:3478?transport=udp","turn:localhost:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
+      VITE_API_URL: https://10.18.76.36:18080
+      VITE_WS_URL: wss://10.18.76.36:18443/ws
+      VITE_WEBRTC_ICE_SERVERS: '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:10.18.76.36:3478?transport=udp","turn:10.18.76.36:3478?transport=tcp"],"username":"zola","credential":"ZolaTurn@123"}]'
 
 volumes:
   postgres_data:
   mongo_data:
-  minio_data:

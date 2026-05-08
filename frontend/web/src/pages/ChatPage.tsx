@@ -81,6 +81,8 @@ import { useLanguage } from "../i18n/language";
 import { AddFriendModal } from "./components/AddFriendModal";
 import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import { Sidebar } from "./components/Sidebar";
+import { GroupCallNotice } from "./components/GroupCallNotice";
+import { UploadLimitModal } from "./components/UploadLimitModal";
 import {
   InAppCallOverlay,
   type ActiveCallView,
@@ -722,7 +724,7 @@ export function ChatPage() {
   const [groupPreferenceMap, setGroupPreferenceMap] = useState<Record<string, GroupPreferenceItem>>(
     () => loadGroupPreferences(),
   );
-  const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(true);
+  const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(false);
   const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: string; nonce: number } | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
@@ -1310,8 +1312,11 @@ export function ChatPage() {
   }, [activeConversation?.id, activeConversation?.type, refreshGroupSettings]);
 
   useEffect(() => {
-    if (activeConversation?.type === "group") {
+    // Auto-open group panel on desktop when switching to group conversation
+    if (activeConversation?.type === "group" && window.innerWidth >= 1024) {
       setIsGroupPanelOpen(true);
+    } else if (activeConversation?.type !== "group") {
+      setIsGroupPanelOpen(false);
     }
   }, [activeConversation?.id, activeConversation?.type]);
 
@@ -2470,10 +2475,19 @@ export function ChatPage() {
   const acquireLocalStream = useCallback(
     async (mode: InAppCallMode) => {
       if (!navigator.mediaDevices?.getUserMedia) {
+        const isInsecureIpAccess =
+          typeof window !== "undefined" &&
+          window.location.protocol !== "https:" &&
+          window.location.hostname !== "localhost" &&
+          window.location.hostname !== "127.0.0.1";
         throw new Error(
-          language === "vi"
-            ? "Trinh duyet khong ho tro cuoc goi"
-            : "This browser does not support in-app calling",
+          isInsecureIpAccess
+            ? language === "vi"
+              ? "Trinh duyet chan camera/micro khi truy cap bang IP qua HTTP. Hay dung HTTPS hoac cap quyen insecure origin cho dia chi nay."
+              : "The browser blocks camera/microphone on HTTP IP access. Use HTTPS or allow this insecure origin."
+            : language === "vi"
+              ? "Trinh duyet khong ho tro cuoc goi"
+              : "This browser does not support in-app calling",
         );
       }
 
@@ -8362,7 +8376,7 @@ export function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--color-zola-page)] text-slate-100">
+    <div className="zola-mobile-shell box-border flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--color-zola-page)] text-slate-100 md:h-screen md:flex-row md:p-0">
       <Sidebar
         language={language}
         active={activeTab}
@@ -8403,11 +8417,11 @@ export function ChatPage() {
       />
 
       {activeTab !== "messages" && (
-        <aside className="min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)]">
+        <aside className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)] max-md:order-1">
           {activeTab === "contacts" && (
-            <div className="mx-auto flex h-full w-full max-w-[1500px] gap-5 p-5">
-              <aside className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
-                <div className="border-b border-white/6 px-4 pb-3 pt-4">
+            <div className="mx-auto flex min-h-full w-full max-w-[1500px] flex-col gap-3 p-3 md:h-full md:flex-row md:gap-5 md:p-5">
+              <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:w-[320px] md:rounded-[28px]">
+                <div className="border-b border-white/6 px-3 pb-3 pt-3 md:px-4 md:pt-4">
                   <div className="flex gap-2">
                     <div className="relative min-w-0 flex-1">
                       <Search
@@ -8424,7 +8438,7 @@ export function ChatPage() {
                             ? "email@example.com"
                             : language === "vi" ? "Tim danh ba" : "Search contacts"
                         }
-                        className="h-11 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
+                        className="h-10 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)] md:h-11"
                       />
                     </div>
                     {contactsView === "people" && (
@@ -8432,7 +8446,7 @@ export function ChatPage() {
                         type="button"
                         onClick={() => void onSearchContactCandidate()}
                         disabled={isSearchingContactCandidate || !contactsSearchQuery.trim()}
-                        className="h-11 rounded-xl bg-[var(--color-zola-accent)] px-4 text-xs font-semibold text-white hover:bg-[#4b9dff] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="h-10 rounded-xl bg-[var(--color-zola-accent)] px-3 text-xs font-semibold text-white hover:bg-[#4b9dff] disabled:cursor-not-allowed disabled:opacity-50 md:h-11 md:px-4"
                       >
                         {isSearchingContactCandidate
                           ? language === "vi" ? "Dang tim" : "Finding"
@@ -8442,7 +8456,7 @@ export function ChatPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5 px-2 py-3">
+                <div className="scrollbar-hide flex gap-2 overflow-x-auto px-3 py-3 md:block md:space-y-1.5 md:px-2">
                   {contactMenuItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = contactsView === item.key;
@@ -8451,14 +8465,14 @@ export function ChatPage() {
                         key={item.key}
                         type="button"
                         onClick={() => setContactsView(item.key)}
-                        className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition ${
+                        className={`flex min-w-[8.5rem] items-center gap-2 rounded-2xl px-3 py-2.5 text-left transition md:w-full md:gap-3 md:px-4 md:py-3 ${
                           isActive
                             ? "bg-[rgba(42,134,255,0.20)] text-white shadow-[inset_0_0_0_1px_rgba(82,168,255,0.35)]"
                             : "text-slate-300 hover:bg-white/5 hover:text-white"
                         }`}
                       >
                         <span
-                          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                          className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl md:h-10 md:w-10 ${
                             isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-white/5 text-slate-400"
                           }`}
                         >
@@ -8466,7 +8480,7 @@ export function ChatPage() {
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold">{item.label}</span>
-                          <span className="mt-0.5 block text-[11px] text-slate-500">
+                          <span className="mt-0.5 hidden text-[11px] text-slate-500 md:block">
                             {item.key === "friends"
                               ? language === "vi"
                                 ? "Quan ly ban be va mo ho so nhanh."
@@ -8500,16 +8514,16 @@ export function ChatPage() {
                   })}
                 </div>
 
-                <div className="mt-auto border-t border-white/6 px-4 py-4 text-xs text-slate-500">
+                <div className="mt-auto hidden border-t border-white/6 px-4 py-4 text-xs text-slate-500 md:block">
                   {language === "vi"
                     ? "Danh ba duoc dong bo theo du lieu ban be, nhom va loi moi hien tai."
                     : "Contacts are synced from your current friends, groups, and request data."}
                 </div>
               </aside>
 
-              <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)]">
-                <div className="border-b border-white/6 px-6 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
+              <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:rounded-[28px]">
+                <div className="border-b border-white/6 px-4 py-3 md:px-6 md:py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3 md:gap-4">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-300">
@@ -8525,7 +8539,7 @@ export function ChatPage() {
                             <CircleAlert size={18} />
                           )}
                         </span>
-                        <h2 className="text-2xl font-semibold text-slate-100">
+                        <h2 className="text-lg font-semibold text-slate-100 md:text-2xl">
                           {contactsView === "friends"
                             ? language === "vi"
                               ? "Danh sach ban be"
@@ -8547,7 +8561,7 @@ export function ChatPage() {
                                   : "Group invites"}
                         </h2>
                       </div>
-                      <p className="mt-2 text-sm text-slate-400">
+                      <p className="mt-1 text-xs text-slate-400 md:mt-2 md:text-sm">
                         {contactsView === "friends"
                           ? language === "vi"
                             ? `Ban be (${filteredContactUsers.length})`
@@ -8605,7 +8619,7 @@ export function ChatPage() {
                   </div>
                 </div>
 
-                <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-5 md:py-5">
                   {friendshipDataError && (
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
                       <span>{friendshipDataError}</span>
@@ -9540,26 +9554,29 @@ export function ChatPage() {
         </aside>
       )}
 
-      <main className={activeTab === "messages" ? "min-w-0 flex-1 bg-[#0f1724]" : "hidden"}>
+      <main className={activeTab === "messages" ? `min-h-0 min-w-0 flex-1 bg-[#0f1724] ${!activeConversationForView && !isStrangerWorkspaceActive ? "max-md:hidden" : ""}` : "hidden"}>
         {activeTab === "messages" ? (
-          <section className="relative flex h-full flex-col overflow-hidden">
+          <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
+            {activeConversationForView && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveConversationId(null);
+                  setMessages([]);
+                }}
+                className="absolute left-3 top-3 z-30 rounded-full border border-white/10 bg-slate-950/75 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-lg backdrop-blur md:hidden"
+              >
+                {language === "vi" ? "‹ Danh sach" : "‹ Chats"}
+              </button>
+            )}
             {showJoinGroupCallNotice && activeGroupCallNotice && (
-              <div className="z-20 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 sm:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-emerald-100">
-                    {activeGroupCallNoticeDescription}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void onJoinGroupCallFromNotice(activeGroupCallNotice);
-                    }}
-                    className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-400"
-                  >
-                    {language === "vi" ? "Tham gia cuoc goi" : "Join call"}
-                  </button>
-                </div>
-              </div>
+              <GroupCallNotice
+                language={language}
+                description={activeGroupCallNoticeDescription}
+                onJoin={() => {
+                  void onJoinGroupCallFromNotice(activeGroupCallNotice);
+                }}
+              />
             )}
 
             {activeConversationForView?.type === "group" ? (
@@ -9653,6 +9670,9 @@ export function ChatPage() {
                   if (activeConversationForView?.id) {
                     updateGroupPreference(activeConversationForView.id, patch);
                   }
+                }}
+                onClosePanel={() => {
+                  setIsGroupPanelOpen(false);
                 }}
                 onSendTemplateMessage={(type:
                   | "STICKER"
@@ -10063,27 +10083,11 @@ export function ChatPage() {
         </div>
       )}
 
-      {uploadLimitModalMessage && (
-        <div className="fixed inset-0 z-60 grid place-items-center bg-slate-900/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-semibold text-slate-900">
-              {language === "vi" ? "Vuot gioi han dung luong" : "File size limit exceeded"}
-            </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
-              {uploadLimitModalMessage}
-            </p>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setUploadLimitModalMessage(null)}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UploadLimitModal
+        language={language}
+        message={uploadLimitModalMessage}
+        onClose={() => setUploadLimitModalMessage(null)}
+      />
     </div>
   );
 }

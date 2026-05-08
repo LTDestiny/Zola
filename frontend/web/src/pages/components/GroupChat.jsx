@@ -117,6 +117,7 @@ export function GroupChat({
   onDeleteGroup,
   onPreferenceChange,
   onSendTemplateMessage,
+  onClosePanel,
   children,
 }) {
   const safeMembers = members ?? [];
@@ -705,7 +706,7 @@ export function GroupChat({
   };
 
   const iconActionBase =
-    "flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] transition";
+    "flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] lg:text-[11px] transition";
 
   const openBoardView = () => setPanelView("board");
   const openMembersView = () => setPanelView("members");
@@ -721,14 +722,23 @@ export function GroupChat({
       <div className="min-w-0 flex flex-1 flex-col overflow-hidden">{children}</div>
 
       <aside
-        className={`hidden w-[24rem] shrink-0 border-l border-[#1f4673] bg-[#0d2442] lg:flex lg:flex-col ${isPanelOpen ? "" : "lg:hidden"}`}
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] shrink-0 border-l border-[#1f4673] bg-[#0d2442] transform transition-transform duration-300 lg:relative lg:inset-auto lg:z-auto lg:w-[24rem] lg:shrink-0 lg:transform-none lg:transition-none ${isPanelOpen ? "translate-x-0" : "translate-x-full"} ${isPanelOpen ? "flex lg:flex" : "hidden lg:hidden"}`}
       >
-        <div className="border-b border-[#1f4673] px-4 py-4">
-          <p className="text-center text-2xl font-bold text-slate-100">
-            {language === "vi" ? "Thong tin nhom" : "Group details"}
-          </p>
+        <div className="border-b border-[#1f4673] px-3 py-3 lg:px-4 lg:py-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xl font-bold text-slate-100 lg:text-2xl lg:text-center">
+              {language === "vi" ? "Thong tin nhom" : "Group details"}
+            </p>
+            <button
+              type="button"
+              onClick={() => onClosePanel?.()}
+              className="lg:hidden rounded-lg p-2 text-slate-300 hover:bg-slate-800"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          </div>
 
-          <div className="mt-4 flex flex-col items-center">
+          <div className="mt-3 flex flex-col items-center lg:mt-4">
             <input
               ref={avatarInputRef}
               type="file"
@@ -756,10 +766,10 @@ export function GroupChat({
                 <img
                   src={resolvedConversationAvatar}
                   alt={conversation?.name ?? "Group"}
-                  className="h-[5.5rem] w-[5.5rem] rounded-full border-2 border-slate-500/70 object-cover object-center shadow-lg"
+                  className="h-[4.5rem] w-[4.5rem] rounded-full border-2 border-slate-500/70 object-cover object-center shadow-lg lg:h-[5.5rem] lg:w-[5.5rem]"
                 />
               ) : (
-                <div className="grid h-[5.5rem] w-[5.5rem] place-items-center rounded-full bg-sky-500/25 text-xl font-bold text-sky-100">
+                <div className="grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-sky-500/25 text-lg font-bold text-sky-100 lg:h-[5.5rem] lg:w-[5.5rem] lg:text-xl">
                   {initials(conversation?.name ?? "Group")}
                 </div>
               )}
@@ -809,7 +819,7 @@ export function GroupChat({
                     setIsHeaderEditOpen(true);
                   }
                 }}
-                className={`mt-3 text-center text-4xl font-semibold text-slate-100 ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
+                className={`mt-3 px-2 text-center text-2xl font-semibold text-slate-100 lg:text-4xl ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
               >
                 {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
               </button>
@@ -838,14 +848,14 @@ export function GroupChat({
             )}
           </div>
 
-          <div className="mt-4 grid grid-cols-4 gap-2">
+          <div className="mt-4 grid grid-cols-4 gap-2 lg:gap-2">
             <button
               type="button"
               onClick={() => onPreferenceChange?.({ muted: !Boolean(preferences?.muted) })}
               className={`${iconActionBase} ${preferences?.muted ? "bg-sky-500/20 text-sky-100" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
-                <BellOff size={14} />
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
+                <BellOff size={12} className="lg:size-[14px]" />
               </span>
               <span>{language === "vi" ? "Bat thong bao" : "Notify"}</span>
             </button>
@@ -855,8 +865,8 @@ export function GroupChat({
               onClick={() => onPreferenceChange?.({ pinned: !Boolean(preferences?.pinned) })}
               className={`${iconActionBase} ${preferences?.pinned ? "bg-sky-500/20 text-sky-100" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
-                <Pin size={14} />
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
+                <Pin size={12} className="lg:size-[14px]" />
               </span>
               <span>{language === "vi" ? "Ghim hoi thoai" : "Pin"}</span>
             </button>
@@ -867,8 +877,8 @@ export function GroupChat({
               onClick={openMemberPicker}
               className={`${iconActionBase} ${canInviteMembers ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-800/60 text-slate-500"}`}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
-                <UserPlus size={14} />
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
+                <UserPlus size={12} className="lg:size-[14px]" />
               </span>
               <span>{language === "vi" ? "Them thanh vien" : "Add member"}</span>
             </button>
@@ -879,8 +889,8 @@ export function GroupChat({
               onClick={() => setManageMode((prev) => !prev)}
               className={`${iconActionBase} ${canOpenManage ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-800/60 text-slate-500"}`}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-slate-700/80">
-                <Settings size={14} />
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
+                <Settings size={12} className="lg:size-[14px]" />
               </span>
               <span>{language === "vi" ? "Quan ly nhom" : "Manage"}</span>
             </button>
@@ -895,7 +905,7 @@ export function GroupChat({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-2 py-2 max-h-[calc(100vh-200px)] lg:px-3 lg:py-3 lg:max-h-none">
           {!manageMode && panelView === "default" && (
             <>
               <Section

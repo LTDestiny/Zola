@@ -7,5 +7,5 @@ RUN mvn -q -DskipTests -pl common -am install \
 FROM eclipse-temurin:17-jre
 WORKDIR /opt/app
 COPY --from=build /workspace/api-gateway/target/*.jar app.jar
-EXPOSE 8080
+EXPOSE 18080
 ENTRYPOINT ["java","-jar","app.jar"]
