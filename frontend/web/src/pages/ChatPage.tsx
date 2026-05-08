@@ -9668,6 +9668,9 @@ export function ChatPage() {
                     updateGroupPreference(activeConversationForView.id, patch);
                   }
                 }}
+                onClosePanel={() => {
+                  setIsGroupPanelOpen(false);
+                }}
                 onSendTemplateMessage={(type:
                   | "STICKER"
                   | "GIF"
