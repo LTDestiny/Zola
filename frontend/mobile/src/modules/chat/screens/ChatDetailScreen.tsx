@@ -271,6 +271,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   const [cameraEnabled, setCameraEnabled] = useState(true);
 
   const flatListRef = useRef<FlatList<MessageItem>>(null);
+  const previousMessageCountRef = useRef(0);
   const processedCallEventsRef = useRef(new Set<string>());
   const outgoingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const incomingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -370,12 +371,12 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   const canSendMessages = useMemo(() => {
     if (conversationType !== "group") {
-      return true;
+      return relationship?.status === "FRIEND";
     }
     return canCurrentUserSendGroupMessages(resolvedGroupSettings, meId, conversation);
-  }, [conversation, conversationType, meId, resolvedGroupSettings]);
+  }, [conversation, conversationType, meId, resolvedGroupSettings, relationship?.status]);
 
-  const shouldShowComposer = conversationType !== "group" || canSendMessages;
+  const shouldShowComposer = canSendMessages;
   const isGroupMessagingPermissionPending =
     conversationType === "group" &&
     groupSettingsLoading &&
@@ -1022,6 +1023,18 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   const reversed = useMemo(() => [...messages].reverse(), [messages]);
 
+  useEffect(() => {
+    if (messages.length <= previousMessageCountRef.current) {
+      previousMessageCountRef.current = messages.length;
+      return;
+    }
+
+    previousMessageCountRef.current = messages.length;
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    });
+  }, [messages.length]);
+
   const renderItem = useCallback(({ item }: { item: MessageItem }) => {
     const isPinned = groupSettings?.pinnedMessages?.some(p => p.sourceMessageId === item.id);
     return (
@@ -1274,13 +1287,27 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         ) : (
           <View style={styles.permissionBanner}>
             <Text style={styles.permissionBannerTitle}>
-              {isGroupMessagingPermissionPending ? "Dang tai quyen nhan tin..." : "Khong the gui tin nhan"}
+              {conversationType === "private"
+                ? "Chưa kết bạn"
+                : isGroupMessagingPermissionPending
+                  ? "Đang tải quyền nhắn tin..."
+                  : "Không thể gửi tin nhắn"}
             </Text>
             <Text style={styles.permissionBannerText}>
-              {isGroupMessagingPermissionPending
-                ? "He thong dang xac minh quyen gui tin nhan cua ban trong nhom nay."
-                : "Ban khong duoc phep gui tin nhan trong nhom nay."}
+              {conversationType === "private"
+                ? "Bạn và người này chưa kết bạn. Hãy kết bạn để nhắn tin."
+                : isGroupMessagingPermissionPending
+                  ? "Hệ thống đang xác minh quyền gửi tin nhắn của bạn trong nhóm này."
+                  : "Bạn không được phép gửi tin nhắn trong nhóm này."}
             </Text>
+            {conversationType === "private" && (
+              <Pressable
+                onPress={() => navigation.navigate("UserProfile", { userId: peerUserId! })}
+                style={styles.unblockLink}
+              >
+                <Text style={styles.unblockLinkText}>Xem hồ sơ</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </View>

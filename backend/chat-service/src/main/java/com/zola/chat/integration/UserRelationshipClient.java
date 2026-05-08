@@ -29,6 +29,34 @@ public class UserRelationshipClient {
         return status.blocked();
     }
 
+    /**
+     * Check if two users are accepted friends.
+     * Calls user-service's /internal/accepted endpoint.
+     */
+    public boolean areFriends(String userA, String userB) {
+        try {
+            ApiResponse<Map<String, Object>> response = restClient.get()
+                .uri(
+                    userServiceUrl + "/api/v1/users/friendships/internal/accepted?userA={userA}&userB={userB}",
+                    Map.of("userA", userA, "userB", userB)
+                )
+                .retrieve()
+                .body(BLOCK_STATUS_RESPONSE);
+
+            Map<String, Object> data = response == null || response.data() == null
+                ? Map.of()
+                : response.data();
+
+            return toBoolean(data.get("accepted"));
+        } catch (RestClientResponseException ex) {
+            // If user-service is down, fail open (allow messaging) to avoid blocking users
+            return true;
+        } catch (Exception ex) {
+            // Fail open on unexpected errors
+            return true;
+        }
+    }
+
     public BlockStatus fetchBlockStatus(String userA, String userB) {
         try {
             ApiResponse<Map<String, Object>> response = restClient.get()

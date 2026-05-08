@@ -15,11 +15,9 @@ import {
   acceptFriendRequest,
   addReaction,
   addGroupMember,
-  blockRelationshipUser,
-  unblockRelationshipUser,
+  addFriend,
+  blockUser as blockUserRequest,
   cancelFriendRequest,
-  cancelFriendRequestForUser,
-  approveGroupMember,
   createDirectConversation,
   createGroupConversation,
   deleteGroupConversation,
@@ -31,6 +29,7 @@ import {
   getConversations,
   getBlockedUsers,
   getFriends,
+  getFriendshipStatus,
   getGroupSettings,
   getMessages,
   getMyProfile,
@@ -46,18 +45,13 @@ import {
   removeFriend,
   removeGroupMember,
   readMessage,
-  rejectGroupMember,
   recallMessage,
   removeReaction,
   searchUserByEmail,
   sendMessage,
-  sendFriendRequest,
   setGroupAdmin,
-  pinGroupMessage,
-  pinConversation,
-  unpinGroupMessage,
-  unpinConversation,
   toApiErrorMessage,
+  unblockUser as unblockUserRequest,
   updateMyProfile,
   updateGroupSettings,
   type FriendshipStatusPayload,
@@ -95,9 +89,7 @@ import { GroupChat } from "./components/GroupChat.jsx";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
-import { useRelationshipStore } from "../stores/relationshipStore";
 import { useTyping } from "../hooks/useTyping";
-import { useRelationshipStatus } from "../hooks/useRelationshipStatus";
 import { resolveMediaUrl } from "./utils/mediaUrl";
 import {
   CallManager,
@@ -106,8 +98,7 @@ import {
 import { DirectConversationPane } from "./components/direct/DirectConversationPane";
 import { GroupConversationPane } from "./components/group/GroupConversationPane";
 import { UserProfilePreviewModal } from "./components/UserProfilePreviewModal";
-import { normalizeFriendshipStatus, resolveBlockedState, resolveBlockRelationship, type FriendshipStatus } from "../utils/friendship";
-import { relationshipToLegacyFriendshipStatus, relationshipToRequestDirection, type RelationshipEntry } from "../utils/relationship";
+import { normalizeFriendshipStatus, resolveBlockedState, type FriendshipStatus } from "../utils/friendship";
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -180,6 +171,7 @@ type FriendshipRelationshipKind =
   | "pending_received"
   | "blocked_by_me"
   | "blocked_by_peer"
+  | "blocked_mutual"
   | "stranger";
 
 type UserRelationshipSnapshot = {
@@ -323,7 +315,7 @@ type PinnedBoardItem = {
 
 type PinBoardEvent = {
   id: string;
-  kind: "BOARD_NOTE" | "PIN_MESSAGE";
+  kind: "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE";
   itemType: "pin" | "note";
   pinToTop: boolean;
   sourceMessageId: string;
@@ -347,18 +339,27 @@ const BANNER_AUTO_HIDE_MS = 2000;
 
 function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
   const rawType = (message.type ?? "TEXT").toUpperCase();
-  if (rawType !== "NOTE") return null;
+  if (rawType !== "NOTE") {
+    return null;
+  }
 
   try {
     const payload = JSON.parse(message.content) as Record<string, unknown>;
     const kind = String(payload?.kind ?? "").toUpperCase();
-
-    if (kind !== "BOARD_NOTE" && kind !== "PIN_MESSAGE") return null;
+    if (kind !== "PIN_MESSAGE" && kind !== "UNPIN_MESSAGE" && kind !== "BOARD_NOTE") {
+      return null;
+    }
 
     const sourceMessageId = String(payload?.sourceMessageId ?? message.id ?? "").trim();
-    if (!sourceMessageId || !message.id) return null;
+    if (!sourceMessageId || !message.id) {
+      return null;
+    }
 
-    const pinToTop = Boolean(payload?.pinToTop);
+    const pinToTop = kind === "UNPIN_MESSAGE"
+      ? false
+      : kind === "PIN_MESSAGE"
+        ? true
+        : Boolean(payload?.pinToTop);
     const title = String(payload?.title ?? "").trim();
     const preview = String(payload?.preview ?? payload?.note ?? "").trim();
     const createdAtRaw = String(payload?.createdAt ?? message.createdAt ?? "");
@@ -367,11 +368,11 @@ function parsePinBoardEvent(message: MessageItem): PinBoardEvent | null {
 
     return {
       id: message.id,
-      kind: kind as "BOARD_NOTE" | "PIN_MESSAGE",
+      kind: kind as "PIN_MESSAGE" | "UNPIN_MESSAGE" | "BOARD_NOTE",
       itemType,
-      pinToTop: itemType === "pin" ? true : pinToTop,
+      pinToTop,
       sourceMessageId,
-      title: title || (itemType === "note" ? "Group note" : "Pinned message"),
+      title: title || (kind === "UNPIN_MESSAGE" ? "Unpinned message" : kind === "BOARD_NOTE" ? "Group note" : "Pinned message"),
       preview,
       createdAtMs: Number.isNaN(createdAtMs) ? 0 : createdAtMs,
     };
@@ -569,7 +570,6 @@ export function ChatPage() {
   const setConversationList = useChatStore((state) => state.setConversations);
   const setActiveConversationId = useChatStore((state) => state.setSelectedConversationId);
   const upsertConversation = useChatStore((state) => state.upsertConversation);
-  const removeConversation = useChatStore((state) => state.removeConversation);
   const markConversationReadLocal = useChatStore((state) => state.markConversationRead);
   const syncTotalUnread = useChatStore((state) => state.syncTotalUnread);
   const lastReadSyncedMessageByConversationRef = useRef<Record<string, string>>({});
@@ -744,12 +744,6 @@ export function ChatPage() {
   >({});
   const [presenceTick, setPresenceTick] = useState(Date.now());
 
-  const relationshipEntries = useRelationshipStore((state) => state.entries);
-  const setRelationshipEntry = useRelationshipStore((state) => state.setEntry);
-  const clearRelationshipEntry = useRelationshipStore((state) => state.clearEntry);
-  const hydrateRelationshipStatuses = useRelationshipStore((state) => state.hydrateFromCollections);
-  const fetchRelationshipEntry = useRelationshipStore((state) => state.fetchEntry);
-
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
   const MAX_FILE_BYTES = 100 * 1024 * 1024;
@@ -760,7 +754,6 @@ export function ChatPage() {
   const isSilentRefreshingRef = useRef(false);
   const conversationIdsRef = useRef<string[]>([]);
   const activeConversationIdRef = useRef<string | null>(null);
-  const activeDirectPeerIdRef = useRef<string | null>(null);
   const activeTabRef = useRef<ChatTab>("messages");
   const isChatViewportAtBottomRef = useRef(true);
   const hasUserOpenedConversationRef = useRef(false);
@@ -1276,20 +1269,6 @@ export function ChatPage() {
     }
   }, [groupPreferenceMap]);
 
-  useEffect(() => {
-    if (!bannerMessage) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setBannerMessage((current) => (current === bannerMessage ? "" : current));
-    }, 3000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [bannerMessage]);
-
   const refreshGroupSettings = useCallback(async (conversationId: string) => {
     try {
       const result = await getGroupSettings(conversationId);
@@ -1376,70 +1355,50 @@ export function ChatPage() {
   }, [hiddenConversationPin, language]);
 
   const updateGroupPreference = useCallback(
-    async (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
-      const current = groupPreferenceMap[conversationId] ?? {
-        muted: false,
-        pinned: false,
-        hidden: false,
-      };
+    (conversationId: string, patch: Partial<GroupPreferenceItem>) => {
+      setGroupPreferenceMap((prev) => {
+        const current = prev[conversationId] ?? {
+          muted: false,
+          pinned: false,
+          hidden: false,
+        };
 
-      const requestsPin = patch.pinned === true;
-      if (requestsPin && !current.pinned) {
-        const pinnedCount = Object.values(groupPreferenceMap).filter((item) => item?.pinned).length;
-        if (pinnedCount >= 3) {
-          setBannerMessage(
-            language === "vi"
-              ? "Chi duoc ghim toi da 3 hoi thoai"
-              : "You can pin up to 3 conversations only",
-          );
-          return;
-        }
-      }
-
-      if (patch.hidden === true && !current.hidden) {
-        const ensuredPin = ensureHiddenConversationPin();
-        if (!ensuredPin) {
-          return;
-        }
-
-        if (hiddenConversationPin && !verifyHiddenConversationPin()) {
-          return;
-        }
-      }
-
-      const nextItem = {
-        ...current,
-        ...patch,
-      };
-
-      setGroupPreferenceMap((prev) => ({
-        ...prev,
-        [conversationId]: nextItem,
-      }));
-
-      if (patch.pinned !== undefined && patch.pinned !== current.pinned) {
-        try {
-          if (patch.pinned) {
-            await pinConversation(conversationId);
-          } else {
-            await unpinConversation(conversationId);
+        const requestsPin = patch.pinned === true;
+        const isAlreadyPinned = Boolean(current.pinned);
+        if (requestsPin && !isAlreadyPinned) {
+          const pinnedCount = Object.values(prev).filter((item) => item?.pinned).length;
+          if (pinnedCount >= 3) {
+            setBannerMessage(
+              language === "vi"
+                ? "Chi duoc ghim toi da 3 hoi thoai"
+                : "You can pin up to 3 conversations only",
+            );
+            return prev;
           }
-        } catch (error) {
-          setGroupPreferenceMap((prev) => ({
-            ...prev,
-            [conversationId]: current,
-          }));
-          setBannerMessage(toApiErrorMessage(error));
         }
-      }
+
+        if (patch.hidden === true && !current.hidden) {
+          const ensuredPin = ensureHiddenConversationPin();
+          if (!ensuredPin) {
+            return prev;
+          }
+
+          if (hiddenConversationPin && !verifyHiddenConversationPin()) {
+            return prev;
+          }
+        }
+
+        const nextItem = {
+          ...current,
+          ...patch,
+        };
+        return {
+          ...prev,
+          [conversationId]: nextItem,
+        };
+      });
     },
-    [
-      ensureHiddenConversationPin,
-      groupPreferenceMap,
-      hiddenConversationPin,
-      language,
-      verifyHiddenConversationPin,
-    ],
+    [ensureHiddenConversationPin, hiddenConversationPin, language, verifyHiddenConversationPin],
   );
 
   const onAddGroupMembers = async (userIds: string[]) => {
@@ -1452,20 +1411,13 @@ export function ChatPage() {
     );
 
     const memberSet = new Set(activeGroupMembers);
-    const pendingMemberSet = new Set(
-      (groupSettingsMap[activeConversationId]?.pendingParticipants ?? [])
-        .map((item) => item.userId?.trim())
-        .filter(Boolean),
-    );
-    const idsToAdd = uniqueUserIds.filter(
-      (userId) => !memberSet.has(userId) && !pendingMemberSet.has(userId),
-    );
+    const idsToAdd = uniqueUserIds.filter((userId) => !memberSet.has(userId));
 
     if (idsToAdd.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Nhung nguoi da chon da co trong nhom hoac dang cho duyet"
-          : "Selected users are already in the group or pending approval",
+          ? "Nhung nguoi da chon da co trong nhom"
+          : "Selected users are already in this group",
       );
       return false;
     }
@@ -1487,20 +1439,10 @@ export function ChatPage() {
       }
 
       if (failedCount === 0) {
-        const requireApproval =
-          groupSettingsMap[activeConversationId]?.requireApprovalToJoin ?? false;
-        const actorCanApproveDirectly = Boolean(
-          groupSettingsMap[activeConversationId]?.isOwner ||
-          groupSettingsMap[activeConversationId]?.isAdmin,
-        );
         setBannerMessage(
-          requireApproval && !actorCanApproveDirectly
-            ? language === "vi"
-              ? `Da gui ${successCount} yeu cau cho duyet`
-              : `Submitted ${successCount} approval request(s)`
-            : language === "vi"
-              ? `Da them ${successCount} thanh vien`
-              : `Added ${successCount} member(s)`,
+          language === "vi"
+            ? `Da them ${successCount} thanh vien`
+            : `Added ${successCount} member(s)`,
         );
         return true;
       }
@@ -1549,40 +1491,6 @@ export function ChatPage() {
     }
   };
 
-  const onApprovePendingGroupMember = async (userId: string) => {
-    if (!activeConversationId) {
-      return;
-    }
-
-    try {
-      await approveGroupMember(activeConversationId, userId);
-      await fetchConversations({ silent: true });
-      await refreshGroupSettings(activeConversationId);
-      setBannerMessage(
-        language === "vi" ? "Da duyet thanh vien" : "Member approved",
-      );
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    }
-  };
-
-  const onRejectPendingGroupMember = async (userId: string) => {
-    if (!activeConversationId) {
-      return;
-    }
-
-    try {
-      await rejectGroupMember(activeConversationId, userId);
-      await fetchConversations({ silent: true });
-      await refreshGroupSettings(activeConversationId);
-      setBannerMessage(
-        language === "vi" ? "Da tu choi thanh vien" : "Member rejected",
-      );
-    } catch (error) {
-      setBannerMessage(toApiErrorMessage(error));
-    }
-  };
-
   const onToggleGroupAdmin = async (userId: string, admin: boolean) => {
     if (!activeConversationId) {
       return;
@@ -1617,11 +1525,6 @@ export function ChatPage() {
     requireApprovalToJoin?: boolean;
     highlightAdminMessages?: boolean;
     allowMemberInvite?: boolean;
-    allowMemberEditGroupInfo?: boolean;
-    allowMemberPinBoardItems?: boolean;
-    allowMemberCreateNotes?: boolean;
-    allowMemberCreateReminders?: boolean;
-    allowMemberCreatePolls?: boolean;
     transferOwnerId?: string;
     successMessageVi?: string;
     successMessageEn?: string;
@@ -1734,24 +1637,6 @@ export function ChatPage() {
 
   const onLeaveActiveGroup = async () => {
     if (!activeConversationId) {
-      return;
-    }
-    const effectiveOwnerId =
-      activeGroupSettings?.ownerId ?? activeConversationForView?.ownerId ?? null;
-    const effectiveParticipants =
-      activeGroupSettings?.participants ??
-      activeConversationForView?.participants ??
-      [];
-    if (
-      myProfile?.id &&
-      effectiveOwnerId === myProfile.id &&
-      effectiveParticipants.length > 1
-    ) {
-      setBannerMessage(
-        language === "vi"
-          ? "Ban phai chuyen quyen truong nhom truoc khi roi nhom"
-          : "Transfer ownership before leaving this group",
-      );
       return;
     }
     try {
@@ -1881,25 +1766,22 @@ export function ChatPage() {
     const canPinBoardItems = Boolean(
       activeSettings?.isOwner ||
       activeSettings?.isAdmin ||
-      activeSettings?.allowMembersPinBoardItems ||
-      activeSettings?.allowMemberPinBoardItems,
+      activeSettings?.allowMembersPinBoardItems,
     );
     if (!canPinBoardItems) {
       setBannerMessage(
         language === "vi"
-          ? "Ban khong duoc phep ghim tin nhan trong nhom nay"
-          : "You are not allowed to pin messages in this group",
+          ? "Chi truong/pho nhom moi duoc ghim tin nhan"
+          : "Only owner/admin can pin messages",
       );
       return;
     }
 
-    const currentPinnedMessages = activeSettings?.pinnedMessages ?? [];
-
-    if (currentPinnedMessages.some((item) => item.sourceMessageId === targetMessage.id)) {
+    if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
       setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
       return;
     }
-    if (currentPinnedMessages.length >= 3) {
+    if (activePinnedBoardItems.length >= 3) {
       setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
       return;
     }
@@ -1920,27 +1802,17 @@ export function ChatPage() {
     };
 
     try {
-      const pinResult = await pinGroupMessage(activeConversationId, targetMessage.id);
-      setGroupSettingsMap((prev) => ({
-        ...prev,
-        [activeConversationId]: pinResult.data,
-      }));
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "NOTE",
+      });
 
-      try {
-        const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
-          type: "NOTE",
-        });
-
-        setMessages((prev) => {
-          const exists = prev.some((item) => item.id === result.data.id);
-          if (exists) {
-            return prev;
-          }
-          return [...prev, result.data];
-        });
-      } catch (error) {
-        setBannerMessage(toApiErrorMessage(error));
-      }
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
 
       setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
       await fetchConversations({ silent: true });
@@ -1954,75 +1826,61 @@ export function ChatPage() {
       return;
     }
 
-    const normalizedSourceId = String(sourceMessageId ?? "").trim();
+    const normalizedSourceId = sourceMessageId.trim();
     if (!normalizedSourceId) {
       return;
     }
 
-    const previousSettings = groupSettingsMap[activeConversationId] ?? null;
+    const nowIso = new Date().toISOString();
+    const title =
+      language === "vi"
+        ? "Tin nhan da duoc bo ghim"
+        : "Unpinned message";
 
-    setGroupSettingsMap((prev) => {
-      const currentSettings = prev[activeConversationId];
-      if (!currentSettings) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        [activeConversationId]: {
-          ...currentSettings,
-          pinnedMessages: (currentSettings.pinnedMessages ?? []).filter(
-            (item) => item.sourceMessageId !== normalizedSourceId,
-          ),
-        },
-      };
-    });
+    const payload = {
+      kind: "UNPIN_MESSAGE",
+      sourceMessageId: normalizedSourceId,
+      title,
+      createdAt: nowIso,
+    };
 
     try {
-      const result = await unpinGroupMessage(activeConversationId, normalizedSourceId);
-      setGroupSettingsMap((prev) => ({
-        ...prev,
-        [activeConversationId]: result.data,
-      }));
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), {
+        type: "NOTE",
+      });
 
-      const payload = {
-        kind: "UNPIN_MESSAGE",
-        sourceMessageId: normalizedSourceId,
-        title: language === "vi" ? "Tin nhan da bo ghim" : "Unpinned message",
-        preview: "",
-        createdAt: new Date().toISOString(),
-      };
-
-      try {
-        const noteResult = await sendMessage(activeConversationId, JSON.stringify(payload), {
-          type: "NOTE",
-        });
-        setMessages((prev) => {
-          const exists = prev.some((item) => item.id === noteResult.data.id);
-          if (exists) {
-            return prev;
-          }
-          return [...prev, noteResult.data];
-        });
-        await fetchConversations({ silent: true });
-      } catch (error) {
-        setBannerMessage(toApiErrorMessage(error));
-      }
+      setMessages((prev) => {
+        const exists = prev.some((item) => item.id === result.data.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, result.data];
+      });
 
       setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
+      await fetchConversations({ silent: true });
     } catch (error) {
-      if (previousSettings) {
-        setGroupSettingsMap((prev) => ({
-          ...prev,
-          [activeConversationId]: previousSettings,
-        }));
-      }
       setBannerMessage(toApiErrorMessage(error));
     }
   };
 
   const onCreateGroupBoardNote = async (noteText: string, pinToTop: boolean) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
+      return;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateNotes = Boolean(
+      activeSettings?.isOwner ||
+      activeSettings?.isAdmin ||
+      activeSettings?.allowMembersCreateNotes,
+    );
+    if (!canCreateNotes) {
+      setBannerMessage(
+        language === "vi"
+          ? "Chi truong/pho nhom moi duoc tao ghi chu"
+          : "Only owner/admin can create notes",
+      );
       return;
     }
 
@@ -2077,7 +1935,10 @@ export function ChatPage() {
     const activeSettings = groupSettingsMap[activeConversationId] ?? null;
     const isCurrentOwner = Boolean(activeSettings?.isOwner);
     const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
-    if (!isCurrentOwner && !isCurrentAdmin) {
+    const canCreatePolls = Boolean(
+      isCurrentOwner || isCurrentAdmin || activeSettings?.allowMembersCreatePolls,
+    );
+    if (!canCreatePolls) {
       setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
       return false;
     }
@@ -2169,6 +2030,21 @@ export function ChatPage() {
 
   const onCreateGroupReminder = async (input: { title: string; when?: string | null }) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
+      return false;
+    }
+
+    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+    const canCreateReminders = Boolean(
+      activeSettings?.isOwner ||
+      activeSettings?.isAdmin ||
+      activeSettings?.allowMembersCreateNotes,
+    );
+    if (!canCreateReminders) {
+      setBannerMessage(
+        language === "vi"
+          ? "Chi truong/pho nhom moi duoc tao nhac hen"
+          : "Only owner/admin can create reminders",
+      );
       return false;
     }
 
@@ -4067,25 +3943,15 @@ export function ChatPage() {
   ]);
 
   const sidebarChats = useMemo<ChatListItem[]>(() => {
-    const sortPinnedFirst = (items: ChatListItem[]) =>
-      [...items].sort((left, right) => {
-        const leftPinned = left.isPinned ? 1 : 0;
-        const rightPinned = right.isPinned ? 1 : 0;
-        if (leftPinned !== rightPinned) {
-          return rightPinned - leftPinned;
-        }
-        return (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0);
-      });
-
     if (activeMessageWorkspaceView === "stranger-inbox") {
-      return sortPinnedFirst(strangerSidebarChats);
+      return strangerSidebarChats;
     }
 
     const nextItems = strangerInboxEntry
       ? [...defaultSidebarChats, strangerInboxEntry]
       : [...defaultSidebarChats];
 
-    return sortPinnedFirst(nextItems);
+    return nextItems.sort((left, right) => (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0));
   }, [
     activeMessageWorkspaceView,
     defaultSidebarChats,
@@ -4106,8 +3972,30 @@ export function ChatPage() {
         setIsLoadingConversations(true);
       }
       const result = await getConversations();
-      const items = result.data ?? [];
+      const incomingItems = result.data ?? [];
       const activeId = activeConversationIdRef.current;
+
+      let items = incomingItems;
+      if (silent && activeId && !incomingItems.some((item) => item.id === activeId)) {
+        const existingActive = useChatStore
+          .getState()
+          .conversations.find((item) => item.id === activeId);
+        if (existingActive) {
+          items = [
+            ...incomingItems,
+            {
+              ...existingActive,
+              type: existingActive.type ?? "private",
+              avatar: existingActive.avatar ?? null,
+              unreadCount: existingActive.unreadCount ?? 0,
+              lastReadAt: existingActive.lastReadAt ?? null,
+              lastReadMessageId: existingActive.lastReadMessageId ?? null,
+              admins: existingActive.admins ?? [],
+              ownerId: existingActive.ownerId ?? null,
+            },
+          ];
+        }
+      }
 
       setConversationList(items);
 
@@ -4162,14 +4050,13 @@ export function ChatPage() {
       // Only clear selection if the selected conversation no longer exists
       // ═══════════════════════════════════════════════════════════════════════
       if (
+        !silent &&
         activeId &&
         !items.some((conversation) => conversation.id === activeId)
       ) {
         hasUserOpenedConversationRef.current = false;
         manuallyOpenedConversationIdRef.current = null;
         setActiveConversationId(null);  // Clear, don't auto-select first
-        setMessages([]);
-        setNextCursor(null);
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -4249,7 +4136,7 @@ export function ChatPage() {
       });
       const uniqueSentByUserId = new Map<string, PendingFriendRequestItem>();
       normalizePendingRequestItems(
-        [...(pendingResult.data ?? []), ...(sentPendingResult.data ?? [])],
+        sentPendingResult.data ?? [],
         currentUserId,
         "sent",
       ).forEach((item) => {
@@ -4259,57 +4146,21 @@ export function ChatPage() {
         uniqueSentByUserId.set(item.addresseeId, item);
       });
       const pending = Array.from(uniqueIncomingByUserId.values());
-      const sentPendingFetched = Array.from(uniqueSentByUserId.values()).filter(
+      const sentPending = Array.from(uniqueSentByUserId.values()).filter(
         (item) => !uniqueIncomingByUserId.has(item.addresseeId),
       );
-
-      const isSentEndpointUnavailable = sentPendingResult.message?.includes("endpoint unavailable");
-
       setPendingFriendRequests(pending);
-      setSentPendingFriendRequests((prev) => {
-        if (!isSentEndpointUnavailable) {
-          return sentPendingFetched;
-        }
-
-        const merged = new Map<string, PendingFriendRequestItem>();
-        sentPendingFetched.forEach((item) => {
-          merged.set(item.addresseeId, item);
-        });
-        prev.forEach((item) => {
-          if (
-            item.requesterId !== currentUserId ||
-            uniqueIncomingByUserId.has(item.addresseeId) ||
-            hiddenUserIds.has(item.addresseeId) ||
-            friendIds.has(item.addresseeId) ||
-            normalizeFriendshipStatus(item.status) !== "PENDING"
-          ) {
-            return;
-          }
-          merged.set(item.addresseeId, item);
-        });
-        return Array.from(merged.values());
-      });
-
+      setSentPendingFriendRequests(sentPending);
       setFriendContacts(friends);
       setBlockedUserIds(blockedIds);
       setPendingFriendRequestsUnreadCount(
         Math.max(0, unreadResult.data?.count ?? 0),
       );
-      hydrateRelationshipStatuses({
-        currentUserId,
-        pendingFriendRequests: pending,
-        sentPendingFriendRequests: isSentEndpointUnavailable
-          ? sentPendingFriendRequests
-          : sentPendingFetched,
-        friendContacts: friends,
-        blockedUserIds: blockedIds,
-        blockedByPeerUserIds,
-      });
 
       const ids = Array.from(
         new Set([
           ...pending.map((item) => item.requesterId),
-          ...sentPendingFetched.map((item) => item.addresseeId),
+          ...sentPending.map((item) => item.addresseeId),
           ...friends.map((item) => item.userId),
         ]),
       );
@@ -4401,29 +4252,20 @@ export function ChatPage() {
       try {
         const result = await joinGroupByInviteCode(inviteCode);
         const joinedConversationId = result.data.id;
-        const joinedAsMember = (result.data.participants ?? []).includes(myProfile.id);
 
         await fetchConversations({ silent: true });
 
+        hasUserOpenedConversationRef.current = true;
+        manuallyOpenedConversationIdRef.current = joinedConversationId;
+        pendingReadSyncOnOpenRef.current = true;
         setActiveTab("messages");
-        if (joinedAsMember) {
-          hasUserOpenedConversationRef.current = true;
-          manuallyOpenedConversationIdRef.current = joinedConversationId;
-          pendingReadSyncOnOpenRef.current = true;
-          setActiveConversationId(joinedConversationId);
-          setBannerMessage(
-            language === "vi"
-              ? "Da tham gia nhom tu link moi"
-              : "Joined group from invite link",
-          );
-        } else {
-          setActiveConversationId(null);
-          setBannerMessage(
-            language === "vi"
-              ? "Yeu cau tham gia nhom da duoc gui, vui long cho truong/pho nhom duyet"
-              : "Join request submitted. Please wait for admin approval",
-          );
-        }
+        setActiveConversationId(joinedConversationId);
+
+        setBannerMessage(
+          language === "vi"
+            ? "Da tham gia nhom tu link moi"
+            : "Joined group from invite link",
+        );
       } catch (error) {
         setBannerMessage(toApiErrorMessage(error));
       } finally {
@@ -4597,113 +4439,6 @@ export function ChatPage() {
         const selectedConversationId =
           useChatStore.getState().selectedConversationId ??
           activeConversationIdRef.current;
-        const currentUserId = myUserIdRef.current;
-
-        if (
-          event.eventType === "GROUP_MEMBERSHIP_UPDATED" &&
-          currentUserId &&
-          event.affectedUserId === currentUserId
-        ) {
-          const groupName =
-            event.conversation?.name ??
-            event.conversationName ??
-            (language === "vi" ? "nhom" : "group");
-
-          if (
-            event.membershipAction === "ADDED" ||
-            event.membershipAction === "APPROVED"
-          ) {
-            if (event.conversation) {
-              upsertConversation({
-                ...event.conversation,
-                type: "group",
-              });
-            }
-            if (event.groupSettings) {
-              setGroupSettingsMap((prev) => ({
-                ...prev,
-                [event.conversationId]: event.groupSettings as GroupSettings,
-              }));
-            }
-
-            const client = realtimeClientRef.current;
-            if (client && client.isConnected()) {
-              client.syncConversationSubscriptions(
-                Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
-              );
-            }
-
-            setBannerMessage(
-              event.membershipAction === "APPROVED"
-                ? language === "vi"
-                  ? `Ban da duoc duyet vao ${groupName}`
-                  : `You were approved to join ${groupName}`
-                : language === "vi"
-                  ? `Ban vua duoc them vao ${groupName}`
-                  : `You were added to ${groupName}`,
-            );
-            scheduleConversationsRefresh();
-            return;
-          }
-
-          if (
-            event.membershipAction === "REMOVED" ||
-            event.membershipAction === "LEFT"
-          ) {
-            removeConversation(event.conversationId);
-            setGroupSettingsMap((prev) => {
-              const next = { ...prev };
-              delete next[event.conversationId];
-              return next;
-            });
-
-            if (activeConversationIdRef.current === event.conversationId) {
-              setActiveConversationId(null);
-              setMessages([]);
-              setNextCursor(null);
-            }
-
-            const client = realtimeClientRef.current;
-            if (client && client.isConnected()) {
-              client.syncConversationSubscriptions(
-                conversationIdsRef.current.filter((id) => id !== event.conversationId),
-              );
-            }
-
-            setBannerMessage(
-              event.membershipAction === "LEFT"
-                ? language === "vi"
-                  ? `Ban da roi ${groupName}`
-                  : `You left ${groupName}`
-                : language === "vi"
-                  ? `Ban da bi xoa khoi ${groupName}`
-                  : `You were removed from ${groupName}`,
-            );
-            scheduleConversationsRefresh();
-            return;
-          }
-        }
-
-        if (event.eventType === "GROUP_SETTINGS_UPDATED" && event.groupSettings) {
-          setGroupSettingsMap((prev) => ({
-            ...prev,
-            [event.conversationId]: event.groupSettings as GroupSettings,
-          }));
-          upsertConversation({
-            id: event.conversationId,
-            type: "group",
-            name: event.groupSettings.name,
-            avatar: event.groupSettings.avatar,
-            ownerId: event.groupSettings.ownerId,
-            admins: event.groupSettings.admins,
-            participants: event.groupSettings.participants,
-          });
-
-          if (typeof event.totalUnreadCount === "number") {
-            syncTotalUnread(event.totalUnreadCount);
-          }
-          return;
-        }
 
         const isTypingEvent =
           event.eventType === "TYPING" ||
@@ -4759,10 +4494,6 @@ export function ChatPage() {
               client.syncConversationSubscriptions(
                 Array.from(new Set([...conversationIdsRef.current, event.conversationId])),
               );
-            }
-
-            if (selectedConversationId === event.conversationId) {
-              void refreshGroupSettings(event.conversationId);
             }
           }
           if (typeof event.totalUnreadCount === "number") {
@@ -4971,17 +4702,6 @@ export function ChatPage() {
           unreadCount: unreadPatch,
         });
 
-        if (
-          normalizedMessage.type?.toUpperCase() === "SYSTEM" &&
-          event.conversationId
-        ) {
-          void fetchConversations({ silent: true });
-          void refreshGroupSettings(event.conversationId);
-          if (activeConversationIdRef.current === event.conversationId) {
-            void reloadConversationMessagesWithRetry(event.conversationId);
-          }
-        }
-
         if (event.conversationId) {
           const client = realtimeClientRef.current;
           const shouldSyncSubscriptions =
@@ -4995,48 +4715,6 @@ export function ChatPage() {
       },
       onSyncEvent: (event) => {
         if (event.eventType.startsWith("FRIENDSHIP_")) {
-          if (event.eventType === "FRIENDSHIP_REQUEST_RECEIVED") {
-            try {
-              const payload = event.payload ? JSON.parse(event.payload) : null;
-              const requesterId = String(payload?.requesterId ?? "").trim();
-              const friendshipId = String(payload?.friendshipId ?? "").trim();
-              const myUserId = myUserIdRef.current;
-
-              if (requesterId && friendshipId && myUserId) {
-                setPendingFriendRequests((prev) => {
-                  const next = prev.filter((item) => item.requesterId !== requesterId);
-                  return [
-                    ...next,
-                    {
-                      friendshipId,
-                      requesterId,
-                      addresseeId: myUserId,
-                      status: "PENDING",
-                      createdAt: new Date().toISOString(),
-                    },
-                  ];
-                });
-                setSentPendingFriendRequests((prev) =>
-                  prev.filter((item) => item.addresseeId !== requesterId),
-                );
-                setRelationshipEntry({
-                  targetUserId: requesterId,
-                  status: "INCOMING_PENDING",
-                  requestId: friendshipId,
-                  friendshipId,
-                  requesterId,
-                  addresseeId: myUserId,
-                  isBlockedByMe: false,
-                  isBlockedMe: false,
-                  updatedAt: Date.now(),
-                });
-                setPendingFriendRequestsUnreadCount((prev) => prev + 1);
-              }
-            } catch {
-              // Ignore malformed payloads; reconcile from API below.
-            }
-          }
-
           if (
             event.eventType === "FRIENDSHIP_BLOCKED" ||
             event.eventType === "FRIENDSHIP_UNBLOCKED"
@@ -5058,47 +4736,6 @@ export function ChatPage() {
                       : null;
 
                 if (counterpartyUserId) {
-                  const hadIncomingPending = pendingFriendRequests.some(
-                    (item) => item.requesterId === counterpartyUserId,
-                  );
-                  setRelationshipEntry({
-                    targetUserId: counterpartyUserId,
-                    status: isBlockedEvent
-                      ? blockerId === myUserId
-                        ? "BLOCKED_BY_ME"
-                        : "BLOCKED_ME"
-                      : "NONE",
-                    requestId: null,
-                    friendshipId: null,
-                    requesterId: null,
-                    addresseeId: null,
-                    isBlockedByMe: isBlockedEvent && blockerId === myUserId,
-                    isBlockedMe: isBlockedEvent && blockedUserId === myUserId,
-                    updatedAt: Date.now(),
-                  });
-                  if (isBlockedEvent) {
-                    setPendingFriendRequests((prev) =>
-                      prev.filter(
-                        (item) =>
-                          item.requesterId !== counterpartyUserId &&
-                          item.addresseeId !== counterpartyUserId,
-                      ),
-                    );
-                    setSentPendingFriendRequests((prev) =>
-                      prev.filter(
-                        (item) =>
-                          item.requesterId !== counterpartyUserId &&
-                          item.addresseeId !== counterpartyUserId,
-                      ),
-                    );
-                    setFriendContacts((prev) =>
-                      prev.filter((item) => item.userId !== counterpartyUserId),
-                    );
-                    if (hadIncomingPending) {
-                      setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
-                    }
-                  }
-
                   if (blockerId === myUserId) {
                     setBlockedUserIds((prev) =>
                       isBlockedEvent
@@ -5191,140 +4828,12 @@ export function ChatPage() {
             }
           }
 
-          // Handle cancel/decline/remove events: update sent/pending lists optimistically
-          if (
-            event.eventType === "FRIENDSHIP_REQUEST_CANCELLED" ||
-            event.eventType === "FRIENDSHIP_REQUEST_DECLINED" ||
-            event.eventType === "FRIENDSHIP_REMOVED"
-          ) {
-            try {
-              const payload = event.payload ? JSON.parse(event.payload) : null;
-              const requesterId = payload?.requesterId as string | undefined;
-              const addresseeId = payload?.addresseeId as string | undefined;
-              const friendshipId = payload?.friendshipId as string | undefined;
-              const myUserId = myUserIdRef.current;
-              const counterpartyUserId =
-                requesterId === myUserId ? addresseeId :
-                addresseeId === myUserId ? requesterId : null;
-
-              if (counterpartyUserId) {
-                const hadIncomingPending = pendingFriendRequests.some(
-                  (item) =>
-                    item.requesterId === counterpartyUserId &&
-                    (!friendshipId || item.friendshipId === friendshipId),
-                );
-                setRelationshipEntry({
-                  targetUserId: counterpartyUserId,
-                  status: "NONE",
-                  requestId: null,
-                  friendshipId: null,
-                  requesterId: null,
-                  addresseeId: null,
-                  isBlockedByMe: false,
-                  isBlockedMe: false,
-                  updatedAt: Date.now(),
-                });
-                // Remove from pending/sent lists immediately
-                setSentPendingFriendRequests((prev) =>
-                  prev.filter((item) =>
-                    item.addresseeId !== counterpartyUserId &&
-                    item.requesterId !== counterpartyUserId &&
-                    (!friendshipId || item.friendshipId !== friendshipId),
-                  ),
-                );
-                setPendingFriendRequests((prev) =>
-                  prev.filter((item) =>
-                    item.requesterId !== counterpartyUserId &&
-                    item.addresseeId !== counterpartyUserId &&
-                    (!friendshipId || item.friendshipId !== friendshipId),
-                  ),
-                );
-                if (event.eventType === "FRIENDSHIP_REMOVED") {
-                  setFriendContacts((prev) =>
-                    prev.filter((item) => item.userId !== counterpartyUserId),
-                  );
-                }
-                if (hadIncomingPending) {
-                  setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
-                }
-
-                const activePeerIdNow = activeDirectPeerIdRef.current;
-                if (activePeerIdNow === counterpartyUserId) {
-                  setActiveDirectFriendshipStatus("NONE");
-                }
-                if (previewUserProfile?.id === counterpartyUserId) {
-                  setPreviewUserFriendshipStatus("NONE");
-                }
-              }
-            } catch {
-              // Ignore malformed payloads; reconcile from API below.
-            }
-          }
-
-          if (event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED") {
-            try {
-              const payload = event.payload ? JSON.parse(event.payload) : null;
-              const requesterId = payload?.requesterId as string | undefined;
-              const addresseeId = payload?.addresseeId as string | undefined;
-              const friendshipId = payload?.friendshipId as string | undefined;
-              const myUserId = myUserIdRef.current;
-              const counterpartyUserId =
-                requesterId === myUserId ? addresseeId :
-                addresseeId === myUserId ? requesterId : null;
-
-              if (counterpartyUserId) {
-                const hadIncomingPending = pendingFriendRequests.some(
-                  (item) =>
-                    item.requesterId === counterpartyUserId &&
-                    (!friendshipId || item.friendshipId === friendshipId),
-                );
-                setRelationshipEntry({
-                  targetUserId: counterpartyUserId,
-                  status: "FRIENDS",
-                  requestId: null,
-                  friendshipId: friendshipId ?? null,
-                  requesterId: requesterId ?? null,
-                  addresseeId: addresseeId ?? null,
-                  isBlockedByMe: false,
-                  isBlockedMe: false,
-                  updatedAt: Date.now(),
-                });
-                setSentPendingFriendRequests((prev) =>
-                  prev.filter(
-                    (item) =>
-                      item.addresseeId !== counterpartyUserId &&
-                      item.requesterId !== counterpartyUserId &&
-                      (!friendshipId || item.friendshipId !== friendshipId),
-                  ),
-                );
-                setPendingFriendRequests((prev) =>
-                  prev.filter(
-                    (item) =>
-                      item.requesterId !== counterpartyUserId &&
-                      item.addresseeId !== counterpartyUserId &&
-                      (!friendshipId || item.friendshipId !== friendshipId),
-                  ),
-                );
-                if (hadIncomingPending) {
-                  setPendingFriendRequestsUnreadCount((prev) => Math.max(0, prev - 1));
-                }
-              }
-            } catch {
-              // Ignore malformed payloads; reconcile from API below.
-            }
-          }
-
           void fetchFriendshipData();
-          const activePeerId = activeDirectPeerIdRef.current;
-          if (activePeerId) {
-            void refreshActiveDirectFriendshipStatus(activePeerId);
-          }
           if (
             event.eventType === "FRIENDSHIP_REQUEST_ACCEPTED" ||
             event.eventType === "FRIENDSHIP_CHAT_READY" ||
             event.eventType === "FRIENDSHIP_BLOCKED" ||
-            event.eventType === "FRIENDSHIP_UNBLOCKED" ||
-            event.eventType === "FRIENDSHIP_REMOVED"
+            event.eventType === "FRIENDSHIP_UNBLOCKED"
           ) {
             void fetchConversations({ silent: true });
           }
@@ -5652,154 +5161,12 @@ export function ChatPage() {
     activeConversation && activeConversation.type !== "group"
       ? resolvePeerUserId(activeConversation)
       : null;
-  const { relationship: activePeerRelationship } = useRelationshipStatus(
-    activeDirectPeerIdForActions,
-    {
-      enabled: Boolean(
-        activeDirectPeerIdForActions && activeConversation?.type !== "group",
-      ),
-      currentUserId: myProfile?.id,
-    },
-  );
-  const { relationship: previewUserRelationshipFromStore } = useRelationshipStatus(
-    isUserPreviewOpen ? previewUserProfile?.id : null,
-    {
-      enabled: Boolean(isUserPreviewOpen && previewUserProfile?.id),
-      currentUserId: myProfile?.id,
-    },
-  );
-  const syncRelationshipEntryIntoBlockLists = useCallback(
-    (entry: RelationshipEntry | null | undefined) => {
-      const targetUserId = String(entry?.targetUserId ?? "").trim();
-      if (!targetUserId) {
-        return;
-      }
-
-      setBlockedUserIds((prev) =>
-        entry?.isBlockedByMe
-          ? prev.includes(targetUserId)
-            ? prev
-            : [...prev, targetUserId]
-          : prev.filter((userId) => userId !== targetUserId),
-      );
-      setBlockedByPeerUserIds((prev) =>
-        entry?.isBlockedMe
-          ? prev.includes(targetUserId)
-            ? prev
-            : [...prev, targetUserId]
-          : prev.filter((userId) => userId !== targetUserId),
-      );
-    },
-    [],
-  );
-  const stabilizeRelationshipEntry = useCallback(
-    (entry: RelationshipEntry, targetUserId: string): RelationshipEntry => {
-      const normalizedTargetUserId = String(targetUserId ?? "").trim();
-      if (!normalizedTargetUserId) {
-        return entry;
-      }
-
-      if (entry.status === "NONE") {
-        if (blockedUserIds.includes(normalizedTargetUserId)) {
-          return {
-            ...entry,
-            status: "BLOCKED_BY_ME",
-            isBlockedByMe: true,
-            isBlockedMe: false,
-            updatedAt: Date.now(),
-          };
-        }
-        if (blockedByPeerUserIds.includes(normalizedTargetUserId)) {
-          return {
-            ...entry,
-            status: "BLOCKED_ME",
-            isBlockedByMe: false,
-            isBlockedMe: true,
-            updatedAt: Date.now(),
-          };
-        }
-      }
-
-      return entry;
-    },
-    [blockedByPeerUserIds, blockedUserIds],
-  );
   const canComposeDirectForActions = Boolean(
     !activeDirectPeerIdForActions ||
-      (activePeerRelationship.status !== "BLOCKED_BY_ME" &&
-        activePeerRelationship.status !== "BLOCKED_ME" &&
+      (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
+        !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
         !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
   );
-
-  const refreshActiveDirectFriendshipStatus = useCallback(
-    async (peerUserId: string, shouldIgnore?: () => boolean) => {
-      try {
-        const fetchedEntry = await fetchRelationshipEntry(peerUserId, myProfile?.id);
-        if (shouldIgnore?.()) {
-          return;
-        }
-        const entry = stabilizeRelationshipEntry(fetchedEntry, peerUserId);
-        if (entry !== fetchedEntry) {
-          setRelationshipEntry(entry);
-        }
-        syncRelationshipEntryIntoBlockLists(entry);
-        setActiveDirectFriendshipStatus(relationshipToLegacyFriendshipStatus(entry));
-      } catch {
-        if (!shouldIgnore?.()) {
-          if (blockedUserIds.includes(peerUserId) || blockedByPeerUserIds.includes(peerUserId)) {
-            setActiveDirectFriendshipStatus("BLOCKED");
-            return;
-          }
-          setActiveDirectFriendshipStatus("NONE");
-        }
-      }
-    },
-    [
-      blockedByPeerUserIds,
-      blockedUserIds,
-      fetchRelationshipEntry,
-      myProfile?.id,
-      setRelationshipEntry,
-      stabilizeRelationshipEntry,
-      syncRelationshipEntryIntoBlockLists,
-    ],
-  );
-
-  useEffect(() => {
-    activeDirectPeerIdRef.current = activeDirectPeerIdForActions ?? null;
-  }, [activeDirectPeerIdForActions]);
-
-  useEffect(() => {
-    if (!activeDirectPeerIdForActions || activeConversation?.type === "group") {
-      return;
-    }
-
-    syncRelationshipEntryIntoBlockLists(activePeerRelationship);
-    setActiveDirectFriendshipStatus(
-      relationshipToLegacyFriendshipStatus(activePeerRelationship),
-    );
-  }, [
-    activeConversation?.type,
-    activeDirectPeerIdForActions,
-    activePeerRelationship,
-    syncRelationshipEntryIntoBlockLists,
-  ]);
-
-  useEffect(() => {
-    if (!isUserPreviewOpen || !previewUserProfile?.id) {
-      return;
-    }
-
-    syncRelationshipEntryIntoBlockLists(previewUserRelationshipFromStore);
-    setPreviewUserFriendshipStatus(
-      relationshipToLegacyFriendshipStatus(previewUserRelationshipFromStore),
-    );
-  }, [
-    isUserPreviewOpen,
-    previewUserProfile?.id,
-    previewUserRelationshipFromStore,
-    syncRelationshipEntryIntoBlockLists,
-  ]);
 
   useEffect(() => {
     if (!activeDirectPeerIdForActions || activeConversation?.type === "group") {
@@ -5818,15 +5185,40 @@ export function ChatPage() {
     }
 
     let cancelled = false;
-    void refreshActiveDirectFriendshipStatus(
-      activeDirectPeerIdForActions,
-      () => cancelled,
-    );
+    void (async () => {
+      try {
+        const result = await getFriendshipStatus(activeDirectPeerIdForActions);
+        if (!cancelled) {
+          const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
+          setBlockedUserIds((prev) => {
+            const hasUser = prev.includes(activeDirectPeerIdForActions);
+            if (blockedByMe) {
+              return hasUser ? prev : [...prev, activeDirectPeerIdForActions];
+            }
+            return hasUser ? prev.filter((userId) => userId !== activeDirectPeerIdForActions) : prev;
+          });
+          setBlockedByPeerUserIds((prev) => {
+            const hasUser = prev.includes(activeDirectPeerIdForActions);
+            if (blockedByPeer) {
+              return hasUser ? prev : [...prev, activeDirectPeerIdForActions];
+            }
+            return hasUser ? prev.filter((userId) => userId !== activeDirectPeerIdForActions) : prev;
+          });
+          setActiveDirectFriendshipStatus(
+            normalizeFriendshipStatus(result.data?.status ?? "NONE"),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setActiveDirectFriendshipStatus("NONE");
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeConversation?.type, activeDirectPeerIdForActions, blockedByPeerUserIds, blockedUserIds, refreshActiveDirectFriendshipStatus]);
+  }, [activeConversation?.type, activeDirectPeerIdForActions, blockedByPeerUserIds, blockedUserIds]);
 
   const appendInlineSystemNotice = useCallback((text: string) => {
     const conversationId = activeConversationIdRef.current;
@@ -6533,12 +5925,8 @@ export function ChatPage() {
       const profileResult = await searchUserByEmail(email);
       setFriendProfile(profileResult.data);
 
-      const relationship = await fetchRelationshipEntry(
-        profileResult.data.id,
-        myProfile?.id,
-      );
-      syncRelationshipEntryIntoBlockLists(relationship);
-      setFriendshipStatus(relationshipToLegacyFriendshipStatus(relationship));
+      const statusResult = await getFriendshipStatus(profileResult.data.id);
+      setFriendshipStatus(normalizeFriendshipStatus(statusResult.data.status));
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -6551,12 +5939,10 @@ export function ChatPage() {
 
     try {
       setIsSubmittingFriend(true);
-      await sendFriendRequest(friendProfile.id);
-      const relationship = await fetchRelationshipEntry(friendProfile.id, myProfile?.id);
-      const nextStatus = relationshipToLegacyFriendshipStatus(relationship);
+      const result = await addFriend(friendProfile.id);
+      const nextStatus = normalizeFriendshipStatus(result.data.status);
       setFriendshipStatus(nextStatus);
-      setRelationshipEntry(relationship);
-      syncRelationshipEntryIntoBlockLists(relationship);
+      setPreviewUserFriendshipStatus(nextStatus);
       await Promise.all([
         fetchFriendshipData(),
         nextStatus === "ACCEPTED"
@@ -6688,15 +6074,12 @@ export function ChatPage() {
     }
   };
 
-  const onCancelFriendRequest = async (friendshipId: string, targetUserId?: string) => {
+  const onCancelFriendRequest = async (friendshipId: string) => {
     // optimistic: remove from sent pending and set direct status to NONE immediately
     setProcessingFriendshipId(friendshipId);
     const prevSentPending = sentPendingFriendRequests;
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
-    const prevRelationshipEntry = targetUserId
-      ? relationshipEntries[targetUserId]
-      : undefined;
 
     try {
       setSentPendingFriendRequests((prev) =>
@@ -6704,64 +6087,18 @@ export function ChatPage() {
       );
       setActiveDirectFriendshipStatus("NONE");
       setPreviewUserFriendshipStatus((_) => "NONE");
-      if (targetUserId) {
-        setRelationshipEntry({
-          targetUserId,
-          status: "NONE",
-          requestId: null,
-          friendshipId: null,
-          requesterId: null,
-          addresseeId: null,
-          isBlockedByMe: false,
-          isBlockedMe: false,
-          updatedAt: Date.now(),
-        });
-      }
 
-      if (targetUserId) {
-        await cancelFriendRequestForUser(targetUserId, friendshipId);
-      } else {
-        await cancelFriendRequest(friendshipId);
-      }
+      await cancelFriendRequest(friendshipId);
       await fetchFriendshipData();
       setBannerMessage(
-        language === "vi" ? "Da thu hoi loi moi ket ban" : "Friend request cancelled",
+        language === "vi" ? "Da huy loi moi ket ban" : "Friend request cancelled",
       );
     } catch (error) {
-      const status = (error as any)?.response?.status;
-      const code = (error as any)?.code;
-      if (status === 404 || code === "RELATIONSHIP_REQUEST_NOT_FOUND") {
-        if (targetUserId) {
-          const relationship = await fetchRelationshipEntry(targetUserId, myProfile?.id);
-          setRelationshipEntry(relationship);
-          syncRelationshipEntryIntoBlockLists(relationship);
-          setActiveDirectFriendshipStatus(
-            relationshipToLegacyFriendshipStatus(relationship),
-          );
-          if (previewUserProfile?.id === targetUserId) {
-            setPreviewUserFriendshipStatus(
-              relationshipToLegacyFriendshipStatus(relationship),
-            );
-          }
-        }
-        await fetchFriendshipData();
-        setBannerMessage(
-          language === "vi"
-            ? "Loi moi khong con ton tai hoac da duoc xu ly"
-            : "Friend request no longer exists or already processed",
-        );
-      } else {
-        // rollback
-        setSentPendingFriendRequests(prevSentPending);
-        setActiveDirectFriendshipStatus(prevActiveStatus);
-        setPreviewUserFriendshipStatus(prevPreviewStatus);
-        if (targetUserId && prevRelationshipEntry) {
-          setRelationshipEntry(prevRelationshipEntry);
-        } else if (targetUserId) {
-          clearRelationshipEntry(targetUserId);
-        }
-        setBannerMessage(toApiErrorMessage(error));
-      }
+      // rollback
+      setSentPendingFriendRequests(prevSentPending);
+      setActiveDirectFriendshipStatus(prevActiveStatus);
+      setPreviewUserFriendshipStatus(prevPreviewStatus);
+      setBannerMessage(toApiErrorMessage(error));
     } finally {
       setProcessingFriendshipId(null);
     }
@@ -6802,7 +6139,6 @@ export function ChatPage() {
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
     const prevPeerRejected = peerRejectedMessageUserIds;
-    const prevRelationshipEntry = relationshipEntries[targetUserId];
 
     // apply optimistic changes immediately
     const hasIncomingPendingRequestWithTarget = pendingFriendRequests.some(
@@ -6830,17 +6166,6 @@ export function ChatPage() {
     setPendingFriendRequestsUnreadCount((prev) =>
       hasIncomingPendingRequestWithTarget ? Math.max(0, prev - 1) : prev,
     );
-    setRelationshipEntry({
-      targetUserId,
-      status: "BLOCKED_BY_ME",
-      requestId: null,
-      friendshipId: null,
-      requesterId: null,
-      addresseeId: null,
-      isBlockedByMe: true,
-      isBlockedMe: false,
-      updatedAt: Date.now(),
-    });
 
     if (activeDirectPeerIdForActions === targetUserId) {
       setActiveDirectFriendshipStatus("BLOCKED");
@@ -6856,16 +6181,8 @@ export function ChatPage() {
     }
 
     try {
-      await blockRelationshipUser(targetUserId);
-      const entry = stabilizeRelationshipEntry(
-        await fetchRelationshipEntry(targetUserId, myProfile?.id),
-        targetUserId,
-      );
-      const { blockedByMe, blockedByPeer } = {
-        blockedByMe: entry.isBlockedByMe,
-        blockedByPeer: entry.isBlockedMe,
-      };
-      setRelationshipEntry(entry);
+      const result = await blockUserRequest(targetUserId);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(result.data);
 
       // reconcile with server response
       setBlockedUserIds((prev) =>
@@ -6888,11 +6205,6 @@ export function ChatPage() {
       setActiveDirectFriendshipStatus(prevActiveStatus);
       setPreviewUserFriendshipStatus(prevPreviewStatus);
       setPeerRejectedMessageUserIds(prevPeerRejected);
-      if (prevRelationshipEntry) {
-        setRelationshipEntry(prevRelationshipEntry);
-      } else {
-        clearRelationshipEntry(targetUserId);
-      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsUpdatingPeerRelationship(false);
@@ -6910,61 +6222,26 @@ export function ChatPage() {
     const prevBlockedByPeerUserIds = blockedByPeerUserIds;
     const prevActiveStatus = activeDirectFriendshipStatus;
     const prevPreviewStatus = previewUserFriendshipStatus;
-    const prevRelationshipEntry = relationshipEntries[targetUserId];
 
     setBlockedUserIds((prev) => prev.filter((id) => id !== targetUserId));
     setBlockedByPeerUserIds((prev) => prev.filter((id) => id !== targetUserId));
     setActiveDirectFriendshipStatus((prev) => (prev === "BLOCKED" ? "NONE" : prev));
     setPreviewUserFriendshipStatus((_) => "NONE");
-    setRelationshipEntry({
-      targetUserId,
-      status: "NONE",
-      requestId: null,
-      friendshipId: null,
-      requesterId: null,
-      addresseeId: null,
-      isBlockedByMe: false,
-      isBlockedMe: false,
-      updatedAt: Date.now(),
-    });
 
     try {
-      await unblockRelationshipUser(targetUserId);
-      const entry = stabilizeRelationshipEntry(
-        await fetchRelationshipEntry(targetUserId, myProfile?.id),
-        targetUserId,
-      );
-      const blockedByPeer = entry.isBlockedMe;
-      setRelationshipEntry(entry);
+      const result = await unblockUserRequest(targetUserId);
+      const { blockedByPeer } = resolveBlockedState(result.data);
 
       // reconcile: if still blocked by peer, keep blockedByPeer
       setBlockedByPeerUserIds((prev) =>
         blockedByPeer ? (prev.includes(targetUserId) ? prev : [...prev, targetUserId]) : prev.filter((id) => id !== targetUserId),
       );
-      const reconciledStatus = blockedByPeer ? "BLOCKED" : "NONE";
-      if (activeDirectPeerIdForActions === targetUserId) {
-        setActiveDirectFriendshipStatus(reconciledStatus);
-        appendInlineSystemNotice(
-          blockedByPeer
-            ? language === "vi"
-              ? "Ban da bo chan nguoi nay, nhung nguoi nay van dang chan ban."
-              : "You unblocked this user, but they still have you blocked."
-            : language === "vi"
-              ? "Ban da bo chan nguoi dung nay. Ca hai co the nhan tin lai."
-              : "You unblocked this user. Both sides can now send messages.",
-        );
-      }
+      setActiveDirectFriendshipStatus((prev) => (prev === "BLOCKED" ? (blockedByPeer ? "BLOCKED" : "NONE") : prev));
       if (previewUserProfile?.id === targetUserId) {
-        setPreviewUserFriendshipStatus(reconciledStatus);
+        setPreviewUserFriendshipStatus(blockedByPeer ? "BLOCKED" : "NONE");
       }
 
       await Promise.all([fetchFriendshipData(), fetchConversations({ silent: true })]);
-
-      // Refresh the active peer status from server for accuracy
-      if (activeDirectPeerIdForActions === targetUserId) {
-        void refreshActiveDirectFriendshipStatus(targetUserId);
-      }
-
       setBannerMessage(language === "vi" ? "Da bo chan nguoi dung" : "User unblocked");
     } catch (error) {
       // rollback
@@ -6972,11 +6249,6 @@ export function ChatPage() {
       setBlockedByPeerUserIds(prevBlockedByPeerUserIds);
       setActiveDirectFriendshipStatus(prevActiveStatus);
       setPreviewUserFriendshipStatus(prevPreviewStatus);
-      if (prevRelationshipEntry) {
-        setRelationshipEntry(prevRelationshipEntry);
-      } else {
-        clearRelationshipEntry(targetUserId);
-      }
       setBannerMessage(toApiErrorMessage(error));
     } finally {
       setIsUpdatingPeerRelationship(false);
@@ -7008,37 +6280,12 @@ export function ChatPage() {
 
     setIsUpdatingPeerRelationship(true);
     try {
-      await sendFriendRequest(targetUserId);
-      const relationship = await fetchRelationshipEntry(targetUserId, myProfile?.id);
-      const nextStatus = relationshipToLegacyFriendshipStatus(relationship);
-      const newFriendshipId = relationship.requestId ?? relationship.friendshipId;
-      setRelationshipEntry(relationship);
-      syncRelationshipEntryIntoBlockLists(relationship);
-
+      const result = await addFriend(targetUserId);
+      const nextStatus = normalizeFriendshipStatus(result.data.status);
       setActiveDirectFriendshipStatus(nextStatus);
       if (previewUserProfile?.id === targetUserId) {
         setPreviewUserFriendshipStatus(nextStatus);
       }
-
-      // Optimistically add to sentPendingFriendRequests so UI updates instantly
-      if (nextStatus === "PENDING" && newFriendshipId) {
-        setSentPendingFriendRequests((prev) => {
-          if (prev.some((item) => item.addresseeId === targetUserId)) {
-            return prev;
-          }
-          return [
-            ...prev,
-            {
-              friendshipId: newFriendshipId,
-              requesterId: myProfile?.id ?? "",
-              addresseeId: targetUserId,
-              status: "PENDING",
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        });
-      }
-
       await Promise.all([
         fetchFriendshipData(),
         nextStatus === "ACCEPTED"
@@ -7140,25 +6387,31 @@ export function ChatPage() {
         setPreviewUserProfile(cachedProfile);
       }
 
-      const [summaryResult, relationship] = await Promise.all([
+      const [summaryResult, statusResult] = await Promise.all([
         getUserSummary(userId),
-        normalizedMyId
-          ? fetchRelationshipEntry(userId, normalizedMyId)
-          : Promise.resolve(null),
+        normalizedMyId ? getFriendshipStatus(userId) : Promise.resolve({ data: { status: "NONE" } }),
       ]);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
 
       setPreviewUserProfile(summaryResult.data);
       setUserProfileMap((prev) => ({
         ...prev,
         [userId]: summaryResult.data,
       }));
-      if (relationship) {
-        setRelationshipEntry(relationship);
-        syncRelationshipEntryIntoBlockLists(relationship);
-        setPreviewUserFriendshipStatus(
-          relationshipToLegacyFriendshipStatus(relationship),
-        );
+      if (blockedByMe) {
+        setBlockedUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
       }
+      if (blockedByPeer) {
+        setBlockedByPeerUserIds((prev) => prev.includes(userId) ? prev : [...prev, userId]);
+      }
+      setPreviewUserFriendshipStatus(
+        blockedByMe ||
+        blockedByPeer ||
+        blockedUserIds.includes(userId) ||
+        blockedByPeerUserIds.includes(userId)
+          ? "BLOCKED"
+          : normalizeFriendshipStatus(statusResult.data.status),
+      );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -7197,30 +6450,22 @@ export function ChatPage() {
       setContactCandidateStatusPayload(null);
       const profileResult = await searchUserByEmail(email);
       const profile = profileResult.data;
-      const relationship = profile.id === myProfile?.id
-        ? null
-        : await fetchRelationshipEntry(profile.id, myProfile?.id);
+      const statusResult = profile.id === myProfile?.id
+        ? { data: { status: "ACCEPTED" } as FriendshipStatusPayload }
+        : await getFriendshipStatus(profile.id);
+      const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
 
       setContactCandidateProfile(profile);
-      setContactCandidateStatusPayload(
-        relationship
-          ? {
-              friendshipId: relationship.friendshipId ?? undefined,
-              status: relationshipToLegacyFriendshipStatus(relationship),
-              requesterId: relationship.requesterId ?? undefined,
-              addresseeId: relationship.addresseeId ?? undefined,
-              blockedByMe: relationship.isBlockedByMe,
-              blockedByPeer: relationship.isBlockedMe,
-            }
-          : ({ status: "ACCEPTED" } as FriendshipStatusPayload),
-      );
+      setContactCandidateStatusPayload(statusResult.data);
       setUserProfileMap((prev) => ({
         ...prev,
         [profile.id]: profile,
       }));
-      if (relationship) {
-        setRelationshipEntry(relationship);
-        syncRelationshipEntryIntoBlockLists(relationship);
+      if (blockedByMe) {
+        setBlockedUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      }
+      if (blockedByPeer) {
+        setBlockedByPeerUserIds((prev) => prev.includes(profile.id) ? prev : [...prev, profile.id]);
       }
     } catch (error) {
       setContactCandidateError(toApiErrorMessage(error));
@@ -7556,55 +6801,15 @@ export function ChatPage() {
         requestDirection: null,
       };
     }
-    const storedRelationship = relationshipEntries[normalizedUserId];
-    if (storedRelationship) {
-      if (storedRelationship.status === "BLOCKED_BY_ME") {
-        return {
-          kind: "blocked_by_me",
-          status: "BLOCKED",
-          friendshipId: storedRelationship.friendshipId,
-          requestDirection: null,
-        };
-      }
-      if (storedRelationship.status === "BLOCKED_ME") {
-        return {
-          kind: "blocked_by_peer",
-          status: "BLOCKED",
-          friendshipId: storedRelationship.friendshipId,
-          requestDirection: null,
-        };
-      }
-      if (storedRelationship.status === "FRIENDS") {
-        return {
-          kind: normalizedUserId === myProfile?.id ? "self" : "friend",
-          status: "ACCEPTED",
-          friendshipId: storedRelationship.friendshipId,
-          requestDirection: null,
-        };
-      }
-      if (storedRelationship.status === "INCOMING_PENDING") {
-        return {
-          kind: "pending_received",
-          status: "PENDING",
-          friendshipId: storedRelationship.requestId ?? storedRelationship.friendshipId,
-          requestDirection: "incoming",
-        };
-      }
-      if (storedRelationship.status === "OUTGOING_PENDING") {
-        return {
-          kind: "pending_sent",
-          status: "PENDING",
-          friendshipId: storedRelationship.requestId ?? storedRelationship.friendshipId,
-          requestDirection: "outgoing",
-        };
-      }
-    }
     const blockedByMe = blockedUserIdSet.has(normalizedUserId);
     const blockedByPeer = blockedByPeerUserIdSet.has(normalizedUserId);
-    const blockRelationship = resolveBlockRelationship({ blockedByMe, blockedByPeer });
-    if (blockRelationship !== "not_blocked") {
+    if (blockedByMe || blockedByPeer) {
       return {
-        kind: blockRelationship,
+        kind: blockedByMe && blockedByPeer
+          ? "blocked_mutual"
+          : blockedByMe
+            ? "blocked_by_me"
+            : "blocked_by_peer",
         status: "BLOCKED",
         friendshipId: null,
         requestDirection: null,
@@ -7649,7 +6854,6 @@ export function ChatPage() {
     friendContactByUserId,
     incomingPendingRequestByUserId,
     myProfile?.id,
-    relationshipEntries,
     sentPendingRequestByUserId,
   ]);
 
@@ -7672,10 +6876,13 @@ export function ChatPage() {
 
     const status = normalizeFriendshipStatus(contactCandidateStatusPayload.status);
     const { blockedByMe, blockedByPeer } = resolveBlockedState(contactCandidateStatusPayload);
-    const blockRelationship = resolveBlockRelationship({ blockedByMe, blockedByPeer });
-    if (status === "BLOCKED" || blockRelationship !== "not_blocked") {
+    if (status === "BLOCKED" || blockedByMe || blockedByPeer) {
       return {
-        kind: blockRelationship === "not_blocked" ? "blocked_by_peer" : blockRelationship,
+        kind: blockedByMe && blockedByPeer
+          ? "blocked_mutual"
+          : blockedByMe
+            ? "blocked_by_me"
+            : "blocked_by_peer",
         status: "BLOCKED",
         friendshipId: contactCandidateStatusPayload.friendshipId ?? null,
         requestDirection: null,
@@ -7796,18 +7003,11 @@ export function ChatPage() {
   }, [normalizedContactsSearchQuery, pendingFriendRequests, userProfileMap]);
 
   const filteredSentPendingFriendRequests = useMemo(() => {
-    const visibleSentRequests = sentPendingFriendRequests.filter((request) => (
-      !blockedUserIdSet.has(request.addresseeId) &&
-      !blockedByPeerUserIdSet.has(request.addresseeId) &&
-      !friendUserIdSet.has(request.addresseeId) &&
-      normalizeFriendshipStatus(request.status) === "PENDING"
-    ));
-
     if (!normalizedContactsSearchQuery) {
-      return visibleSentRequests;
+      return sentPendingFriendRequests;
     }
 
-    return visibleSentRequests.filter((request) => {
+    return sentPendingFriendRequests.filter((request) => {
       const profile = userProfileMap[request.addresseeId];
       const haystacks = [
         profile?.fullName ?? "",
@@ -7818,16 +7018,7 @@ export function ChatPage() {
         value.toLowerCase().includes(normalizedContactsSearchQuery),
       );
     });
-  }, [
-    blockedByPeerUserIdSet,
-    blockedUserIdSet,
-    friendUserIdSet,
-    normalizedContactsSearchQuery,
-    sentPendingFriendRequests,
-    userProfileMap,
-  ]);
-  const receivedRequestsCount = filteredPendingFriendRequests.length;
-  const sentRequestsCount = filteredSentPendingFriendRequests.length;
+  }, [normalizedContactsSearchQuery, sentPendingFriendRequests, userProfileMap]);
 
   const unreadFromConversations = conversations.reduce(
     (sum, item) => sum + Math.max(0, item.unreadCount ?? 0),
@@ -7843,47 +7034,7 @@ export function ChatPage() {
   const activeConversationForView = activeConversation
     ? {
       ...activeConversation,
-      ...(activeConversation.type === "group"
-        ? {
-            participants:
-              groupSettingsMap[activeConversation.id]?.participants ??
-              activeConversation.participants,
-            admins:
-              groupSettingsMap[activeConversation.id]?.admins ??
-              activeConversation.admins,
-            ownerId:
-              groupSettingsMap[activeConversation.id]?.ownerId ??
-              activeConversation.ownerId,
-            avatar:
-              groupSettingsMap[activeConversation.id]?.avatar ??
-              activeConversation.avatar,
-            name:
-              groupSettingsMap[activeConversation.id]?.name ??
-              activeConversation.name,
-          }
-        : {}),
-      name: getConversationDisplayName(
-        activeConversation.type === "group" && groupSettingsMap[activeConversation.id]
-          ? {
-              ...activeConversation,
-              participants:
-                groupSettingsMap[activeConversation.id]?.participants ??
-                activeConversation.participants,
-              admins:
-                groupSettingsMap[activeConversation.id]?.admins ??
-                activeConversation.admins,
-              ownerId:
-                groupSettingsMap[activeConversation.id]?.ownerId ??
-                activeConversation.ownerId,
-              avatar:
-                groupSettingsMap[activeConversation.id]?.avatar ??
-                activeConversation.avatar,
-              name:
-                groupSettingsMap[activeConversation.id]?.name ??
-                activeConversation.name,
-            }
-          : activeConversation,
-      ),
+      name: getConversationDisplayName(activeConversation),
     }
     : null;
 
@@ -7893,13 +7044,13 @@ export function ChatPage() {
       : null;
 
   const isActiveDirectPeerFriend = Boolean(
-    activeDirectPeerUserId && activePeerRelationship.status === "FRIENDS",
+    activeDirectPeerUserId && friendUserIdSet.has(activeDirectPeerUserId),
   );
   const isActiveDirectPeerBlockedByMe = Boolean(
-    activeDirectPeerUserId && activePeerRelationship.status === "BLOCKED_BY_ME",
+    activeDirectPeerUserId && blockedUserIdSet.has(activeDirectPeerUserId),
   );
   const isActiveDirectPeerBlockedByPeer = Boolean(
-    activeDirectPeerUserId && activePeerRelationship.status === "BLOCKED_ME",
+    activeDirectPeerUserId && blockedByPeerUserIdSet.has(activeDirectPeerUserId),
   );
   const isActiveDirectPeerRejectingMessages = Boolean(
     activeDirectPeerUserId && peerRejectedMessageUserIds[activeDirectPeerUserId],
@@ -7912,41 +7063,21 @@ export function ChatPage() {
     activeConversationForView &&
       activeConversationForView.type !== "group" &&
       activeDirectPeerUserId &&
-      activePeerRelationship.status === "NONE",
+      !friendUserIdSet.has(activeDirectPeerUserId),
   );
   const activeIncomingPendingFriendRequest = activeDirectPeerUserId
-    ? activePeerRelationship.status === "INCOMING_PENDING"
-      ? {
-          friendshipId:
-            activePeerRelationship.requestId ??
-            activePeerRelationship.friendshipId ??
-            "",
-          requesterId: activePeerRelationship.requesterId ?? activeDirectPeerUserId,
-          addresseeId: activePeerRelationship.addresseeId ?? myProfile?.id ?? "",
-          status: "PENDING",
-        }
-      : pendingFriendRequests.find(
-          (item) =>
-            item.requesterId === activeDirectPeerUserId &&
-            normalizeFriendshipStatus(item.status) === "PENDING",
-        ) ?? null
+    ? pendingFriendRequests.find(
+      (item) =>
+        item.requesterId === activeDirectPeerUserId &&
+        normalizeFriendshipStatus(item.status) === "PENDING",
+    ) ?? null
     : null;
   const activeSentPendingFriendRequest = activeDirectPeerUserId
-    ? activePeerRelationship.status === "OUTGOING_PENDING"
-      ? {
-          friendshipId:
-            activePeerRelationship.requestId ??
-            activePeerRelationship.friendshipId ??
-            "",
-          requesterId: activePeerRelationship.requesterId ?? myProfile?.id ?? "",
-          addresseeId: activePeerRelationship.addresseeId ?? activeDirectPeerUserId,
-          status: "PENDING",
-        }
-      : sentPendingFriendRequests.find(
-          (item) =>
-            item.addresseeId === activeDirectPeerUserId &&
-            normalizeFriendshipStatus(item.status) === "PENDING",
-        ) ?? null
+    ? sentPendingFriendRequests.find(
+      (item) =>
+        item.addresseeId === activeDirectPeerUserId &&
+        normalizeFriendshipStatus(item.status) === "PENDING",
+    ) ?? null
     : null;
   const directStrangerActionMode: "add-or-block" | "incoming-request" | "outgoing-request" | null =
     !activeConversationForView ||
@@ -7958,22 +7089,16 @@ export function ChatPage() {
       ? null
       : activeIncomingPendingFriendRequest
         ? "incoming-request"
-        : activeSentPendingFriendRequest ||
-            activePeerRelationship.status === "OUTGOING_PENDING" ||
-            normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
+        : activeSentPendingFriendRequest || normalizeFriendshipStatus(activeDirectFriendshipStatus) === "PENDING"
           ? "outgoing-request"
           : "add-or-block";
   const activeDirectRelationshipBadgeLabel =
     !activeConversationForView || activeConversationForView.type === "group"
       ? null
-      : isActiveDirectPeerBlockedByMe
+      : isActiveDirectPeerBlockedByMe || isActiveDirectPeerBlockedByPeer
         ? language === "vi"
           ? "Da chan"
-          : "You blocked"
-        : isActiveDirectPeerBlockedByPeer
-          ? language === "vi"
-            ? "Bi chan"
-            : "Blocked you"
+          : "Blocked"
         : isActiveDirectPeerFriend
           ? language === "vi"
             ? "Ban be"
@@ -8021,60 +7146,24 @@ export function ChatPage() {
     ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
     : false;
 
-  const activePinnedMessageItems = useMemo(() => {
-    if (activeConversationForView?.type !== "group") {
-      return [] as PinnedBoardItem[];
-    }
-
-    return (groupSettingsMap[activeConversationForView.id]?.pinnedMessages ?? []).map(
-      (item) => ({
-        id: `pin:${item.sourceMessageId}`,
-        itemType: "pin" as const,
-        sourceMessageId: item.sourceMessageId,
-        title: item.title,
-        preview: item.preview,
-        createdAtMs: item.createdAtMs,
-      }),
-    );
-  }, [
-    activeConversationForView?.id,
-    activeConversationForView?.type,
-    groupSettingsMap,
-  ]);
-
   const activePinnedBoardItems = useMemo(() => {
     if (activeConversationForView?.type !== "group") {
       return [] as PinnedBoardItem[];
     }
 
-    const pinnedBySource = new Map<string, PinnedBoardItem>();
-
-    const settingsPinnedMessages =
-      activeConversationForView?.type === "group"
-        ? groupSettingsMap[activeConversationForView.id]?.pinnedMessages ?? []
-        : [];
-
-    for (const item of settingsPinnedMessages) {
-      const sourceMessageId = String(item.sourceMessageId ?? "").trim();
-      if (!sourceMessageId) {
-        continue;
-      }
-      pinnedBySource.set(sourceMessageId, {
-        id: `pin-${sourceMessageId}`,
-        itemType: "pin",
-        sourceMessageId,
-        title: String(item.title ?? "").trim() || (language === "vi" ? "Tin nhan da ghim" : "Pinned message"),
-        preview: String(item.preview ?? "").trim(),
-        createdAtMs: Number.isFinite(item.createdAtMs) ? item.createdAtMs : 0,
-      });
-    }
-
-    const pinnedNotes = messages
+    const orderedEvents = messages
       .map((item) => parsePinBoardEvent(item))
       .filter((item): item is PinBoardEvent => Boolean(item))
       .sort((a, b) => a.createdAtMs - b.createdAtMs);
 
-    for (const event of pinnedNotes) {
+    const pinnedBySource = new Map<string, PinnedBoardItem>();
+
+    for (const event of orderedEvents) {
+      if (event.kind === "UNPIN_MESSAGE") {
+        pinnedBySource.delete(event.sourceMessageId);
+        continue;
+      }
+
       if (!event.pinToTop) {
         pinnedBySource.delete(event.sourceMessageId);
         continue;
@@ -8091,7 +7180,7 @@ export function ChatPage() {
     }
 
     return Array.from(pinnedBySource.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
-  }, [messages, activeConversationForView?.id, activeConversationForView?.type, groupSettingsMap, language]);
+  }, [messages, activeConversationForView?.id, activeConversationForView?.type]);
 
   const latestPinnedSummary = useMemo(() => {
     const latest = activePinnedBoardItems[0];
@@ -8185,7 +7274,7 @@ export function ChatPage() {
                   title: language === "vi" ? "Dang cho phan hoi" : "Waiting for reply",
                   description:
                     language === "vi"
-                      ? "Ban da gui loi moi ket ban. Trong luc cho xac nhan, ban van co the thu hoi loi moi hoac chan."
+                      ? "Ban da gui loi moi ket ban. Trong luc cho xac nhan, ban van co the huy loi moi hoac chan."
                       : "You already sent a friend request. While waiting, you can cancel it or block this user.",
                 }
               : isActiveDirectPeerStranger
@@ -8234,31 +7323,14 @@ export function ChatPage() {
 
   const remoteCallStreamList = useMemo(() => Object.values(remoteCallStreams), [remoteCallStreams]);
 
+  const activeGroupMembers = activeConversationForView?.type === "group"
+    ? activeConversationForView.participants ?? []
+    : [];
+
   const activeGroupSettings =
     activeConversationForView?.type === "group"
       ? groupSettingsMap[activeConversationForView.id] ?? null
       : null;
-
-  const activeGroupMembers = activeConversationForView?.type === "group"
-    ? activeGroupSettings?.participants ??
-      activeConversationForView.participants ??
-      []
-    : [];
-
-  const activeGroupPendingMembers = activeConversationForView?.type === "group"
-    ? groupSettingsMap[activeConversationForView.id]?.pendingParticipants ?? []
-    : [];
-
-  const canComposeInActiveConversation = activeConversationForView?.type === "group"
-    ? !activeGroupSettings?.onlyAdminsCanMessage ||
-      Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)
-    : true;
-
-  const composeBlockedMessage = activeConversationForView?.type === "group" && !canComposeInActiveConversation
-    ? language === "vi"
-      ? "Chỉ trưởng nhóm và phó nhóm được gửi tin nhắn vào nhóm này"
-      : "Only the owner and admins can send messages in this group"
-    : null;
 
   const canComposeGroupMessage = (() => {
     if (activeConversationForView?.type !== "group") {
@@ -8770,11 +7842,9 @@ export function ChatPage() {
                                     ? language === "vi" ? "Da nhan loi moi" : "Request received"
                                     : contactCandidateRelationship.kind === "pending_sent"
                                       ? language === "vi" ? "Da gui loi moi" : "Request sent"
-                                      : contactCandidateRelationship.kind === "blocked_by_me"
-                                        ? language === "vi" ? "Da chan" : "You blocked"
-                                        : contactCandidateRelationship.kind === "blocked_by_peer"
-                                          ? language === "vi" ? "Bi chan" : "Blocked you"
-                                          : language === "vi" ? "Co the ket ban" : "Can add friend"}
+                                      : contactCandidateRelationship.status === "BLOCKED"
+                                        ? language === "vi" ? "Da chan" : "Blocked"
+                                        : language === "vi" ? "Co the ket ban" : "Can add friend"}
                             </span>
                           </div>
 
@@ -8827,22 +7897,17 @@ export function ChatPage() {
                                 <button
                                   type="button"
                                   disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
-                                  onClick={() =>
-                                    void onCancelFriendRequest(
-                                      contactCandidateRelationship.friendshipId!,
-                                      contactCandidateProfile?.id,
-                                    )
-                                  }
+                                  onClick={() => void onCancelFriendRequest(contactCandidateRelationship.friendshipId!)}
                                   className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                 >
-                                  {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
+                                  {language === "vi" ? "Huy loi moi" : "Cancel request"}
                                 </button>
                               )}
 
-                              {contactCandidateRelationship.kind === "stranger" &&
-                                contactCandidateRelationship.status !== "BLOCKED" &&
-                                !blockedUserIdSet.has(contactCandidateProfile.id) &&
-                                !blockedByPeerUserIdSet.has(contactCandidateProfile.id) && (
+                              {(contactCandidateRelationship.kind === "stranger" ||
+                                contactCandidateRelationship.status === "REJECTED" ||
+                                contactCandidateRelationship.status === "DECLINED" ||
+                                contactCandidateRelationship.status === "CANCELLED") && (
                                 <button
                                   type="button"
                                   disabled={isUpdatingPeerRelationship}
@@ -8853,15 +7918,8 @@ export function ChatPage() {
                                 </button>
                               )}
 
-                              {contactCandidateRelationship.kind === "blocked_by_peer" && (
-                                <span className="rounded-xl border border-rose-300/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-                                  {language === "vi"
-                                    ? "Nguoi nay da chan ban. Khong the gui loi moi ket ban."
-                                    : "This user blocked you. Cannot send friend request."}
-                                </span>
-                              )}
-
-                              {contactCandidateRelationship.kind === "blocked_by_me" ? (
+                              {contactCandidateRelationship.kind === "blocked_by_me" ||
+                              contactCandidateRelationship.kind === "blocked_mutual" ? (
                                 <button
                                   type="button"
                                   disabled={isUpdatingPeerRelationship}
@@ -8871,14 +7929,16 @@ export function ChatPage() {
                                   {language === "vi" ? "Bo chan" : "Unblock"}
                                 </button>
                               ) : (
-                                <button
-                                  type="button"
-                                  disabled={isUpdatingPeerRelationship}
-                                  onClick={() => void onBlockUser(contactCandidateProfile.id)}
-                                  className="rounded-xl border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
-                                >
-                                  {language === "vi" ? "Chan" : "Block"}
-                                </button>
+                                contactCandidateRelationship.kind !== "blocked_by_peer" && (
+                                  <button
+                                    type="button"
+                                    disabled={isUpdatingPeerRelationship}
+                                    onClick={() => void onBlockUser(contactCandidateProfile.id)}
+                                    className="rounded-xl border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
+                                  >
+                                    {language === "vi" ? "Chan" : "Block"}
+                                  </button>
+                                )
                               )}
                             </div>
                           )}
@@ -8946,9 +8006,7 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi"
-                              ? `Loi moi ket ban den (${receivedRequestsCount})`
-                              : `Incoming requests (${receivedRequestsCount})`}
+                            {language === "vi" ? "Loi moi ket ban den" : "Incoming requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
@@ -9021,9 +8079,7 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi"
-                              ? `Loi moi da gui (${sentRequestsCount})`
-                              : `Sent requests (${sentRequestsCount})`}
+                            {language === "vi" ? "Loi moi da gui" : "Sent requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
@@ -9038,7 +8094,6 @@ export function ChatPage() {
                               const profile = userProfileMap[request.addresseeId];
                               const displayName = profile?.fullName ?? `User ${request.addresseeId.slice(0, 8)}`;
                               const avatarUrl = resolveMediaUrl(profile?.avatarUrl ?? null);
-                              const sentTime = request.createdAt ? new Date(request.createdAt).toLocaleDateString() : (language === "vi" ? "Vai giay truoc" : "Just now");
                               return (
                                 <div
                                   key={request.friendshipId}
@@ -9065,7 +8120,7 @@ export function ChatPage() {
                                     >
                                       <p className="truncate text-sm font-semibold text-slate-100">{displayName}</p>
                                       <p className="truncate text-xs text-slate-400">
-                                        {sentTime} • {profile?.email ?? request.addresseeId}
+                                        {profile?.email ?? request.addresseeId}
                                       </p>
                                     </button>
                                   </div>
@@ -9073,15 +8128,17 @@ export function ChatPage() {
                                     <button
                                       type="button"
                                       disabled={processingFriendshipId === request.friendshipId}
-                                      onClick={() =>
-                                        void onCancelFriendRequest(
-                                          request.friendshipId,
-                                          request.addresseeId,
-                                        )
-                                      }
+                                      onClick={() => void onCancelFriendRequest(request.friendshipId)}
                                       className="flex-1 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                     >
-                                      {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
+                                      {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void onOpenFriendConversation(request.addresseeId)}
+                                      className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5"
+                                    >
+                                      {language === "vi" ? "Nhan tin" : "Message"}
                                     </button>
                                   </div>
                                 </div>
@@ -9568,7 +8625,6 @@ export function ChatPage() {
                 conversation={activeConversationForView}
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
-                pendingMembers={activeGroupPendingMembers}
                 friendContacts={friendContacts}
                 pinnedMessages={activePinnedBoardItems}
                 onOpenPinnedMessage={(sourceMessageId: string) => {
@@ -9611,11 +8667,6 @@ export function ChatPage() {
                   requireApprovalToJoin?: boolean;
                   highlightAdminMessages?: boolean;
                   allowMemberInvite?: boolean;
-                  allowMemberEditGroupInfo?: boolean;
-                  allowMemberPinBoardItems?: boolean;
-                  allowMemberCreateNotes?: boolean;
-                  allowMemberCreateReminders?: boolean;
-                  allowMemberCreatePolls?: boolean;
                   transferOwnerId?: string;
                 }) => {
                   void onUpdateActiveGroupSettings(payload);
@@ -9628,12 +8679,6 @@ export function ChatPage() {
                 isUpdatingGroupProfile={isUpdatingGroupProfile}
                 onRemoveMember={(userId: string) => {
                   void onRemoveGroupMember(userId);
-                }}
-                onApprovePendingMember={(userId: string) => {
-                  void onApprovePendingGroupMember(userId);
-                }}
-                onRejectPendingMember={(userId: string) => {
-                  void onRejectPendingGroupMember(userId);
                 }}
                 onToggleAdmin={(userId: string, admin: boolean) => {
                   void onToggleGroupAdmin(userId, admin);
@@ -9709,29 +8754,17 @@ export function ChatPage() {
                     void onPinGroupMessage(targetMessage);
                   }}
                   onUnpinMessage={(targetMessage) => {
-                    const resolvedSourceMessageId = String(
-                      (targetMessage as { id?: string; sourceMessageId?: string }).id ??
-                      (targetMessage as { id?: string; sourceMessageId?: string }).sourceMessageId ??
-                      "",
-                    ).trim();
-                    if (!resolvedSourceMessageId) {
-                      return;
-                    }
-                    void onUnpinGroupMessage(resolvedSourceMessageId);
+                    void onUnpinGroupMessage(targetMessage.id);
                   }}
-                  canPinMessages={Boolean(
-                    activeGroupSettings?.isOwner ||
-                    activeGroupSettings?.isAdmin ||
-                    activeGroupSettings?.allowMembersPinBoardItems ||
-                    activeGroupSettings?.allowMemberPinBoardItems,
-                  )}
                   onVotePollMessage={(targetMessage, optionId) => {
                     void onVoteGroupPoll(targetMessage, optionId);
                   }}
                   onClosePollMessage={(targetMessage) => {
                     void onCloseGroupPoll(targetMessage);
                   }}
-                  canManageGroupPoll={Boolean(activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin)}
+                  canManageGroupPoll={Boolean(
+                    activeGroupSettings?.isOwner || activeGroupSettings?.isAdmin,
+                  )}
                   pinnedMessages={activePinnedBoardItems}
                   latestPinnedSummary={latestPinnedSummary}
                   scrollToMessageRequest={scrollToMessageRequest}
@@ -9855,10 +8888,7 @@ export function ChatPage() {
                 }}
                 onCancelFriendRequestForPeer={() => {
                   if (activeSentPendingFriendRequest) {
-                    void onCancelFriendRequest(
-                      activeSentPendingFriendRequest.friendshipId,
-                      activeDirectPeerUserId ?? undefined,
-                    );
+                    void onCancelFriendRequest(activeSentPendingFriendRequest.friendshipId);
                   }
                 }}
                 onBlockPeer={() => {
@@ -9922,20 +8952,15 @@ export function ChatPage() {
         profile={previewUserProfile}
         isOpen={isUserPreviewOpen}
         isCurrentUser={Boolean(previewUserProfile?.id && previewUserProfile.id === myProfile?.id)}
-        friendshipStatus={previewUserRelationshipFromStore.status}
-        friendRequestDirection={relationshipToRequestDirection(previewUserRelationshipFromStore)}
+        friendshipStatus={previewUserFriendshipStatus}
+        friendRequestDirection={previewUserRelationship.requestDirection}
         isSubmittingFriend={isSubmittingFriend || isLoadingUserPreview || isUpdatingPeerRelationship}
         isProcessingFriendship={
-          Boolean(
-            (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) &&
-              processingFriendshipId ===
-                (previewUserRelationshipFromStore.requestId ??
-                  previewUserRelationship.friendshipId),
-          ) ||
+          Boolean(previewUserRelationship.friendshipId && processingFriendshipId === previewUserRelationship.friendshipId) ||
           isUpdatingPeerRelationship
         }
-        blockedByMe={previewUserRelationshipFromStore.isBlockedByMe}
-        blockedByPeer={previewUserRelationshipFromStore.isBlockedMe}
+        blockedByMe={Boolean(previewUserProfile?.id && blockedUserIdSet.has(previewUserProfile.id))}
+        blockedByPeer={Boolean(previewUserProfile?.id && blockedByPeerUserIdSet.has(previewUserProfile.id))}
         isSubmittingBlock={isUpdatingPeerRelationship}
         onClose={() => {
           setIsUserPreviewOpen(false);
@@ -9948,28 +8973,18 @@ export function ChatPage() {
           }
         }}
         onAcceptFriendRequest={() => {
-          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
-            void onAcceptFriendRequest(
-              previewUserRelationshipFromStore.requestId ??
-                previewUserRelationship.friendshipId!,
-            );
+          if (previewUserRelationship.friendshipId) {
+            void onAcceptFriendRequest(previewUserRelationship.friendshipId);
           }
         }}
         onDeclineFriendRequest={() => {
-          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
-            void onDeclineFriendRequest(
-              previewUserRelationshipFromStore.requestId ??
-                previewUserRelationship.friendshipId!,
-            );
+          if (previewUserRelationship.friendshipId) {
+            void onDeclineFriendRequest(previewUserRelationship.friendshipId);
           }
         }}
         onCancelFriendRequest={() => {
-          if (previewUserRelationshipFromStore.requestId ?? previewUserRelationship.friendshipId) {
-            void onCancelFriendRequest(
-              previewUserRelationshipFromStore.requestId ??
-                previewUserRelationship.friendshipId!,
-              previewUserProfile?.id ?? undefined,
-            );
+          if (previewUserRelationship.friendshipId) {
+            void onCancelFriendRequest(previewUserRelationship.friendshipId);
           }
         }}
         onRemoveFriend={() => {

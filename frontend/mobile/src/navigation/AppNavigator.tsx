@@ -14,12 +14,13 @@ import { ChatDetailScreen } from "@/modules/chat/screens/ChatDetailScreen";
 import { GroupSettingsScreen } from "@/modules/chat/screens/GroupSettingsScreen";
 import { ContactsScreen } from "@/modules/chat/screens/ContactsScreen";
 import { ProfileScreen } from "@/modules/profile/screens/ProfileScreen";
+import { SettingsScreen } from "@/modules/profile/screens/SettingsScreen";
 import { UserProfileScreen } from "@/modules/profile/screens/UserProfileScreen";
 import { getMyProfile } from "@/modules/chat/api/chatApi";
 import { useSocket } from "@/modules/chat/hooks/useSocket";
 import { useUnread } from "@/modules/chat/hooks/useUnread";
 import { useFriendRequestStore } from "@/modules/chat/store/friendRequestStore";
-import type { AuthStackParamList, ChatStackParamList, RootTabParamList } from "@/shared/types/navigation";
+import type { AuthStackParamList, ChatStackParamList, ProfileStackParamList, RootTabParamList } from "@/shared/types/navigation";
 import { colors, spacing, typography, shadows } from "@/shared/theme/colors";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -28,6 +29,7 @@ import { colors, spacing, typography, shadows } from "@/shared/theme/colors";
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
+const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const Tabs = createBottomTabNavigator<RootTabParamList>();
 
 // Tab Bar Icons (SF Symbols style)
@@ -74,6 +76,21 @@ function ChatStackNavigator() {
       <ChatStack.Screen name="GroupSettings" component={GroupSettingsScreen} />
       <ChatStack.Screen name="UserProfile" component={UserProfileScreen} />
     </ChatStack.Navigator>
+  );
+}
+
+function ProfileStackNavigator() {
+  return (
+    <ProfileStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right",
+        contentStyle: { backgroundColor: colors.bg },
+      }}
+    >
+      <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
+      <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+    </ProfileStack.Navigator>
   );
 }
 
@@ -128,7 +145,7 @@ function MainTabs() {
       />
       <Tabs.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileStackNavigator}
         options={{
           title: "Cá nhân",
           tabBarIcon: ({ focused }) => <TabBarIcon name="profile" focused={focused} />,

@@ -3,7 +3,7 @@ import type {
   PendingFriendRequestItem,
   FriendContactItem,
   RelationshipStatusPayload,
-} from "../api/chatApi";
+} from "@/shared/types/api";
 
 export type RelationshipStatus =
   | "NONE"

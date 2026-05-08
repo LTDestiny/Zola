@@ -1,366 +1,332 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  Animated,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { deleteMyProfile, updateMyProfile } from "@/modules/chat/api/chatApi";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { AvatarUploader } from "@/modules/profile/components/AvatarUploader";
+import { InputField } from "@/modules/profile/components/InputField";
+import { ProfileHeader } from "@/modules/profile/components/ProfileHeader";
+import { normalizeGenderLabel } from "@/modules/profile/utils/profileFormat";
+import { deleteMyProfile, getMyProfile, updateMyProfile } from "@/modules/chat/api/chatApi";
 import { useAuthStore } from "@/modules/auth/authStore";
+import type { ProfileStackParamList } from "@/shared/types/navigation";
 import { colors, spacing, typography, borderRadius, shadows } from "@/shared/theme/colors";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PROFILE SCREEN - Premium iOS Settings Style
-// ═══════════════════════════════════════════════════════════════════════════════
+type ProfileNavigation = NativeStackNavigationProp<ProfileStackParamList, "ProfileMain">;
 
-type SettingsItemProps = {
-  icon: string;
-  label: string;
-  value?: string;
-  onPress: () => void;
-  danger?: boolean;
-  showChevron?: boolean;
-};
+const genderOptions = [
+  { label: "Not set", value: "" },
+  { label: "Male", value: "MALE" },
+  { label: "Female", value: "FEMALE" },
+  { label: "Other", value: "OTHER" },
+];
 
-function SettingsItem({ icon, label, value, onPress, danger, showChevron = true }: SettingsItemProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.98,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const onPressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 3,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <Pressable
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        style={({ pressed }) => [
-          styles.settingsItem,
-          pressed && styles.settingsItemPressed,
-        ]}
-      >
-        <View style={styles.settingsItemLeft}>
-          <View style={[styles.iconContainer, danger && styles.iconContainerDanger]}>
-            <Text style={styles.iconText}>{icon}</Text>
-          </View>
-          <Text style={[styles.settingsLabel, danger && styles.settingsLabelDanger]}>
-            {label}
-          </Text>
-        </View>
-        <View style={styles.settingsItemRight}>
-          {value && <Text style={styles.settingsValue}>{value}</Text>}
-          {showChevron && (
-            <Text style={[styles.chevron, danger && styles.chevronDanger]}>›</Text>
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function getInitials(name: string) {
-  const parts = name.split(" ");
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return name.substring(0, 2).toUpperCase();
+function createDateParts(value?: string | null) {
+  const [year = "", month = "", day = ""] = (value ?? "").split("-");
+  return { year, month, day };
 }
 
 export function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<ProfileNavigation>();
   const me = useAuthStore((s) => s.me);
-  const logout = useAuthStore((s) => s.logout);
   const setProfile = useAuthStore((s) => s.setProfile);
+  const logout = useAuthStore((s) => s.logout);
 
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [deletingProfile, setDeletingProfile] = useState(false);
-  const [fullNameDraft, setFullNameDraft] = useState("");
-  const [phoneDraft, setPhoneDraft] = useState("");
-  const [genderDraft, setGenderDraft] = useState("");
-  const [birthdateDraft, setBirthdateDraft] = useState("");
+  const [loading, setLoading] = useState(!me);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [genderPickerOpen, setGenderPickerOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  const meInitials = useMemo(() => getInitials(me?.fullName ?? "U"), [me?.fullName]);
+  const [fullName, setFullName] = useState(me?.fullName ?? "");
+  const [phone, setPhone] = useState(me?.phone ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(me?.avatarUrl ?? "");
+  const [gender, setGender] = useState(me?.gender ?? "");
+  const [birthdate, setBirthdate] = useState(me?.birthdate ?? "");
+  const [dateParts, setDateParts] = useState(createDateParts(me?.birthdate));
 
-  const openEditModal = () => {
-    setFullNameDraft(me?.fullName ?? "");
-    setPhoneDraft(me?.phone ?? "");
-    setGenderDraft(me?.gender ?? "");
-    setBirthdateDraft(me?.birthdate ?? "");
-    setEditModalVisible(true);
-  };
+  useEffect(() => {
+    setFullName(me?.fullName ?? "");
+    setPhone(me?.phone ?? "");
+    setAvatarUrl(me?.avatarUrl ?? "");
+    setGender(me?.gender ?? "");
+    setBirthdate(me?.birthdate ?? "");
+    setDateParts(createDateParts(me?.birthdate));
+  }, [me]);
 
-  const handleEditProfile = () => {
-    openEditModal();
-  };
+  useEffect(() => {
+    if (me) return;
 
-  const handleChangePassword = () => {
-    Alert.alert("Thông báo", "Đổi mật khẩu hiện đang thực hiện ở web. Mobile sẽ cập nhật trong bản tới.");
-  };
+    let mounted = true;
+    setLoading(true);
+    getMyProfile()
+      .then((response) => {
+        if (mounted) setProfile(response.data);
+      })
+      .catch(() => {
+        if (mounted) Alert.alert("Profile", "Unable to load your profile.");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
-  const handleNotificationSettings = () => {
-    Alert.alert("Thông báo", "Thiết lập thông báo sẽ được cập nhật ở phiên bản kế tiếp.");
-  };
+    return () => {
+      mounted = false;
+    };
+  }, [me, setProfile]);
 
-  const handlePrivacySettings = () => {
-    Alert.alert("Thông báo", "Thiết lập quyền riêng tư sẽ được cập nhật ở phiên bản kế tiếp.");
-  };
+  const hasChanges = useMemo(() => {
+    if (!me) return false;
+    return (
+      fullName.trim() !== (me.fullName ?? "") ||
+      phone.trim() !== (me.phone ?? "") ||
+      avatarUrl.trim() !== (me.avatarUrl ?? "") ||
+      gender !== (me.gender ?? "") ||
+      birthdate !== (me.birthdate ?? "")
+    );
+  }, [avatarUrl, birthdate, fullName, gender, me, phone]);
 
-  const handleHelpSupport = () => {
-    Alert.alert("Hỗ trợ", "Liên hệ support@zola.vn để được hỗ trợ.");
-  };
-
-  const handleAbout = () => {
-    Alert.alert("Về ứng dụng", "Zola Messenger Mobile v1.0.0");
-  };
-
-  const handleLogout = () => {
-    void logout();
-  };
-
-  const handleSaveProfile = async () => {
-    const nextName = fullNameDraft.trim();
+  const handleSave = useCallback(async () => {
+    const nextName = fullName.trim();
     if (!nextName) {
-      Alert.alert("Thông báo", "Họ tên không được để trống");
+      Alert.alert("Profile", "Full name is required.");
       return;
     }
 
-    setSavingProfile(true);
+    setSaving(true);
     try {
       const response = await updateMyProfile({
         fullName: nextName,
-        phone: phoneDraft.trim() || null,
-        gender: genderDraft.trim() || null,
-        birthdate: birthdateDraft.trim() || null,
+        phone: phone.trim() || null,
+        avatarUrl: avatarUrl.trim() || null,
+        gender: gender || null,
+        birthdate: birthdate || null,
+        hideBirthdate: Boolean(me?.hideBirthdate),
+        hideEmail: Boolean(me?.hideEmail),
+        hidePhone: Boolean(me?.hidePhone),
+        allowStrangerMessages: me?.allowStrangerMessages !== false,
       });
       setProfile(response.data);
-      setEditModalVisible(false);
+      Alert.alert("Profile", "Information saved.");
     } catch {
-      Alert.alert("Thông báo", "Không thể cập nhật hồ sơ");
+      Alert.alert("Profile", "Unable to save profile. Please try again.");
     } finally {
-      setSavingProfile(false);
+      setSaving(false);
     }
-  };
+  }, [avatarUrl, birthdate, fullName, gender, me, phone, setProfile]);
 
-  const handleDeleteProfile = () => {
+  const handleDeleteAccount = useCallback(() => {
     Alert.alert(
-      "Xóa tài khoản",
-      "Bạn có chắc chắn muốn xóa tài khoản? Hành động này không thể hoàn tác.",
+      "Delete account",
+      "This permanently deletes your profile and cannot be undone.",
       [
-        { text: "Hủy", style: "cancel" },
+        { text: "Cancel", style: "cancel" },
         {
-          text: deletingProfile ? "Đang xóa..." : "Xóa",
+          text: deleting ? "Deleting..." : "Delete",
           style: "destructive",
           onPress: async () => {
-            setDeletingProfile(true);
+            setDeleting(true);
             try {
               await deleteMyProfile();
               await logout();
             } catch {
-              Alert.alert("Thông báo", "Không thể xóa tài khoản");
+              Alert.alert("Delete account", "Unable to delete account. Please try again.");
             } finally {
-              setDeletingProfile(false);
+              setDeleting(false);
             }
           },
         },
       ],
     );
-  };
+  }, [deleting, logout]);
+
+  const applyDate = useCallback(() => {
+    const year = dateParts.year.trim();
+    const month = dateParts.month.trim().padStart(2, "0");
+    const day = dateParts.day.trim().padStart(2, "0");
+    const next = `${year}-${month}-${day}`;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31) {
+      Alert.alert("Birthdate", "Use a valid date in YYYY-MM-DD format.");
+      return;
+    }
+
+    setBirthdate(next);
+    setDatePickerOpen(false);
+  }, [dateParts]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <View style={styles.skeletonHeader} />
+        <View style={styles.skeletonLineLarge} />
+        <View style={styles.skeletonLine} />
+        <ActivityIndicator color={colors.primary} style={styles.loadingSpinner} />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Header with Safe Area */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={styles.headerTitle}>Cá nhân</Text>
-      </View>
-
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.container}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + spacing.xl },
-        ]}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + 108 },
+        ]}
       >
-        {/* Profile Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {meInitials}
-              </Text>
-            </View>
-            <View style={styles.onlineIndicator} />
+        <ProfileHeader
+          fullName={fullName || me?.fullName}
+          email={me?.email}
+          avatarUrl={avatarUrl || me?.avatarUrl}
+          onPressSettings={() => navigation.navigate("Settings")}
+        />
+
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>Profile information</Text>
+          <InputField label="Full name" value={fullName} onChangeText={setFullName} placeholder="Your full name" />
+          <InputField label="Email" value={me?.email ?? ""} readonly />
+          <InputField
+            label="Phone number"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            placeholder="Add phone number"
+          />
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Avatar upload</Text>
+            <AvatarUploader
+              fullName={fullName || me?.fullName}
+              avatarUrl={avatarUrl || me?.avatarUrl}
+              uploading={uploadingAvatar}
+              onUploadingChange={setUploadingAvatar}
+              onUploaded={setAvatarUrl}
+            />
           </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.fullName}>{me?.fullName ?? "Người dùng"}</Text>
-            <Text style={styles.email}>{me?.email ?? "Chưa có email"}</Text>
-          </View>
-          <Pressable
-            onPress={handleEditProfile}
-            style={({ pressed }) => [
-              styles.editButton,
-              pressed && styles.editButtonPressed,
-            ]}
-          >
-            <Text style={styles.editButtonText}>Chỉnh sửa</Text>
-          </Pressable>
+          <InputField
+            label="Gender"
+            value={normalizeGenderLabel(gender)}
+            readonly
+            onPress={() => setGenderPickerOpen(true)}
+            rightLabel="›"
+          />
+          <InputField
+            label="Date of birth"
+            value={birthdate || "Not set"}
+            readonly
+            onPress={() => {
+              setDateParts(createDateParts(birthdate));
+              setDatePickerOpen(true);
+            }}
+            rightLabel="›"
+          />
         </View>
 
-        {/* Account Settings Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Tài khoản</Text>
-          <View style={styles.settingsCard}>
-            <SettingsItem
-              icon="👤"
-              label="Thông tin cá nhân"
-              onPress={handleEditProfile}
-            />
-            <View style={styles.separator} />
-            <SettingsItem
-              icon="🔒"
-              label="Đổi mật khẩu"
-              onPress={handleChangePassword}
-            />
-            <View style={styles.separator} />
-            <SettingsItem
-              icon="🔔"
-              label="Thông báo"
-              onPress={handleNotificationSettings}
-            />
-            <View style={styles.separator} />
-            <SettingsItem
-              icon="🛡️"
-              label="Quyền riêng tư"
-              onPress={handlePrivacySettings}
-            />
-          </View>
-        </View>
-
-        {/* General Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Chung</Text>
-          <View style={styles.settingsCard}>
-            <SettingsItem
-              icon="❓"
-              label="Trợ giúp & Hỗ trợ"
-              onPress={handleHelpSupport}
-            />
-            <View style={styles.separator} />
-            <SettingsItem
-              icon="ℹ️"
-              label="Về ứng dụng"
-              value="v1.0.0"
-              onPress={handleAbout}
-            />
-          </View>
-        </View>
-
-        {/* Logout Section */}
-        <View style={styles.section}>
-          <View style={styles.settingsCard}>
-            <SettingsItem
-              icon="🗑️"
-              label="Xóa tài khoản"
-              onPress={handleDeleteProfile}
-              danger
-              showChevron={false}
-            />
-            <View style={styles.separator} />
-            <SettingsItem
-              icon="🚪"
-              label="Đăng xuất"
-              onPress={handleLogout}
-              danger
-              showChevron={false}
-            />
-          </View>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Zola Messenger</Text>
-          <Text style={styles.footerVersion}>Phiên bản 1.0.0</Text>
-        </View>
+        <Pressable
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.deleteButton, pressed && styles.deleteButtonPressed, deleting && styles.disabled]}
+        >
+          <Text style={styles.deleteButtonText}>{deleting ? "Deleting..." : "Delete Account"}</Text>
+        </Pressable>
       </ScrollView>
 
-      <Modal
-        visible={editModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
+      <View style={[styles.stickyFooter, { paddingBottom: insets.bottom + spacing.sm }]}>
+        <Pressable
+          onPress={() => void handleSave()}
+          disabled={saving || uploadingAvatar || !hasChanges}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.saveButton,
+            pressed && styles.saveButtonPressed,
+            (saving || uploadingAvatar || !hasChanges) && styles.disabled,
+          ]}
+        >
+          {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Save Information</Text>}
+        </Pressable>
+      </View>
+
+      <Modal visible={genderPickerOpen} transparent animationType="fade" onRequestClose={() => setGenderPickerOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setGenderPickerOpen(false)}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Chỉnh sửa hồ sơ</Text>
-
-            <TextInput
-              value={fullNameDraft}
-              onChangeText={setFullNameDraft}
-              placeholder="Họ và tên"
-              placeholderTextColor={colors.placeholder}
-              style={styles.modalInput}
-            />
-            <TextInput
-              value={phoneDraft}
-              onChangeText={setPhoneDraft}
-              placeholder="Số điện thoại"
-              placeholderTextColor={colors.placeholder}
-              style={styles.modalInput}
-            />
-            <TextInput
-              value={genderDraft}
-              onChangeText={setGenderDraft}
-              placeholder="Giới tính"
-              placeholderTextColor={colors.placeholder}
-              style={styles.modalInput}
-            />
-            <TextInput
-              value={birthdateDraft}
-              onChangeText={setBirthdateDraft}
-              placeholder="Ngày sinh (YYYY-MM-DD)"
-              placeholderTextColor={colors.placeholder}
-              style={styles.modalInput}
-            />
-
-            <View style={styles.modalActions}>
+            <Text style={styles.modalTitle}>Gender</Text>
+            {genderOptions.map((option) => (
               <Pressable
-                onPress={() => setEditModalVisible(false)}
-                style={({ pressed }) => [styles.modalCancelButton, pressed && styles.modalButtonPressed]}
+                key={option.value}
+                onPress={() => {
+                  setGender(option.value);
+                  setGenderPickerOpen(false);
+                }}
+                style={styles.optionRow}
               >
-                <Text style={styles.modalCancelText}>Hủy</Text>
+                <Text style={styles.optionLabel}>{option.label}</Text>
+                {gender === option.value && <Text style={styles.optionCheck}>✓</Text>}
               </Pressable>
-              <Pressable
-                onPress={() => void handleSaveProfile()}
-                style={({ pressed }) => [styles.modalConfirmButton, pressed && styles.modalButtonPressed]}
-                disabled={savingProfile}
-              >
-                <Text style={styles.modalConfirmText}>{savingProfile ? "Đang lưu..." : "Lưu"}</Text>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setDatePickerOpen(false)}>
+          <Pressable style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Date of birth</Text>
+            <View style={styles.dateRow}>
+              <View style={styles.dateField}>
+                <InputField
+                  label="Year"
+                  value={dateParts.year}
+                  onChangeText={(value) => setDateParts((prev) => ({ ...prev, year: value.replace(/\D/g, "").slice(0, 4) }))}
+                  keyboardType="number-pad"
+                  placeholder="YYYY"
+                />
+              </View>
+              <View style={styles.dateField}>
+                <InputField
+                  label="Month"
+                  value={dateParts.month}
+                  onChangeText={(value) => setDateParts((prev) => ({ ...prev, month: value.replace(/\D/g, "").slice(0, 2) }))}
+                  keyboardType="number-pad"
+                  placeholder="MM"
+                />
+              </View>
+              <View style={styles.dateField}>
+                <InputField
+                  label="Day"
+                  value={dateParts.day}
+                  onChangeText={(value) => setDateParts((prev) => ({ ...prev, day: value.replace(/\D/g, "").slice(0, 2) }))}
+                  keyboardType="number-pad"
+                  placeholder="DD"
+                />
+              </View>
+            </View>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setDatePickerOpen(false)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={applyDate} style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText}>Apply</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -369,210 +335,143 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgSecondary,
   },
-  header: {
-    backgroundColor: colors.bg,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: {
-    ...typography.largeTitle,
-    color: colors.text,
-  },
-  scrollView: {
+  loadingContainer: {
     flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-  },
-  profileCard: {
-    backgroundColor: colors.cardElevated,
-    borderRadius: borderRadius.xl,
+    justifyContent: "center",
     padding: spacing.lg,
-    alignItems: "center",
-    ...shadows.md,
+    backgroundColor: colors.bgSecondary,
+  },
+  loadingSpinner: {
+    marginTop: spacing.xl,
+  },
+  skeletonHeader: {
+    height: 188,
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.borderLight,
     marginBottom: spacing.xl,
   },
-  avatarContainer: {
-    position: "relative",
+  skeletonLineLarge: {
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.borderLight,
     marginBottom: spacing.md,
   },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadows.lg,
+  skeletonLine: {
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.borderLight,
   },
-  avatarText: {
-    ...typography.title2,
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 32,
-  },
-  onlineIndicator: {
-    position: "absolute",
-    bottom: 4,
-    right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.online,
-    borderWidth: 3,
-    borderColor: colors.cardElevated,
-  },
-  profileInfo: {
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  fullName: {
-    ...typography.title2,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  email: {
-    ...typography.body,
-    color: colors.muted,
-  },
-  editButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.pill,
-  },
-  editButtonPressed: {
-    backgroundColor: colors.primaryDark,
-    transform: [{ scale: 0.98 }],
-  },
-  editButtonText: {
-    ...typography.subhead,
-    color: "#FFFFFF",
-    fontWeight: "600",
-  },
-  section: {
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    ...typography.footnote,
-    color: colors.muted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginLeft: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  settingsCard: {
-    backgroundColor: colors.cardElevated,
-    borderRadius: borderRadius.lg,
-    overflow: "hidden",
-    ...shadows.sm,
-  },
-  settingsItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  content: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    backgroundColor: colors.cardElevated,
+    gap: spacing.lg,
   },
-  settingsItemPressed: {
-    backgroundColor: colors.bgSecondary,
-  },
-  settingsItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.bgSecondary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: spacing.md,
-  },
-  iconContainerDanger: {
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
-  },
-  iconText: {
-    fontSize: 16,
-  },
-  settingsLabel: {
-    ...typography.body,
-    color: colors.text,
-  },
-  settingsLabelDanger: {
-    color: colors.danger,
-  },
-  settingsItemRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  settingsValue: {
-    ...typography.body,
-    color: colors.muted,
-    marginRight: spacing.xs,
-  },
-  chevron: {
-    ...typography.title3,
-    color: colors.muted,
-    opacity: 0.5,
-  },
-  chevronDanger: {
-    color: colors.danger,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginLeft: 56,
-  },
-  footer: {
-    alignItems: "center",
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-  },
-  footerText: {
-    ...typography.footnote,
-    color: colors.muted,
-    marginBottom: spacing.xs,
-  },
-  footerVersion: {
-    ...typography.caption1,
-    color: colors.placeholder,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg,
-  },
-  modalCard: {
-    width: "100%",
+  formCard: {
     borderRadius: borderRadius.xl,
     backgroundColor: colors.cardElevated,
     padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  sectionTitle: {
+    ...typography.headline,
+    color: colors.text,
+  },
+  fieldGroup: {
+    gap: spacing.xs,
+  },
+  fieldLabel: {
+    ...typography.caption1,
+    color: colors.muted,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  deleteButton: {
+    minHeight: 48,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 59, 48, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.cardElevated,
+  },
+  deleteButtonPressed: {
+    backgroundColor: "rgba(255, 59, 48, 0.08)",
+  },
+  deleteButtonText: {
+    ...typography.subhead,
+    color: colors.danger,
+    fontWeight: "700",
+  },
+  stickyFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.bg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  saveButton: {
+    minHeight: 52,
+    borderRadius: borderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    ...shadows.sm,
+  },
+  saveButtonPressed: {
+    backgroundColor: colors.primaryDark,
+  },
+  saveButtonText: {
+    ...typography.headline,
+    color: "#FFFFFF",
+  },
+  disabled: {
+    opacity: 0.55,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: colors.overlay,
+    padding: spacing.md,
+  },
+  modalCard: {
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.cardElevated,
+    padding: spacing.lg,
+    gap: spacing.sm,
     ...shadows.md,
   },
   modalTitle: {
     ...typography.title3,
     color: colors.text,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
   },
-  modalInput: {
+  optionRow: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgSecondary,
+  },
+  optionLabel: {
     ...typography.body,
     color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgSecondary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
+  },
+  optionCheck: {
+    ...typography.headline,
+    color: colors.primary,
+  },
+  dateRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  dateField: {
+    flex: 1,
   },
   modalActions: {
     flexDirection: "row",
@@ -580,30 +479,31 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  modalCancelButton: {
-    borderRadius: borderRadius.pill,
+  secondaryButton: {
+    minHeight: 44,
+    borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  modalCancelText: {
+  secondaryButtonText: {
     ...typography.subhead,
     color: colors.text,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  modalConfirmButton: {
-    borderRadius: borderRadius.pill,
+  primaryButton: {
+    minHeight: 44,
+    borderRadius: borderRadius.md,
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  modalConfirmText: {
+  primaryButtonText: {
     ...typography.subhead,
     color: "#FFFFFF",
     fontWeight: "700",
-  },
-  modalButtonPressed: {
-    opacity: 0.8,
   },
 });

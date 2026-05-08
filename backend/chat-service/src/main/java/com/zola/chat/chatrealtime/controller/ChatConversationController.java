@@ -664,35 +664,7 @@ public class ChatConversationController {
 
             messagingTemplate.convertAndSendToUser(userId, "/queue/chat", base);
 
-            ChatEventResponse unreadEvent = new ChatEventResponse(
-                "UNREAD_COUNT_UPDATED",
-                base.actorId(),
-                base.conversationId(),
-                false,
-                false,
-                null,
-                null,
-                base.unreadCount(),
-                base.totalUnreadCount(),
-                base.lastMessage(),
-                base.lastMessageAt()
-            );
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", unreadEvent);
-
-            ChatEventResponse totalUnreadEvent = new ChatEventResponse(
-                "TOTAL_UNREAD_UPDATED",
-                base.actorId(),
-                base.conversationId(),
-                false,
-                false,
-                null,
-                null,
-                base.unreadCount(),
-                base.totalUnreadCount(),
-                base.lastMessage(),
-                base.lastMessageAt()
-            );
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chat", totalUnreadEvent);
+            
 
             if (messagePayload != null) {
                 ChatEventResponse newMessageEvent = new ChatEventResponse(

@@ -809,7 +809,7 @@ export function GroupChat({
                     setIsHeaderEditOpen(true);
                   }
                 }}
-                className={`mt-3 text-center text-4xl font-semibold text-slate-100 ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
+                className={`mt-3 w-full break-words text-center text-xl font-semibold text-slate-100 ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
               >
                 {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
               </button>

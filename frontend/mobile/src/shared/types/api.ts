@@ -21,6 +21,10 @@ export type UserProfile = {
   avatarUrl: string | null;
   gender: string | null;
   birthdate: string | null;
+  hideBirthdate?: boolean | null;
+  hideEmail?: boolean | null;
+  hidePhone?: boolean | null;
+  allowStrangerMessages?: boolean | null;
   isOnline?: boolean | null;
   lastSeenAt?: string | null;
 };
@@ -31,6 +35,10 @@ export type UpdateUserProfileInput = {
   avatarUrl?: string | null;
   gender?: string | null;
   birthdate?: string | null;
+  hideBirthdate?: boolean | null;
+  hideEmail?: boolean | null;
+  hidePhone?: boolean | null;
+  allowStrangerMessages?: boolean | null;
 };
 
 export type PendingFriendRequestItem = {
@@ -91,6 +99,7 @@ export type ConversationItem = {
   otherUserId?: string | null;
 };
 
+export type GroupSettings = {
   pinnedMessages?: Array<{
     sourceMessageId: string;
     title: string;
@@ -112,6 +121,11 @@ export type ConversationItem = {
   requireApprovalToJoin: boolean;
   highlightAdminMessages: boolean;
   allowMemberInvite: boolean;
+  allowMemberEditGroupInfo?: boolean;
+  allowMemberPinBoardItems?: boolean;
+  allowMemberCreateNotes?: boolean;
+  allowMemberCreateReminders?: boolean;
+  allowMemberCreatePolls?: boolean;
   inviteCode?: string | null;
   isOwner: boolean;
   isAdmin: boolean;
@@ -129,6 +143,11 @@ export type UpdateGroupSettingsInput = {
   requireApprovalToJoin?: boolean;
   highlightAdminMessages?: boolean;
   allowMemberInvite?: boolean;
+  allowMemberEditGroupInfo?: boolean;
+  allowMemberPinBoardItems?: boolean;
+  allowMemberCreateNotes?: boolean;
+  allowMemberCreateReminders?: boolean;
+  allowMemberCreatePolls?: boolean;
   transferOwnerId?: string;
 };
 
@@ -176,6 +195,7 @@ export type MessageItem = {
   deletedForUsers?: string[];
   deliveredTo?: string[];
   seenBy?: string[];
+  isRead?: boolean;
   createdAt: string | null;
   updatedAt?: string | null;
   edited?: boolean;

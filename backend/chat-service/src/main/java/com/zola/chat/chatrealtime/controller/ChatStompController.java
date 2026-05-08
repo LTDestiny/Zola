@@ -543,41 +543,7 @@ public class ChatStompController {
 
             messagingTemplate.convertAndSendToUser(userId, "/queue/chat", base);
 
-            messagingTemplate.convertAndSendToUser(
-                userId,
-                "/queue/chat",
-                new ChatEventResponse(
-                    "UNREAD_COUNT_UPDATED",
-                    base.actorId(),
-                    base.conversationId(),
-                    false,
-                    false,
-                    null,
-                    null,
-                    base.unreadCount(),
-                    base.totalUnreadCount(),
-                    base.lastMessage(),
-                    base.lastMessageAt()
-                )
-            );
-
-            messagingTemplate.convertAndSendToUser(
-                userId,
-                "/queue/chat",
-                new ChatEventResponse(
-                    "TOTAL_UNREAD_UPDATED",
-                    base.actorId(),
-                    base.conversationId(),
-                    false,
-                    false,
-                    null,
-                    null,
-                    base.unreadCount(),
-                    base.totalUnreadCount(),
-                    base.lastMessage(),
-                    base.lastMessageAt()
-                )
-            );
+            
 
             if (messagePayload != null) {
                 messagingTemplate.convertAndSendToUser(

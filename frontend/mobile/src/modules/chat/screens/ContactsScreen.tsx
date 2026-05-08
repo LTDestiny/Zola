@@ -434,6 +434,46 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.sm,
   },
+  actionGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  smallButton: {
+    minHeight: 36,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  acceptButton: {
+    backgroundColor: colors.primary,
+  },
+  acceptButtonText: {
+    ...typography.caption1,
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  declineButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgSecondary,
+  },
+  declineButtonText: {
+    ...typography.caption1,
+    color: colors.text,
+    fontWeight: "700",
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 59, 48, 0.34)",
+    backgroundColor: "rgba(255, 59, 48, 0.08)",
+  },
+  cancelButtonText: {
+    ...typography.caption1,
+    color: colors.danger,
+    fontWeight: "700",
+  },
   contactName: {
     ...typography.headline,
     color: colors.text,

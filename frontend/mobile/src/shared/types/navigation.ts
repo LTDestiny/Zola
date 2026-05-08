@@ -19,3 +19,8 @@ export type RootTabParamList = {
   Contacts: undefined;
   Profile: undefined;
 };
+
+export type ProfileStackParamList = {
+  ProfileMain: undefined;
+  Settings: undefined;
+};

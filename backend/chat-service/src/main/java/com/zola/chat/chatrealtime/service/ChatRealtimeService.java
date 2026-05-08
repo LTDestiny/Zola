@@ -108,6 +108,7 @@ public class ChatRealtimeService {
         if (requesterId.equals(targetUserId)) {
             throw new IllegalArgumentException("Cannot create conversation with yourself");
         }
+        ensurePrivateMessagingAllowed(requesterId, targetUserId);
         ConversationEntity conversation = conversationRepository.getOrCreateDirect(requesterId, targetUserId);
         return toConversationResponse(conversation, requesterId);
     }
@@ -2137,6 +2138,10 @@ public class ChatRealtimeService {
 
         if (userRelationshipClient.isMessagingBlocked(senderId, receiverId)) {
             throw new ForbiddenOperationException("Messaging is blocked between these users");
+        }
+
+        if (!userRelationshipClient.areFriends(senderId, receiverId)) {
+            throw new ForbiddenOperationException("You must be friends to send messages. Send a friend request first.");
         }
     }
 

@@ -89,6 +89,7 @@ export type ChatRealtimeEvent = {
     | "call_ended";
     conversationId: string;
     actorId?: string;
+    targetId?: string;
     targetUserId?: string;
     typing?: boolean;
     online?: boolean;
