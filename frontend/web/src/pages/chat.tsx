@@ -1763,6 +1763,7 @@ export function Chat({
       <div
         ref={messageListRef}
         className={`scrollbar-hide relative flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0a1f3d_0%,#0b213f_100%)] px-4 py-5 ${isDragOverComposer ? "ring-2 ring-sky-400 ring-inset" : ""}`}
+        style={{ touchAction: "pan-y", overscrollBehavior: "none" }}
         onClickCapture={(event) => {
           focusComposerFromChat(event.target);
         }}
