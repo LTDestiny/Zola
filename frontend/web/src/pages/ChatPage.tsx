@@ -724,7 +724,7 @@ export function ChatPage() {
   const [groupPreferenceMap, setGroupPreferenceMap] = useState<Record<string, GroupPreferenceItem>>(
     () => loadGroupPreferences(),
   );
-  const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(true);
+  const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(false);
   const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: string; nonce: number } | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
@@ -1312,8 +1312,11 @@ export function ChatPage() {
   }, [activeConversation?.id, activeConversation?.type, refreshGroupSettings]);
 
   useEffect(() => {
-    if (activeConversation?.type === "group") {
+    // Auto-open group panel on desktop when switching to group conversation
+    if (activeConversation?.type === "group" && window.innerWidth >= 1024) {
       setIsGroupPanelOpen(true);
+    } else if (activeConversation?.type !== "group") {
+      setIsGroupPanelOpen(false);
     }
   }, [activeConversation?.id, activeConversation?.type]);
 
