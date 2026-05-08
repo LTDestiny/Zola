@@ -2285,7 +2285,8 @@ export function DirectConversationPane({
 
           <textarea
             ref={composerTextareaRef}
-            className="max-h-24 min-h-9 resize-none rounded-2xl border border-[#335b89] bg-[#0a1b34] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#4aa5ff]"
+            rows={1}
+            className="max-h-24 min-h-9 resize-none rounded-2xl border border-[#335b89] bg-[#0a1b34] px-3 py-1.5 text-sm leading-5 text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#4aa5ff]"
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
