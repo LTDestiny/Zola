@@ -706,7 +706,7 @@ export function GroupChat({
   };
 
   const iconActionBase =
-    "flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] lg:text-[11px] transition";
+    "flex min-h-[4.75rem] flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-center text-[10px] leading-tight transition";
 
   const openBoardView = () => setPanelView("board");
   const openMembersView = () => setPanelView("members");
@@ -722,9 +722,9 @@ export function GroupChat({
       <div className="min-w-0 flex flex-1 flex-col overflow-hidden">{children}</div>
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] shrink-0 border-l border-[#1f4673] bg-[#0d2442] transform transition-transform duration-300 lg:relative lg:inset-auto lg:z-auto lg:w-[24rem] lg:shrink-0 lg:transform-none lg:transition-none ${isPanelOpen ? "translate-x-0" : "translate-x-full"} ${isPanelOpen ? "flex lg:flex" : "hidden lg:hidden"}`}
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] shrink-0 flex-col border-l border-[#1f4673] bg-[#0d2442] transform transition-transform duration-300 lg:relative lg:inset-auto lg:z-auto lg:w-[24rem] lg:shrink-0 lg:transform-none lg:transition-none ${isPanelOpen ? "translate-x-0" : "translate-x-full"} ${isPanelOpen ? "flex lg:flex" : "hidden lg:hidden"}`}
       >
-        <div className="border-b border-[#1f4673] px-3 py-3 lg:px-4 lg:py-4">
+        <div className="shrink-0 border-b border-[#1f4673] px-3 py-3 lg:px-4">
           <div className="flex items-center justify-between">
             <p className="text-xl font-bold text-slate-100 lg:text-2xl lg:text-center">
               {language === "vi" ? "Thong tin nhom" : "Group details"}
@@ -738,7 +738,7 @@ export function GroupChat({
             </button>
           </div>
 
-          <div className="mt-3 flex flex-col items-center lg:mt-4">
+          <div className="mt-3 flex flex-col items-center">
             <input
               ref={avatarInputRef}
               type="file"
@@ -766,10 +766,10 @@ export function GroupChat({
                 <img
                   src={resolvedConversationAvatar}
                   alt={conversation?.name ?? "Group"}
-                  className="h-[4.5rem] w-[4.5rem] rounded-full border-2 border-slate-500/70 object-cover object-center shadow-lg lg:h-[5.5rem] lg:w-[5.5rem]"
+                  className="h-16 w-16 rounded-full border-2 border-slate-500/70 object-cover object-center shadow-lg lg:h-20 lg:w-20"
                 />
               ) : (
-                <div className="grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-sky-500/25 text-lg font-bold text-sky-100 lg:h-[5.5rem] lg:w-[5.5rem] lg:text-xl">
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-sky-500/25 text-lg font-bold text-sky-100 lg:h-20 lg:w-20 lg:text-xl">
                   {initials(conversation?.name ?? "Group")}
                 </div>
               )}
@@ -819,11 +819,7 @@ export function GroupChat({
                     setIsHeaderEditOpen(true);
                   }
                 }}
-<<<<<<< HEAD
-                className={`mt-3 w-full break-words text-center text-xl font-semibold text-slate-100 ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
-=======
-                className={`mt-3 px-2 text-center text-2xl font-semibold text-slate-100 lg:text-4xl ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
->>>>>>> 153bf53901f05052883236b943ebf0fd80c90172
+                className={`mt-3 max-w-full break-words px-2 text-center text-xl font-semibold leading-tight text-slate-100 lg:text-2xl ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
               >
                 {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
               </button>
@@ -852,7 +848,7 @@ export function GroupChat({
             )}
           </div>
 
-          <div className="mt-4 grid grid-cols-4 gap-2 lg:gap-2">
+          <div className="mt-4 grid grid-cols-4 gap-2">
             <button
               type="button"
               onClick={() => onPreferenceChange?.({ muted: !Boolean(preferences?.muted) })}
@@ -909,7 +905,7 @@ export function GroupChat({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-2 py-2 max-h-[calc(100vh-200px)] lg:px-3 lg:py-3 lg:max-h-none">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-2 py-2 lg:px-3 lg:py-3">
           {!manageMode && panelView === "default" && (
             <>
               <Section

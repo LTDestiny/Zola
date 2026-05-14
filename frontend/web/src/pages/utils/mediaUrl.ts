@@ -9,11 +9,11 @@ function resolveDefaultApiBaseUrl() {
   if (env.VITE_API_URL) {
     return env.VITE_API_URL;
   }
-  if (env.VITE_API_PROXY_TARGET) {
-    return env.VITE_API_PROXY_TARGET;
-  }
   if (typeof window !== "undefined") {
     return window.location.origin;
+  }
+  if (env.VITE_API_PROXY_TARGET) {
+    return env.VITE_API_PROXY_TARGET;
   }
   return "http://127.0.0.1:8080";
 }

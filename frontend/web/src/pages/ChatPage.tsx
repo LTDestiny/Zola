@@ -6403,7 +6403,9 @@ export function ChatPage() {
 
       const [summaryResult, statusResult] = await Promise.all([
         getUserSummary(userId),
-        normalizedMyId ? getFriendshipStatus(userId) : Promise.resolve({ data: { status: "NONE" } }),
+        normalizedMyId
+          ? getFriendshipStatus(userId)
+          : Promise.resolve({ data: { status: "NONE" } as FriendshipStatusPayload }),
       ]);
       const { blockedByMe, blockedByPeer } = resolveBlockedState(statusResult.data);
 
