@@ -15,7 +15,7 @@ public class HealthController {
     public ApiResponse<Map<String, Object>> health() {
         return ApiResponse.ok("Service is running", Map.of(
             "service", "api-gateway",
-            "port", 8080
+            "port", 18080
         ));
     }
 }

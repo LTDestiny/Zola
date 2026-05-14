@@ -43,6 +43,14 @@
     font-family: "Inter", "Roboto", "Segoe UI", "Tahoma", sans-serif;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
   * {
     scrollbar-color: rgba(107, 149, 198, 0.5) transparent;
   }
@@ -99,4 +107,42 @@
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 767px) {
+  body {
+    overscroll-behavior: none;
+  }
+
+  .zola-mobile-shell {
+    --zola-mobile-top-safe-area: max(env(safe-area-inset-top, 0px), 28px);
+    --zola-mobile-bottom-safe-area: max(env(safe-area-inset-bottom, 0px), 0px);
+    height: 100dvh;
+    padding-top: var(--zola-mobile-top-safe-area);
+    padding-bottom: var(--zola-mobile-bottom-safe-area);
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+  }
+
+  .max-w-\[60\%\] {
+    max-width: min(86vw, 22rem);
+  }
+
+  .min-w-60 {
+    min-width: min(15rem, 78vw);
+  }
+
+  .min-w-64 {
+    min-width: min(16rem, 82vw);
+  }
 }

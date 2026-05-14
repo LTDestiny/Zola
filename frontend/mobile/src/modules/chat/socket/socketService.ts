@@ -139,7 +139,7 @@ type StateListener = (state: SocketState) => void;
 
 function resolveSocketUrl(): string {
     const explicit = Constants.expoConfig?.extra?.socketUrl as string | undefined;
-    if (explicit) {
+    if (explicit && explicit !== "ws://172.20.10.2:8083/ws") {
         log("url", "Using explicit socketUrl:", explicit);
         return explicit;
     }

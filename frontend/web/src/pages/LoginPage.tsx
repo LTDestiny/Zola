@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { loginWithEmailPassword, toErrorMessage } from "../api/authApi";
 import { saveAuthTokens } from "../auth/token";
@@ -6,6 +6,7 @@ import { useLanguage } from "../i18n/language";
 
 export function LoginPage() {
   const { t, language, setLanguage } = useLanguage();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -37,7 +38,7 @@ export function LoginPage() {
         sessionId: result.data.sessionId,
         accessExpiresInSeconds: result.data.accessExpiresInSeconds,
       });
-      window.location.href = "/chat";
+      navigate("/chat", { replace: true });
     } catch (error) {
       setMessage(toErrorMessage(error));
     } finally {

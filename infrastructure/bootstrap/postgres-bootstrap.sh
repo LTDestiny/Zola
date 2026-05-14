@@ -69,6 +69,8 @@ SELECT 'CREATE DATABASE zola_identity_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'zola_identity_db')\gexec
 SELECT 'CREATE DATABASE zola_user_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'zola_user_db')\gexec
+SELECT 'CREATE DATABASE zola_chat_db'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'zola_chat_db')\gexec
 SELECT 'CREATE DATABASE zola_call_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'zola_call_db')\gexec
 SELECT 'CREATE DATABASE zola_file_db'

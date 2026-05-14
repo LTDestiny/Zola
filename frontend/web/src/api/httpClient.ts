@@ -6,8 +6,28 @@ import {
 } from "../auth/token";
 import { env } from "../shared/env";
 
-const defaultApiBaseUrl =
-  env.VITE_API_URL ?? "http://127.0.0.1:8080";
+function resolveApiBaseUrl() {
+  if (env.VITE_API_URL) {
+    return env.VITE_API_URL;
+  }
+
+  if (typeof window !== "undefined") {
+    if (window.location.hostname === "appassets.androidplatform.net") {
+      return env.VITE_API_PROXY_TARGET ?? "https://10.18.76.36:18080";
+    }
+
+    if (window.location.port === "5173") {
+      return window.location.origin;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${window.location.hostname}:18080`;
+  }
+
+  return "https://127.0.0.1:18080";
+}
+
+const defaultApiBaseUrl = resolveApiBaseUrl();
 const fallbackApiBaseUrl = defaultApiBaseUrl.includes("localhost")
   ? defaultApiBaseUrl.replace("localhost", "127.0.0.1")
   : undefined;

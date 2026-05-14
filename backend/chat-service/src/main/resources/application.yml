@@ -37,6 +37,12 @@ jwt:
   issuer: zola-auth-service
 
 app:
+  ssl:
+    enabled: ${CHAT_SERVICE_SSL_ENABLED:false}
+    port: ${CHAT_SERVICE_SSL_PORT:18443}
+    key-store: ${CHAT_SERVICE_SSL_KEY_STORE:}
+    key-store-password: ${CHAT_SERVICE_SSL_KEY_STORE_PASSWORD:}
+    key-store-type: ${CHAT_SERVICE_SSL_KEY_STORE_TYPE:PKCS12}
   services:
     auth-url: ${AUTH_SERVICE_URL:http://auth-service:8081}
     user-url: ${USER_SERVICE_URL:http://user-service:8082}
