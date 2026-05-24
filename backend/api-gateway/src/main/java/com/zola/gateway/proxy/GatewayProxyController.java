@@ -51,18 +51,23 @@ public class GatewayProxyController {
     private final String userServiceUrl;
     private final String chatServiceUrl;
     private final String fileServiceUrl;
+    private final String internalGatewaySecret;
 
     public GatewayProxyController(
         @Value("${services.auth-url}") String authServiceUrl,
         @Value("${services.user-url}") String userServiceUrl,
         @Value("${services.chat-url}") String chatServiceUrl,
-        @Value("${services.file-url}") String fileServiceUrl
+        @Value("${services.file-url}") String fileServiceUrl,
+        @Value("${app.internal.gateway-secret:internal-dev-secret}") String internalGatewaySecret
     ) {
-        this.restClient = RestClient.builder().build();
+        this.restClient = RestClient.builder()
+            .defaultHeader("X-Internal-Gateway-Secret", internalGatewaySecret)
+            .build();
         this.authServiceUrl = authServiceUrl;
         this.userServiceUrl = userServiceUrl;
         this.chatServiceUrl = chatServiceUrl;
         this.fileServiceUrl = fileServiceUrl;
+        this.internalGatewaySecret = internalGatewaySecret;
     }
 
     @PostMapping(value = "/media/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

@@ -19,8 +19,13 @@ public class UserRelationshipClient {
     private final RestClient restClient;
     private final String userServiceUrl;
 
-    public UserRelationshipClient(@Value("${app.services.user-url}") String userServiceUrl) {
-        this.restClient = RestClient.builder().build();
+    public UserRelationshipClient(
+        @Value("${app.services.user-url}") String userServiceUrl,
+        @Value("${app.internal.gateway-secret:internal-dev-secret}") String gatewaySecret
+    ) {
+        this.restClient = RestClient.builder()
+            .defaultHeader("X-Internal-Gateway-Secret", gatewaySecret)
+            .build();
         this.userServiceUrl = userServiceUrl;
     }
 

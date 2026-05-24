@@ -108,16 +108,13 @@ services:
       - "${API_GATEWAY_PORT:-18080}:18080"
     environment:
       REDIS_HOST: redis
+      REDIS_PASSWORD: redis_pass
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
       AUTH_SERVICE_URL: http://auth-service:8081
       USER_SERVICE_URL: http://user-service:8082
       CHAT_SERVICE_URL: http://chat-service:8083
       FILE_SERVICE_URL: http://file-service:8084
-      API_GATEWAY_SSL_ENABLED: ${API_GATEWAY_SSL_ENABLED:-true}
-      API_GATEWAY_SSL_KEY_STORE: /certs/zola-dev-10.18.76.36.p12
-      API_GATEWAY_SSL_KEY_STORE_PASSWORD: ${API_GATEWAY_SSL_KEY_STORE_PASSWORD:-zola-dev}
-    volumes:
-      - ../.devin/certs:/certs:ro
+      API_GATEWAY_SSL_ENABLED: false
     depends_on:
       - auth-service
       - user-service

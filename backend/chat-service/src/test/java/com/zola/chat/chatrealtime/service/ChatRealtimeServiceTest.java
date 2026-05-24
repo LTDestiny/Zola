@@ -151,6 +151,20 @@ class ChatRealtimeServiceTest {
         );
     }
 
+    @Test
+    void sendMessageHttpRejectsNonAdminWhenGroupIsAdminOnly() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationDocument conversation = groupConversation(conversationId.toString());
+        conversation.setOnlyAdminsCanMessage(true);
+
+        when(groupConversationRepository.findById(conversationId.toString())).thenReturn(Optional.of(conversation));
+
+        assertThrows(
+            ForbiddenOperationException.class,
+            () -> service.sendMessageHttp(MEMBER_ID, conversationId, "TEXT", "member message", null, null, null)
+        );
+    }
+
     private ConversationDocument groupConversation(String conversationId) {
         ConversationDocument conversation = new ConversationDocument();
         conversation.setId(conversationId);

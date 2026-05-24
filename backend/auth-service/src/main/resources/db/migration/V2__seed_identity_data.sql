@@ -1,3 +1,7 @@
+-- Seed identity data with BCrypt hashes compatible with Spring Security BCryptPasswordEncoder
+-- Password for all seed users: password123
+-- Hash: $2a$10$4.lX4AIz6xJ4ZC1nYxSB1ulPksr5jgLClmFFxQbr1/IPlRlmD.f0C
+
 INSERT INTO users (
     id, email, phone, identity_type, password_hash, full_name,
     email_verified, phone_verified, is_active, is_deleted, created_at, updated_at
@@ -7,7 +11,7 @@ SELECT
     'seed1@zola.app',
     '0900000001',
     'EMAIL',
-    crypt('password123', gen_salt('bf', 10)),
+    '$2a$10$4.lX4AIz6xJ4ZC1nYxSB1ulPksr5jgLClmFFxQbr1/IPlRlmD.f0C',
     'Seed User 1',
     TRUE,
     FALSE,
@@ -28,7 +32,7 @@ SELECT
     'seed2@zola.app',
     '0900000002',
     'EMAIL',
-    crypt('password123', gen_salt('bf', 10)),
+    '$2a$10$4.lX4AIz6xJ4ZC1nYxSB1ulPksr5jgLClmFFxQbr1/IPlRlmD.f0C',
     'Seed User 2',
     TRUE,
     FALSE,
@@ -49,7 +53,7 @@ SELECT
     'seed3@zola.app',
     '0900000003',
     'EMAIL',
-    crypt('password123', gen_salt('bf', 10)),
+    '$2a$10$4.lX4AIz6xJ4ZC1nYxSB1ulPksr5jgLClmFFxQbr1/IPlRlmD.f0C',
     'Seed User 3',
     TRUE,
     FALSE,

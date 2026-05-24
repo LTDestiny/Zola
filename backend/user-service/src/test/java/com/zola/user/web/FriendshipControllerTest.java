@@ -2,6 +2,7 @@ package com.zola.user.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class FriendshipControllerTest {
@@ -87,6 +89,19 @@ class FriendshipControllerTest {
         assertEquals(CURRENT_USER_ID, payload.get("requesterId"));
         assertEquals(TARGET_USER_ID, payload.get("addresseeId"));
         verify(friendEventPublisher).publishFriendRequestReceived(eq(targetUserId), any(UUID.class), eq(currentUserId));
+    }
+
+    @Test
+    void addFriendRejectsSendingRequestToSelf() {
+        ResponseStatusException exception = assertThrows(
+            ResponseStatusException.class,
+            () -> controller.addFriend(
+                CURRENT_USER_ID,
+                new FriendshipController.AddFriendRequest(UUID.fromString(CURRENT_USER_ID))
+            )
+        );
+
+        assertEquals(400, exception.getStatusCode().value());
     }
 
     @Test

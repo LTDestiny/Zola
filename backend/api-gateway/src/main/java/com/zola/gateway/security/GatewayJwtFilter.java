@@ -5,6 +5,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
@@ -16,6 +18,8 @@ import java.util.List;
 
 @Component
 public class GatewayJwtFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayJwtFilter.class);
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
         "/api/v1/system/",
@@ -53,8 +57,10 @@ public class GatewayJwtFilter extends OncePerRequestFilter {
         @NonNull HttpServletResponse response,
         @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
+        String path = request.getRequestURI();
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            log.warn("[JWT] Missing bearer token for path: {}", path);
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Missing bearer token");
             return;
         }
@@ -64,12 +70,16 @@ public class GatewayJwtFilter extends OncePerRequestFilter {
             String userId = claims.get("userId", String.class);
             String sessionId = claims.get("sessionId", String.class);
             if (userId == null || sessionId == null) {
+                log.warn("[JWT] Invalid token payload - userId={} sessionId={}", userId, sessionId);
                 response.sendError(HttpStatus.UNAUTHORIZED.value(), "Invalid token payload");
                 return;
             }
 
             String sessionKey = "session:" + userId + ":" + sessionId;
-            if (!Boolean.TRUE.equals(redisTemplate.hasKey(sessionKey))) {
+            Boolean hasKey = redisTemplate.hasKey(sessionKey);
+            log.info("[JWT] Session check key={} hasKey={}", sessionKey, hasKey);
+            if (!Boolean.TRUE.equals(hasKey)) {
+                log.warn("[JWT] Session revoked or expired for key: {}", sessionKey);
                 response.sendError(HttpStatus.UNAUTHORIZED.value(), "Session revoked or expired");
                 return;
             }
@@ -77,6 +87,7 @@ public class GatewayJwtFilter extends OncePerRequestFilter {
             request.setAttribute("X_USER_ID", userId);
             request.setAttribute("X_SESSION_ID", sessionId);
         } catch (Exception ex) {
+            log.error("[JWT] Token parse error for path {}: {}", path, ex.getMessage());
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Invalid token");
             return;
         }
