@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Locale;
@@ -34,6 +36,7 @@ public class MediaUploadService {
     private final long maxImageBytes;
     private final long maxVideoBytes;
     private final long maxFileBytes;
+    private final Path localStorageRoot;
     private volatile boolean bucketVerified;
 
     public MediaUploadService(
@@ -41,13 +44,15 @@ public class MediaUploadService {
         ObjectStorageProperties storageProperties,
         @Value("${media.max-image-bytes}") long maxImageBytes,
         @Value("${media.max-video-bytes}") long maxVideoBytes,
-        @Value("${media.max-file-bytes}") long maxFileBytes
+        @Value("${media.max-file-bytes}") long maxFileBytes,
+        @Value("${media.local-storage-dir:/data/media}") String localStorageDir
     ) {
         this.s3Client = s3Client;
         this.storageProperties = storageProperties;
         this.maxImageBytes = maxImageBytes;
         this.maxVideoBytes = maxVideoBytes;
         this.maxFileBytes = maxFileBytes;
+        this.localStorageRoot = Path.of(localStorageDir).toAbsolutePath().normalize();
     }
 
     public UploadedMedia upload(String userId, MultipartFile file) {
@@ -74,6 +79,17 @@ public class MediaUploadService {
         String contentType = file.getContentType() == null || file.getContentType().isBlank()
             ? "application/octet-stream"
             : file.getContentType();
+
+        if (!isS3Configured()) {
+            try {
+                writeLocalObject(objectKey, file.getBytes());
+            } catch (IOException ex) {
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to store media locally", ex);
+            }
+
+            String fileUrl = buildGatewayObjectUrl(objectKey);
+            return new UploadedMedia(objectKey, fileUrl, originalName, file.getSize(), contentType, mediaType);
+        }
 
         try {
             ensureBucketExists(storageProperties.getBucket());
@@ -102,6 +118,23 @@ public class MediaUploadService {
         }
         if (storageProperties.getBucket() == null || storageProperties.getBucket().isBlank()) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "S3 bucket is not configured");
+        }
+
+        if (!isS3Configured()) {
+            try {
+                byte[] bytes = readLocalObject(normalizedKey);
+                String fileName = normalizedKey.contains("/")
+                    ? normalizedKey.substring(normalizedKey.lastIndexOf('/') + 1)
+                    : normalizedKey;
+                String contentType = Files.probeContentType(resolveLocalObjectPath(normalizedKey));
+                return new DownloadedMedia(
+                    bytes,
+                    contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType,
+                    fileName
+                );
+            } catch (IOException ex) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Media not found", ex);
+            }
         }
 
         try {
@@ -172,6 +205,10 @@ public class MediaUploadService {
     }
 
     private String buildPublicUrl(String objectKey) {
+        if (!isS3Configured()) {
+            return buildGatewayObjectUrl(objectKey);
+        }
+
         String encodedKey = URLEncoder.encode(objectKey, StandardCharsets.UTF_8).replace("+", "%20");
         String endpoint = storageProperties.getPublicEndpoint();
         if (endpoint == null || endpoint.isBlank()) {
@@ -185,6 +222,39 @@ public class MediaUploadService {
             return normalized + "/" + encodedKey;
         }
         return "https://" + storageProperties.getBucket() + ".s3." + storageProperties.getRegion() + ".amazonaws.com/" + encodedKey;
+    }
+
+    private String buildGatewayObjectUrl(String objectKey) {
+        String encodedKey = URLEncoder.encode(objectKey, StandardCharsets.UTF_8).replace("+", "%20");
+        return "/api/v1/media/object?key=" + encodedKey;
+    }
+
+    private boolean isS3Configured() {
+        return hasText(storageProperties.getEndpoint())
+            || (hasText(storageProperties.getAccessKey()) && hasText(storageProperties.getSecretKey()));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private void writeLocalObject(String objectKey, byte[] bytes) throws IOException {
+        Path target = resolveLocalObjectPath(objectKey);
+        Files.createDirectories(target.getParent());
+        Files.write(target, bytes);
+    }
+
+    private byte[] readLocalObject(String objectKey) throws IOException {
+        return Files.readAllBytes(resolveLocalObjectPath(objectKey));
+    }
+
+    private Path resolveLocalObjectPath(String objectKey) {
+        String normalizedKey = objectKey == null ? "" : objectKey.replace('\\', '/').replaceAll("^/+", "");
+        Path target = localStorageRoot.resolve(normalizedKey).normalize();
+        if (!target.startsWith(localStorageRoot)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid media key");
+        }
+        return target;
     }
 
     private String extensionOf(String name) {

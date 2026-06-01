@@ -18,6 +18,7 @@ public record ConversationListItemResponse(
     String ownerId,
     String otherUserId,
     boolean isOnline,
-    boolean isPinned
+    boolean isPinned,
+    Instant pinnedAt
 ) {
 }

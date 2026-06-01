@@ -235,6 +235,9 @@ services:
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       S3_PATH_STYLE: ${S3_PATH_STYLE:-false}
+      MEDIA_LOCAL_STORAGE_DIR: /data/media
+    volumes:
+      - file_media_data:/data/media
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
@@ -309,3 +312,4 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  file_media_data:

@@ -826,6 +826,27 @@ export function GroupConversationPane({
       ),
     [pinnedMessages],
   );
+  const pinnedMessageSourceOrder = useMemo(
+    () =>
+      (pinnedMessages ?? [])
+        .filter((item) => item.itemType === "pin")
+        .map((item) => item.sourceMessageId),
+    [pinnedMessages],
+  );
+  const displayMessages = useMemo(() => {
+    if (pinnedMessageSourceOrder.length === 0) {
+      return localMessages;
+    }
+
+    const messageById = new Map(localMessages.map((message) => [message.id, message]));
+    const pinnedTopMessages = pinnedMessageSourceOrder
+      .map((messageId) => messageById.get(messageId))
+      .filter((message): message is ChatMessage => Boolean(message));
+    const pinnedIds = new Set(pinnedTopMessages.map((message) => message.id));
+    const normalMessages = localMessages.filter((message) => !pinnedIds.has(message.id));
+
+    return [...pinnedTopMessages, ...normalMessages];
+  }, [localMessages, pinnedMessageSourceOrder]);
 
   useEffect(() => {
     setLocalMessages(mappedFromServer);
@@ -1677,7 +1698,7 @@ export function GroupConversationPane({
                 </div>
               )}
 
-              {localMessages.map((message, index) => {
+              {displayMessages.map((message, index) => {
                 const isSystemMessage = (message.rawType ?? "").toUpperCase() === "SYSTEM";
 
                 if (isSystemMessage) {
@@ -1707,10 +1728,15 @@ export function GroupConversationPane({
                 }
 
                 const isMine = message.senderId === currentUserId;
-                const prev = localMessages[index - 1];
-                const next = localMessages[index + 1];
-                const sameAsPrev = prev?.senderId === message.senderId;
-                const sameAsNext = next?.senderId === message.senderId;
+                const prev = displayMessages[index - 1];
+                const next = displayMessages[index + 1];
+                const isPinnedDisplayMessage = pinnedSourceMessageIdSet.has(message.id);
+                const sameAsPrev =
+                  prev?.senderId === message.senderId &&
+                  pinnedSourceMessageIdSet.has(prev.id) === isPinnedDisplayMessage;
+                const sameAsNext =
+                  next?.senderId === message.senderId &&
+                  pinnedSourceMessageIdSet.has(next.id) === isPinnedDisplayMessage;
                 const showAvatar = !isMine && !sameAsNext;
                 const showMeta = !sameAsNext;
                 const senderProfile = userProfileMap[message.senderId];

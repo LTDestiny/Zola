@@ -9,13 +9,13 @@ import static org.mockito.Mockito.when;
 import com.zola.chat.document.ConversationDocument;
 import com.zola.chat.document.PinnedMessageItem;
 import com.zola.chat.exception.ForbiddenOperationException;
-import com.zola.chat.exception.ResourceNotFoundException;
 import com.zola.chat.infrastructure.cache.RedisOnlineUserChecker;
 import com.zola.chat.infrastructure.persistence.mongo.MessageDocument;
 import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
 import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
+import com.zola.chat.infrastructure.persistence.postgres.UserPinnedConversationRepository;
 import com.zola.chat.integration.UserRelationshipClient;
 import com.zola.chat.presence.PresenceManager;
 import com.zola.chat.repository.ConversationRepository;
@@ -44,6 +44,9 @@ class ChatRealtimeServiceTest {
     private ConversationRepository groupConversationRepository;
 
     @Mock
+    private UserPinnedConversationRepository pinnedConversationRepository;
+
+    @Mock
     private RealtimeMessageRepository messageRepository;
 
     @Mock
@@ -65,6 +68,7 @@ class ChatRealtimeServiceTest {
         service = new ChatRealtimeService(
             conversationRepository,
             groupConversationRepository,
+            pinnedConversationRepository,
             messageRepository,
             onlineUserChecker,
             presenceManager,
@@ -116,17 +120,18 @@ class ChatRealtimeServiceTest {
     }
 
     @Test
-    void unpinGroupMessageThrowsWhenMessageDoesNotExistInConversation() {
+    void unpinGroupMessageIgnoresMissingPinnedMessage() {
         UUID conversationId = UUID.randomUUID();
         ConversationDocument conversation = groupConversation(conversationId.toString());
 
         when(groupConversationRepository.findById(conversationId.toString())).thenReturn(Optional.of(conversation));
-        when(messageRepository.findByConversationIdAndId(conversationId.toString(), "missing-message")).thenReturn(Optional.empty());
+        when(groupConversationRepository.save(any(ConversationDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThrows(
-            ResourceNotFoundException.class,
-            () -> service.unpinGroupMessage(OWNER_ID, conversationId, "missing-message")
-        );
+        Map<String, Object> payload = service.unpinGroupMessage(OWNER_ID, conversationId, "missing-message");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pinnedMessages = (List<Map<String, Object>>) payload.get("pinnedMessages");
+        assertEquals(0, pinnedMessages.size());
     }
 
     @Test
@@ -148,6 +153,29 @@ class ChatRealtimeServiceTest {
         assertThrows(
             ForbiddenOperationException.class,
             () -> service.sendMessageHttp(OWNER_ID, conversationId, "TEXT", "blocked", null, null, null)
+        );
+    }
+
+    @Test
+    void sendMessageHttpRejectsPrivateMessagesWhenUsersAreNotFriends() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+        conversation.setType("private");
+        conversation.setUser1Id(OWNER_ID);
+        conversation.setUser2Id(MEMBER_ID);
+        conversation.setLastMessage("");
+        conversation.setLastMessageAt(Instant.now());
+        conversation.setUpdatedAt(Instant.now());
+
+        when(conversationRepository.findOptionalById(conversationId)).thenReturn(Optional.of(conversation));
+        when(conversationRepository.isMember(conversation, OWNER_ID)).thenReturn(true);
+        when(userRelationshipClient.isMessagingBlocked(OWNER_ID, MEMBER_ID)).thenReturn(false);
+        when(userRelationshipClient.areFriends(OWNER_ID, MEMBER_ID)).thenReturn(false);
+
+        assertThrows(
+            ForbiddenOperationException.class,
+            () -> service.sendMessageHttp(OWNER_ID, conversationId, "TEXT", "stranger", null, null, null)
         );
     }
 

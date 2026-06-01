@@ -472,6 +472,10 @@ export function useSocket() {
       eventType === "CONVERSATION_UPDATED" ||
       eventType === "UNREAD_COUNT_UPDATED" ||
       eventType === "TOTAL_UNREAD_UPDATED" ||
+      event.eventType === "conversation:pinned" ||
+      event.eventType === "conversation:unpinned" ||
+      eventType === "CONVERSATION_PINNED" ||
+      eventType === "CONVERSATION_UNPINNED" ||
       eventType === "GROUP_CREATED" ||
       event.eventType === "group_created"
     ) {
@@ -481,7 +485,9 @@ export function useSocket() {
         lastMessage: event.lastMessage?.slice(0, 20),
       });
 
-      const patch: Parameters<typeof upsertConversation>[0] = { id: conversationId };
+      const patch: Parameters<typeof upsertConversation>[0] = event.conversation
+        ? { ...event.conversation, id: conversationId }
+        : { id: conversationId };
 
       if (eventType === "GROUP_CREATED" || event.eventType === "group_created") {
         patch.name = "New group";

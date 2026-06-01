@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
 import { AppState, type AppStateStatus } from "react-native";
-import type { MessageItem } from "@/shared/types/api";
+import type { ConversationItem, MessageItem } from "@/shared/types/api";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTION-READY SOCKET SERVICE - SINGLETON
@@ -58,6 +58,10 @@ export type ChatRealtimeEvent = {
     | "CONVERSATION_UPDATED"
     | "UNREAD_COUNT_UPDATED"
     | "TOTAL_UNREAD_UPDATED"
+    | "conversation:pinned"
+    | "conversation:unpinned"
+    | "CONVERSATION_PINNED"
+    | "CONVERSATION_UNPINNED"
     | "PRESENCE_UPDATED"
     | "USER_LAST_SEEN_UPDATE"
     | "FRIENDSHIP_REQUEST_RECEIVED"
@@ -97,6 +101,7 @@ export type ChatRealtimeEvent = {
     totalUnreadCount?: number | null;
     lastMessage?: string | null;
     lastMessageAt?: string | null;
+    conversation?: ConversationItem | null;
     message: (MessageItem & { messageId?: string }) | null;
     // Presence fields
     userId?: string;

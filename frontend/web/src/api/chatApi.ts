@@ -66,10 +66,14 @@ export type ConversationItem = {
   participants: string[];
   admins?: string[];
   ownerId?: string | null;
+  isPinned?: boolean;
+  pinnedAt?: string | null;
+  otherUserId?: string | null;
 };
 
 type ConversationPayload = Partial<ConversationItem> & {
   id: string;
+  pinned?: boolean;
   requesterUnreadCount?: number;
   requesterLastReadAt?: string | null;
   requesterLastReadMessageId?: string | null;
@@ -100,6 +104,9 @@ function normalizeConversationItem(item: ConversationPayload): ConversationItem 
     participants: item.participants ?? [],
     admins: item.admins ?? [],
     ownerId: item.ownerId ?? null,
+    isPinned: Boolean(item.isPinned ?? item.pinned),
+    pinnedAt: item.pinnedAt ?? null,
+    otherUserId: item.otherUserId ?? null,
   };
 }
 
@@ -837,6 +844,19 @@ export async function getConversations() {
   };
 }
 
+export async function getPinnedConversations() {
+  const response = await httpClient.get<ApiResponse<ConversationItem[]>>(
+    "/api/v1/chat/conversations/pinned",
+  );
+  const normalized = (response.data.data ?? []).map((item) =>
+    normalizeConversationItem(item as ConversationPayload),
+  );
+  return {
+    ...response.data,
+    data: normalized,
+  };
+}
+
 export async function createDirectConversation(targetUserId: string) {
   const response = await httpClient.post<ApiResponse<ConversationPayload>>(
     "/api/v1/chat/conversations/direct",
@@ -978,7 +998,10 @@ export async function pinConversation(conversationId: string) {
   const response = await httpClient.post<ApiResponse<ConversationItem>>(
     `/api/v1/chat/conversations/${conversationId}/pin`,
   );
-  return response.data;
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data as ConversationPayload),
+  };
 }
 
 export async function unpinConversation(conversationId: string) {
@@ -986,7 +1009,10 @@ export async function unpinConversation(conversationId: string) {
     const response = await httpClient.delete<ApiResponse<ConversationItem>>(
       `/api/v1/chat/conversations/${conversationId}/pin`,
     );
-    return response.data;
+    return {
+      ...response.data,
+      data: normalizeConversationItem(response.data.data as ConversationPayload),
+    };
   } catch (error) {
     if (!shouldFallbackLegacyEndpoint(error)) {
       throw error;
@@ -997,7 +1023,10 @@ export async function unpinConversation(conversationId: string) {
     `/api/v1/chat/conversations/${conversationId}/pin/unpin`,
     {},
   );
-  return fallbackResponse.data;
+  return {
+    ...fallbackResponse.data,
+    data: normalizeConversationItem(fallbackResponse.data.data as ConversationPayload),
+  };
 }
 
 export async function deleteGroupConversation(conversationId: string) {

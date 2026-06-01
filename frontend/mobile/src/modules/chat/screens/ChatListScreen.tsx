@@ -21,8 +21,10 @@ import {
   createGroupConversation,
   getConversations,
   joinGroupByInviteCode,
+  pinConversation,
   searchUserByEmail,
   toApiErrorMessage,
+  unpinConversation,
 } from "@/modules/chat/api/chatApi";
 import { ChatItem } from "@/modules/chat/components/ChatItem";
 import { useUserProfiles } from "@/modules/chat/hooks/useUserProfiles";
@@ -71,6 +73,7 @@ export function ChatListScreen({ navigation }: Props) {
   const totalUnreadCount = useChatStore((s) => s.totalUnreadCount);
   const setConversations = useChatStore((s) => s.setConversations);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const upsertConversation = useChatStore((s) => s.upsertConversation);
 
   useEffect(() => {
     log("conversations", `Count: ${conversations.length}, TotalUnread: ${totalUnreadCount}`);
@@ -145,6 +148,58 @@ export function ChatListScreen({ navigation }: Props) {
     });
   }, [activeFilter, conversations, search, userId, profileMap]);
 
+  const toggleConversationPin = useCallback(async (conversation: ConversationItem) => {
+    const nextPinned = !conversation.isPinned;
+    if (nextPinned) {
+      const pinnedCount = useChatStore.getState().conversations.filter((item) => item.isPinned).length;
+      if (pinnedCount >= 3) {
+        Alert.alert("Không thể ghim", "Bạn chỉ được ghim tối đa 3 cuộc hội thoại.");
+        return;
+      }
+    }
+
+    const previousPinnedAt = conversation.pinnedAt ?? null;
+    upsertConversation({
+      id: conversation.id,
+      isPinned: nextPinned,
+      pinnedAt: nextPinned ? new Date().toISOString() : null,
+    });
+
+    try {
+      const response = nextPinned
+        ? await pinConversation(conversation.id)
+        : await unpinConversation(conversation.id);
+      upsertConversation(response.data);
+    } catch (error) {
+      upsertConversation({
+        id: conversation.id,
+        isPinned: Boolean(conversation.isPinned),
+        pinnedAt: previousPinnedAt,
+      });
+      Alert.alert("Không thể cập nhật ghim", toApiErrorMessage(error));
+    }
+  }, [upsertConversation]);
+
+  const openConversationActions = useCallback((conversation: ConversationItem) => {
+    Alert.alert(
+      getConversationDisplayName(conversation, userId, profileMap),
+      "Chọn thao tác",
+      [
+        {
+          text: conversation.isPinned ? "Bỏ ghim cuộc hội thoại" : "Ghim cuộc hội thoại",
+          onPress: () => {
+            void toggleConversationPin(conversation);
+          },
+        },
+        {
+          text: "Mở cuộc hội thoại",
+          onPress: () => navigation.navigate("ChatDetail", { conversation }),
+        },
+        { text: "Hủy", style: "cancel" },
+      ],
+    );
+  }, [navigation, profileMap, toggleConversationPin, userId]);
+
   useEffect(() => {
     log("filtered", `Count: ${filtered.length}`);
   }, [filtered]);
@@ -163,9 +218,10 @@ export function ChatListScreen({ navigation }: Props) {
           log("navigate", `Opening conversation: ${item.id.slice(0, 8)}`);
           navigation.navigate("ChatDetail", { conversation: item });
         }}
+        onLongPress={() => openConversationActions(item)}
       />
     );
-  }, [navigation, userId, profileMap]);
+  }, [navigation, openConversationActions, userId, profileMap]);
 
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>

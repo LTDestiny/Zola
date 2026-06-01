@@ -90,6 +90,7 @@ export type ConversationItem = {
   lastMessageAt: string | null;
   unreadCount: number;
   isPinned?: boolean;
+  pinnedAt?: string | null;
   lastReadAt?: string | null;
   lastReadMessageId?: string | null;
   participants: string[];

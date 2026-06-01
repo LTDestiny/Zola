@@ -21,10 +21,13 @@ import {
   editMessage,
   forwardMessage,
   getGroupSettings,
+  pinConversation,
   pinGroupMessage,
   recallMessage,
   removeReaction,
   sendMessage,
+  toApiErrorMessage,
+  unpinConversation,
   unpinGroupMessage,
 } from "@/modules/chat/api/chatApi";
 import {
@@ -158,6 +161,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const routeConversation = route.params.conversation;
   const conversations = useChatStore((s) => s.conversations);
+  const upsertConversation = useChatStore((s) => s.upsertConversation);
   const conversation = useMemo(
     () =>
       conversations.find((item) => item.id === routeConversation.id) ??
@@ -166,6 +170,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   );
   const conversationId = conversation.id;
   const conversationType = inferConversationType(conversation);
+  const activeConversationPinned = Boolean(conversation.isPinned);
 
   const me = useAuthStore((s) => s.me);
   const meId = me?.id;
@@ -1149,6 +1154,38 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       }
     : null;
 
+  const toggleActiveConversationPin = useCallback(async () => {
+    const nextPinned = !activeConversationPinned;
+    if (nextPinned) {
+      const pinnedCount = useChatStore.getState().conversations.filter((item) => item.isPinned).length;
+      if (pinnedCount >= 3) {
+        Alert.alert("Không thể ghim", "Bạn chỉ được ghim tối đa 3 cuộc hội thoại.");
+        return;
+      }
+    }
+
+    const previousPinnedAt = conversation.pinnedAt ?? null;
+    upsertConversation({
+      id: conversationId,
+      isPinned: nextPinned,
+      pinnedAt: nextPinned ? new Date().toISOString() : null,
+    });
+
+    try {
+      const response = nextPinned
+        ? await pinConversation(conversationId)
+        : await unpinConversation(conversationId);
+      upsertConversation(response.data);
+    } catch (error) {
+      upsertConversation({
+        id: conversationId,
+        isPinned: activeConversationPinned,
+        pinnedAt: previousPinnedAt,
+      });
+      Alert.alert("Không thể cập nhật ghim", toApiErrorMessage(error));
+    }
+  }, [activeConversationPinned, conversation.pinnedAt, conversationId, upsertConversation]);
+
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView
@@ -1188,6 +1225,17 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         </Pressable>
 
         <View style={styles.headerActions}>
+          <Pressable
+            style={[
+              styles.headerActionButton,
+              activeConversationPinned && styles.headerActionButtonActive,
+            ]}
+            onPress={() => {
+              void toggleActiveConversationPin();
+            }}
+          >
+            <Text style={styles.headerActionIcon}>📌</Text>
+          </Pressable>
           <Pressable
             style={styles.headerActionButton}
             onPress={() => startOutgoingCall("voice")}
@@ -1500,6 +1548,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: borderRadius.pill,
+  },
+  headerActionButtonActive: {
+    backgroundColor: "rgba(255, 193, 7, 0.18)",
   },
   headerActionIcon: {
     fontSize: 20,

@@ -94,6 +94,8 @@ export type ChatRealtimeEvent = {
     participants: string[];
     admins?: string[];
     ownerId?: string | null;
+    isPinned?: boolean;
+    pinnedAt?: string | null;
   } | null;
   groupSettings?: {
     conversationId: string;

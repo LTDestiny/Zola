@@ -54,11 +54,9 @@ public class UserRelationshipClient {
 
             return toBoolean(data.get("accepted"));
         } catch (RestClientResponseException ex) {
-            // If user-service is down, fail open (allow messaging) to avoid blocking users
-            return true;
+            return false;
         } catch (Exception ex) {
-            // Fail open on unexpected errors
-            return true;
+            return false;
         }
     }
 

@@ -20,6 +20,7 @@ export interface ChatListItem {
     variant?: "default" | "stranger-inbox";
     tagLabel?: string;
     sortTimeMs?: number;
+    pinnedAtMs?: number;
 }
 
 export interface ChatListProps {

@@ -78,6 +78,7 @@ type DirectConversationPaneProps = {
   isLoadingMoreMessages: boolean;
   onLoadOlderMessages: () => void | Promise<void>;
   onViewportBottomChange?: (atBottom: boolean) => void;
+  onTogglePin?: () => void;
 };
 
 type PollCreateEvent = {
@@ -694,6 +695,7 @@ export function DirectConversationPane({
   isLoadingMoreMessages,
   onLoadOlderMessages,
   onViewportBottomChange,
+  onTogglePin,
 }: DirectConversationPaneProps) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -1571,6 +1573,37 @@ export function DirectConversationPane({
           >
             <Video size={18} />
           </button>
+          {onTogglePin && (
+            <button
+              type="button"
+              onClick={onTogglePin}
+              className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${
+                activeConversationPinned
+                  ? "border-amber-400 bg-amber-500/20 text-amber-300"
+                  : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"
+              }`}
+              title={
+                activeConversationPinned
+                  ? language === "vi"
+                    ? "Bo ghim hoi thoai"
+                    : "Unpin conversation"
+                  : language === "vi"
+                    ? "Ghim hoi thoai"
+                    : "Pin conversation"
+              }
+              aria-label={
+                activeConversationPinned
+                  ? language === "vi"
+                    ? "Bo ghim hoi thoai"
+                    : "Unpin conversation"
+                  : language === "vi"
+                    ? "Ghim hoi thoai"
+                    : "Pin conversation"
+              }
+            >
+              <Pin size={18} />
+            </button>
+          )}
           <button
             type="button"
             className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
@@ -1889,7 +1922,7 @@ export function DirectConversationPane({
           </div>
         )}
 
-        {allowComposer && Boolean(resolvedStrangerActionMode) && !isMessageSelectionMode && (
+        {Boolean(resolvedStrangerActionMode) && !isMessageSelectionMode && (
           <div className="mb-2 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2.5">
             <p className="text-xs font-semibold text-amber-200">
               {resolvedStrangerActionMode === "incoming-request"

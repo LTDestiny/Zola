@@ -17,9 +17,10 @@ type Props = {
   previewText: string;
   peerId?: string;
   onPress: () => void;
+  onLongPress?: () => void;
 };
 
-function ChatItemComponent({ item, displayName, previewText, peerId, onPress }: Props) {
+function ChatItemComponent({ item, displayName, previewText, peerId, onPress, onLongPress }: Props) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const isOnline = usePresenceStore(
@@ -49,6 +50,7 @@ function ChatItemComponent({ item, displayName, previewText, peerId, onPress }: 
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         style={styles.container}

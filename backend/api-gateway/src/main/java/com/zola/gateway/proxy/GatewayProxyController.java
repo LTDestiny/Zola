@@ -982,6 +982,17 @@ public class GatewayProxyController {
         );
     }
 
+    @GetMapping("/chat/conversations/pinned")
+    public ApiResponse<Object> getPinnedConversations(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(
+            chatServiceUrl + "/api/v1/chat/conversations/pinned",
+            null,
+            null,
+            Map.of("X-User-Id", userId)
+        );
+    }
+
     @DeleteMapping("/chat/conversations/{conversationId}/pin")
     public ApiResponse<Object> unpinConversation(
         @PathVariable("conversationId") String conversationId,

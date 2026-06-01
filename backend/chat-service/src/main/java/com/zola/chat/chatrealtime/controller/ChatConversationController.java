@@ -331,7 +331,15 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId
     ) {
         ConversationListItemResponse response = chatRealtimeService.pinConversation(userId, conversationId);
+        emitConversationPinEvent(userId, response, "conversation:pinned");
         return ApiResponse.ok("Conversation pinned", response);
+    }
+
+    @GetMapping("/conversations/pinned")
+    public ApiResponse<List<ConversationListItemResponse>> getPinnedConversations(
+        @RequestHeader("X-User-Id") String userId
+    ) {
+        return ApiResponse.ok("Pinned conversations", chatRealtimeService.listPinnedConversations(userId));
     }
 
     @DeleteMapping("/conversations/{conversationId}/pin")
@@ -340,6 +348,7 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId
     ) {
         ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
+        emitConversationPinEvent(userId, response, "conversation:unpinned");
         return ApiResponse.ok("Conversation unpinned", response);
     }
 
@@ -349,6 +358,7 @@ public class ChatConversationController {
         @PathVariable("conversationId") UUID conversationId
     ) {
         ConversationListItemResponse response = chatRealtimeService.unpinConversation(userId, conversationId);
+        emitConversationPinEvent(userId, response, "conversation:unpinned");
         return ApiResponse.ok("Conversation unpinned", response);
     }
 
@@ -802,5 +812,38 @@ public class ChatConversationController {
                 new SyncEventMessage(userId, "chat-group", eventType, payload, now)
             );
         }
+    }
+
+    private void emitConversationPinEvent(
+        String userId,
+        ConversationListItemResponse conversation,
+        String eventType
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType", eventType);
+        payload.put("actorId", userId);
+        payload.put("conversationId", conversation.id());
+        payload.put("typing", false);
+        payload.put("online", false);
+        payload.put("targetUserId", null);
+        payload.put("message", null);
+        payload.put("unreadCount", conversation.unreadCount());
+        payload.put("totalUnreadCount", chatRealtimeService.totalUnreadCount(userId));
+        payload.put("lastMessage", conversation.lastMessage());
+        payload.put("lastMessageAt", conversation.lastMessageAt() == null ? null : conversation.lastMessageAt().toString());
+        payload.put("conversation", conversation);
+
+        messagingTemplate.convertAndSendToUser(userId, "/queue/chat", payload);
+        messagingTemplate.convertAndSendToUser(
+            userId,
+            "/queue/sync",
+            new SyncEventMessage(
+                userId,
+                "chat-conversation",
+                eventType,
+                "{\"conversationId\":\"" + conversation.id() + "\",\"isPinned\":" + conversation.isPinned() + "}",
+                Instant.now()
+            )
+        );
     }
 }

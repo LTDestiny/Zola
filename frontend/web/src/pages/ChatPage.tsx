@@ -51,6 +51,8 @@ import {
   sendMessage,
   setGroupAdmin,
   toApiErrorMessage,
+  pinConversation,
+  unpinConversation,
   unblockUser as unblockUserRequest,
   updateMyProfile,
   updateGroupSettings,
@@ -1145,13 +1147,13 @@ export function ChatPage() {
 
     const hasProfileOnline = typeof profilePresence?.isOnline === "boolean";
     const hasRealtimeOnline = typeof realtimePresence?.online === "boolean";
-    const online = hasProfileOnline
-      ? Boolean(profilePresence?.isOnline)
-      : hasRealtimeOnline
-        ? Boolean(realtimePresence?.online)
+    const online = hasRealtimeOnline
+      ? Boolean(realtimePresence?.online)
+      : hasProfileOnline
+        ? Boolean(profilePresence?.isOnline)
         : false;
     const lastChangedAt =
-      profilePresence?.lastSeenAt ?? realtimePresence?.lastChangedAt ?? null;
+      realtimePresence?.lastChangedAt ?? profilePresence?.lastSeenAt ?? null;
 
     if (!hasRealtimeOnline && !hasProfileOnline && !lastChangedAt) {
       return undefined;
@@ -1271,6 +1273,22 @@ export function ChatPage() {
     }
   }, [groupPreferenceMap]);
 
+  useEffect(() => {
+    setGroupPreferenceMap((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const conv of conversations) {
+        const isPinned = Boolean(conv.isPinned);
+        const current = next[conv.id] ?? { muted: false, pinned: false, hidden: false };
+        if (Boolean(current.pinned) !== isPinned) {
+          next[conv.id] = { ...current, pinned: isPinned };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [conversations]);
+
   const refreshGroupSettings = useCallback(async (conversationId: string) => {
     try {
       const result = await getGroupSettings(conversationId);
@@ -1369,9 +1387,14 @@ export function ChatPage() {
         };
 
         const requestsPin = patch.pinned === true;
-        const isAlreadyPinned = Boolean(current.pinned);
+        const conversation = useChatStore
+          .getState()
+          .conversations.find((item) => item.id === conversationId);
+        const isAlreadyPinned = Boolean(conversation?.isPinned);
         if (requestsPin && !isAlreadyPinned) {
-          const pinnedCount = Object.values(prev).filter((item) => item?.pinned).length;
+          const pinnedCount = useChatStore
+            .getState()
+            .conversations.filter((item) => item.isPinned).length;
           if (pinnedCount >= 3) {
             setBannerMessage(
               language === "vi"
@@ -1390,6 +1413,49 @@ export function ChatPage() {
 
           if (hiddenConversationPin && !verifyHiddenConversationPin()) {
             return prev;
+          }
+        }
+
+        if (patch.pinned !== undefined && patch.pinned !== isAlreadyPinned) {
+          const optimisticPinnedAt = patch.pinned ? new Date().toISOString() : null;
+          useChatStore.getState().upsertConversation({
+            id: conversationId,
+            isPinned: patch.pinned,
+            pinnedAt: optimisticPinnedAt,
+          });
+
+          if (patch.pinned) {
+            pinConversation(conversationId)
+              .then((res) => {
+                if (res.data) {
+                  useChatStore.getState().upsertConversation(res.data);
+                }
+              })
+              .catch((err) => {
+                console.error("Failed to pin conversation", err);
+                useChatStore.getState().upsertConversation({
+                  id: conversationId,
+                  isPinned: false,
+                  pinnedAt: null,
+                });
+                setBannerMessage(toApiErrorMessage(err));
+              });
+          } else {
+            unpinConversation(conversationId)
+              .then((res) => {
+                if (res.data) {
+                  useChatStore.getState().upsertConversation(res.data);
+                }
+              })
+              .catch((err) => {
+                console.error("Failed to unpin conversation", err);
+                useChatStore.getState().upsertConversation({
+                  id: conversationId,
+                  isPinned: true,
+                  pinnedAt: conversation?.pinnedAt ?? new Date().toISOString(),
+                });
+                setBannerMessage(toApiErrorMessage(err));
+              });
           }
         }
 
@@ -3810,10 +3876,17 @@ export function ChatPage() {
     });
 
     return [...base].sort((left, right) => {
-      const leftPinned = Boolean(groupPreferenceMap[left.id]?.pinned);
-      const rightPinned = Boolean(groupPreferenceMap[right.id]?.pinned);
+      const leftPinned = Boolean(left.isPinned);
+      const rightPinned = Boolean(right.isPinned);
       if (leftPinned !== rightPinned) {
         return Number(rightPinned) - Number(leftPinned);
+      }
+      if (leftPinned && rightPinned) {
+        const leftPinnedAt = left.pinnedAt ? Date.parse(left.pinnedAt) : 0;
+        const rightPinnedAt = right.pinnedAt ? Date.parse(right.pinnedAt) : 0;
+        if (leftPinnedAt !== rightPinnedAt) {
+          return rightPinnedAt - leftPinnedAt;
+        }
       }
       const leftTime = left.lastMessageAt ? Date.parse(left.lastMessageAt) : 0;
       const rightTime = right.lastMessageAt ? Date.parse(right.lastMessageAt) : 0;
@@ -3850,6 +3923,7 @@ export function ChatPage() {
     const presence = isGroupConversation ? undefined : getPresenceForUser(peerUserId);
     const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thanh vien" : "members"}`;
     const timestampMs = conversation.lastMessageAt ? Date.parse(conversation.lastMessageAt) : 0;
+    const pinnedAtMs = conversation.pinnedAt ? Date.parse(conversation.pinnedAt) : 0;
 
     return {
       id: conversation.id,
@@ -3863,7 +3937,7 @@ export function ChatPage() {
       timestamp: formatSidebarTimestamp(conversation.lastMessageAt),
       lastMessage: formatConversationLastPreview(conversation),
       unreadCount: conversation.unreadCount ?? 0,
-      isPinned: Boolean(groupPreferenceMap[conversation.id]?.pinned),
+      isPinned: Boolean(conversation.isPinned),
       isOnline: isGroupConversation ? false : presence?.online ?? false,
       presenceLabel: isGroupConversation ? groupPresenceLabel : toPresenceLabel(presence),
       peerId: peerUserId ?? undefined,
@@ -3875,6 +3949,7 @@ export function ChatPage() {
             : "Stranger"
           : undefined,
       sortTimeMs: Number.isFinite(timestampMs) ? timestampMs : 0,
+      pinnedAtMs: Number.isFinite(pinnedAtMs) ? pinnedAtMs : 0,
     };
   }, [
     formatConversationLastPreview,
@@ -3948,6 +4023,7 @@ export function ChatPage() {
       variant: "stranger-inbox",
       tagLabel: language === "vi" ? "Can luu y" : "Review",
       sortTimeMs: Number.isFinite(sortTimeMs) ? sortTimeMs : 0,
+      pinnedAtMs: 0,
     };
   }, [
     formatConversationLastPreview,
@@ -3965,7 +4041,21 @@ export function ChatPage() {
       ? [...defaultSidebarChats, strangerInboxEntry]
       : [...defaultSidebarChats];
 
-    return nextItems.sort((left, right) => (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0));
+    return nextItems.sort((left, right) => {
+      const pinnedDiff = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned));
+      if (pinnedDiff !== 0) {
+        return pinnedDiff;
+      }
+
+      if (left.isPinned && right.isPinned) {
+        const pinnedAtDiff = (right.pinnedAtMs ?? 0) - (left.pinnedAtMs ?? 0);
+        if (pinnedAtDiff !== 0) {
+          return pinnedAtDiff;
+        }
+      }
+
+      return (right.sortTimeMs ?? 0) - (left.sortTimeMs ?? 0);
+    });
   }, [
     activeMessageWorkspaceView,
     defaultSidebarChats,
@@ -4017,11 +4107,15 @@ export function ChatPage() {
       const participantIds = Array.from(
         new Set(
           items.flatMap((item) => {
+            const list: string[] = [];
+            if (item.otherUserId) {
+              list.push(item.otherUserId);
+            }
             const peers = item.participants?.filter((id) => id && id !== myId);
             if (peers && peers.length > 0) {
-              return peers;
+              list.push(...peers);
             }
-            return item.name ? [item.name] : [];
+            return list.filter((id) => id && id.includes("-"));
           }),
         ),
       );
@@ -4463,7 +4557,11 @@ export function ChatPage() {
           event.eventType === "UNREAD_COUNT_UPDATED" ||
           event.eventType === "TOTAL_UNREAD_UPDATED" ||
           event.eventType === "group_created" ||
-          event.eventType === "GROUP_CREATED";
+          event.eventType === "GROUP_CREATED" ||
+          event.eventType === "conversation:pinned" ||
+          event.eventType === "conversation:unpinned" ||
+          event.eventType === "CONVERSATION_PINNED" ||
+          event.eventType === "CONVERSATION_UNPINNED";
         const isMessageEvent =
           event.eventType === "NEW_MESSAGE" ||
           event.eventType === "MESSAGE_SENT" ||
@@ -4488,18 +4586,22 @@ export function ChatPage() {
             const isGroupCreatedEvent =
               event.eventType === "group_created" ||
               event.eventType === "GROUP_CREATED";
-            upsertConversation({
-              id: event.conversationId,
-              type: isGroupCreatedEvent ? "group" : undefined,
-              name: isGroupCreatedEvent
-                ? (language === "vi" ? "Nhom moi" : "New group")
-                : undefined,
-              lastMessage: event.lastMessage ?? undefined,
-              lastMessageAt:
-                event.lastMessageAt ??
-                (isGroupCreatedEvent ? new Date().toISOString() : undefined),
-              unreadCount: event.unreadCount ?? undefined,
-            });
+            if (event.conversation) {
+              upsertConversation(event.conversation);
+            } else {
+              upsertConversation({
+                id: event.conversationId,
+                type: isGroupCreatedEvent ? "group" : undefined,
+                name: isGroupCreatedEvent
+                  ? (language === "vi" ? "Nhom moi" : "New group")
+                  : undefined,
+                lastMessage: event.lastMessage ?? undefined,
+                lastMessageAt:
+                  event.lastMessageAt ??
+                  (isGroupCreatedEvent ? new Date().toISOString() : undefined),
+                unreadCount: event.unreadCount ?? undefined,
+              });
+            }
 
             const client = realtimeClientRef.current;
             const shouldSyncSubscriptions =
@@ -5175,8 +5277,12 @@ export function ChatPage() {
     activeConversation && activeConversation.type !== "group"
       ? resolvePeerUserId(activeConversation)
       : null;
+  const activeDirectPeerIsFriendForActions = Boolean(
+    activeDirectPeerIdForActions && friendUserIdSet.has(activeDirectPeerIdForActions),
+  );
   const canComposeDirectForActions = Boolean(
-    !activeDirectPeerIdForActions ||
+    activeDirectPeerIdForActions &&
+      activeDirectPeerIsFriendForActions &&
       (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
         !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
         !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
@@ -5330,6 +5436,15 @@ export function ChatPage() {
       return;
     }
 
+    if (activeDirectPeerIdForActions && !friendUserIdSet.has(activeDirectPeerIdForActions)) {
+      appendInlineSystemNotice(
+        language === "vi"
+          ? "Hai ban chua ket ban. Hay gui loi moi va doi xac nhan truoc khi nhan tin."
+          : "You are not friends yet. Send a friend request and wait for approval before messaging.",
+      );
+      return;
+    }
+
     appendInlineSystemNotice(
       language === "vi"
         ? "Nguoi dung hien khong muon nhan tin."
@@ -5340,6 +5455,7 @@ export function ChatPage() {
     appendInlineSystemNotice,
     blockedByPeerUserIds,
     blockedUserIds,
+    friendUserIdSet,
     language,
   ]);
 
@@ -7072,6 +7188,7 @@ export function ChatPage() {
     activeDirectPeerUserId && peerRejectedMessageUserIds[activeDirectPeerUserId],
   );
   const canComposeDirectMessage =
+    isActiveDirectPeerFriend &&
     !isActiveDirectPeerBlockedByMe &&
     !isActiveDirectPeerBlockedByPeer &&
     !isActiveDirectPeerRejectingMessages;
@@ -7159,7 +7276,7 @@ export function ChatPage() {
   ]);
 
   const activeConversationPinned = activeConversationForView
-    ? Boolean(groupPreferenceMap[activeConversationForView.id]?.pinned)
+    ? Boolean(activeConversationForView.isPinned)
     : false;
 
   const activePinnedBoardItems = useMemo(() => {
@@ -7368,7 +7485,7 @@ export function ChatPage() {
   })();
 
   const activeGroupPreference =
-    activeConversationForView?.type === "group"
+    activeConversationForView
       ? groupPreferenceMap[activeConversationForView.id] ?? {
           muted: false,
           pinned: false,
@@ -8601,7 +8718,10 @@ export function ChatPage() {
               <div className="mt-4">
                 <Link
                   to="/login"
-                  onClick={() => clearAuthTokens()}
+                  onClick={() => {
+                    clearAuthTokens();
+                    window.location.replace("/login");
+                  }}
                   className="inline-flex items-center gap-2 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 py-2 text-sm text-slate-100 transition-all duration-200 hover:bg-[#12355b]"
                 >
                   <LogOut size={16} />
@@ -8845,6 +8965,13 @@ export function ChatPage() {
                   activeConversationPresence,
                 )}
                 activeConversationPinned={activeConversationPinned}
+                onTogglePin={() => {
+                  if (activeConversationForView?.id) {
+                    updateGroupPreference(activeConversationForView.id, {
+                      pinned: !activeConversationPinned,
+                    });
+                  }
+                }}
                 headerUnreadBadgeCount={headerUnreadBadgeCount}
                 relationshipBadgeLabel={activeDirectRelationshipBadgeLabel}
                 conversationNotice={activeDirectConversationNotice}
@@ -8887,6 +9014,10 @@ export function ChatPage() {
                       ? language === "vi"
                         ? "Nguoi dung nay da chan ban."
                         : "This user blocked you."
+                      : isActiveDirectPeerStranger
+                        ? language === "vi"
+                          ? "Hai ban chua ket ban. Hay ket ban truoc khi nhan tin."
+                          : "You are not friends yet. Add this person before messaging."
                     : language === "vi"
                       ? "Nguoi dung hien khong muon nhan tin."
                       : "This user currently does not want to receive messages."

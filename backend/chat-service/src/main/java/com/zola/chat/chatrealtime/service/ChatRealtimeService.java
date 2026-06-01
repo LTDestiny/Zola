@@ -29,9 +29,12 @@ import com.zola.chat.infrastructure.persistence.mongo.RealtimeMessageRepository;
 import com.zola.chat.infrastructure.persistence.postgres.ConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresConversationRepository;
 import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRepository;
+import com.zola.chat.infrastructure.persistence.postgres.UserPinnedConversationEntity;
+import com.zola.chat.infrastructure.persistence.postgres.UserPinnedConversationRepository;
 import com.zola.chat.repository.ConversationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
@@ -58,10 +61,12 @@ public class ChatRealtimeService {
     private static final int INVITE_CODE_LENGTH = 10;
     private static final int INVITE_CODE_MAX_ATTEMPTS = 8;
     private static final int MAX_PINNED_MESSAGES = 3;
+    private static final int MAX_PINNED_CONVERSATIONS = 3;
     private static final SecureRandom INVITE_CODE_RANDOM = new SecureRandom();
 
     private final PostgresConversationRepository conversationRepository;
     private final ConversationRepository groupConversationRepository;
+    private final UserPinnedConversationRepository pinnedConversationRepository;
     private final RealtimeMessageRepository messageRepository;
     private final RedisOnlineUserChecker onlineUserChecker;
     private final PresenceManager presenceManager;
@@ -85,6 +90,7 @@ public class ChatRealtimeService {
     public ChatRealtimeService(
         PostgresConversationRepository conversationRepository,
         ConversationRepository groupConversationRepository,
+        UserPinnedConversationRepository pinnedConversationRepository,
         RealtimeMessageRepository messageRepository,
         RedisOnlineUserChecker onlineUserChecker,
         PresenceManager presenceManager,
@@ -95,6 +101,7 @@ public class ChatRealtimeService {
     ) {
         this.conversationRepository = conversationRepository;
         this.groupConversationRepository = groupConversationRepository;
+        this.pinnedConversationRepository = pinnedConversationRepository;
         this.messageRepository = messageRepository;
         this.onlineUserChecker = onlineUserChecker;
         this.presenceManager = presenceManager;
@@ -286,7 +293,8 @@ public class ChatRealtimeService {
                 null,
                 null,
                 false,
-                false
+                false,
+                null
             );
             deleteConversationAndMessages(conversation.getId());
             return new GroupActionResult(removed, null);
@@ -1048,12 +1056,29 @@ public class ChatRealtimeService {
         );
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ConversationListItemResponse pinConversation(String userId, UUID conversationId) {
+        ensureConversationMember(conversationId, userId);
+        String normalizedConversationId = conversationId.toString();
+        pinnedConversationRepository.lockByUserId(userId);
+
+        if (pinnedConversationRepository.existsByUserIdAndConversationId(userId, normalizedConversationId)) {
+            throw new IllegalArgumentException("Conversation is already pinned");
+        }
+
+        if (pinnedConversationRepository.countByUserId(userId) >= MAX_PINNED_CONVERSATIONS) {
+            throw new IllegalArgumentException("You can pin up to 3 conversations only");
+        }
+
+        UserPinnedConversationEntity pinned = new UserPinnedConversationEntity();
+        pinned.setUserId(userId);
+        pinned.setConversationId(normalizedConversationId);
+        pinned.setPinnedAt(Instant.now());
+        pinnedConversationRepository.saveAndFlush(pinned);
+
         Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
         if (privateConversation.isPresent()) {
             ConversationEntity entity = privateConversation.get();
-            ensureMember(entity, userId);
             entity.setPinned(userId, true);
             entity.setUpdatedAt(Instant.now());
             conversationRepository.save(entity);
@@ -1061,21 +1086,29 @@ public class ChatRealtimeService {
         }
 
         ConversationDocument groupConversation = findGroupConversation(conversationId.toString());
-        ensureGroupMember(groupConversation, userId);
         Set<String> pinnedUserIds = new HashSet<>(groupConversation.getPinnedUserIds());
         pinnedUserIds.add(userId);
         groupConversation.setPinnedUserIds(pinnedUserIds);
         groupConversation.setUpdatedAt(Instant.now());
         groupConversationRepository.save(groupConversation);
-        return toGroupConversationListItem(groupConversation, userId);
+        return getConversationListItem(userId, conversationId);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ConversationListItemResponse unpinConversation(String userId, UUID conversationId) {
+        ensureConversationMember(conversationId, userId);
+        String normalizedConversationId = conversationId.toString();
+        pinnedConversationRepository.lockByUserId(userId);
+
+        if (!pinnedConversationRepository.existsByUserIdAndConversationId(userId, normalizedConversationId)) {
+            throw new IllegalArgumentException("Conversation is not pinned");
+        }
+
+        pinnedConversationRepository.deleteByUserIdAndConversationId(userId, normalizedConversationId);
+
         Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
         if (privateConversation.isPresent()) {
             ConversationEntity entity = privateConversation.get();
-            ensureMember(entity, userId);
             entity.setPinned(userId, false);
             entity.setUpdatedAt(Instant.now());
             conversationRepository.save(entity);
@@ -1083,13 +1116,28 @@ public class ChatRealtimeService {
         }
 
         ConversationDocument groupConversation = findGroupConversation(conversationId.toString());
-        ensureGroupMember(groupConversation, userId);
         Set<String> pinnedUserIds = new HashSet<>(groupConversation.getPinnedUserIds());
         pinnedUserIds.remove(userId);
         groupConversation.setPinnedUserIds(pinnedUserIds);
         groupConversation.setUpdatedAt(Instant.now());
         groupConversationRepository.save(groupConversation);
-        return toGroupConversationListItem(groupConversation, userId);
+        return getConversationListItem(userId, conversationId);
+    }
+
+    public List<ConversationListItemResponse> listPinnedConversations(String userId) {
+        Map<String, ConversationListItemResponse> byId = listConversations(userId).stream()
+            .filter(ConversationListItemResponse::isPinned)
+            .collect(Collectors.toMap(
+                ConversationListItemResponse::id,
+                item -> item,
+                (left, right) -> left,
+                LinkedHashMap::new
+            ));
+
+        return pinnedConversationRepository.findByUserIdOrderByPinnedAtDesc(userId).stream()
+            .map(pin -> byId.get(pin.getConversationId()))
+            .filter(item -> item != null)
+            .toList();
     }
 
     public List<MessagePayload> getMessages(String userId, UUID conversationId) {
@@ -1110,6 +1158,15 @@ public class ChatRealtimeService {
         List<ConversationDocument> groupConversations = groupConversationRepository.findByMemberOrParticipant(userId).stream()
             .filter(conversation -> CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType())))
             .toList();
+        Map<String, Instant> pinnedAtByConversationId = pinnedConversationRepository
+            .findByUserIdOrderByPinnedAtDesc(userId)
+            .stream()
+            .collect(Collectors.toMap(
+                UserPinnedConversationEntity::getConversationId,
+                UserPinnedConversationEntity::getPinnedAt,
+                (left, right) -> left,
+                LinkedHashMap::new
+            ));
 
         Set<String> peerIds = new LinkedHashSet<>();
         privateEntities.stream()
@@ -1146,7 +1203,8 @@ public class ChatRealtimeService {
                 null,
                 peerUserId,
                 online,
-                entity.isPinnedBy(userId)
+                pinnedAtByConversationId.containsKey(entity.getId().toString()),
+                pinnedAtByConversationId.get(entity.getId().toString())
             ));
         }
 
@@ -1181,18 +1239,25 @@ public class ChatRealtimeService {
                 ownerId,
                 ownerId,
                 anyMemberOnline,
-                conversation.getPinnedUserIds().contains(userId)
+                pinnedAtByConversationId.containsKey(conversation.getId()),
+                pinnedAtByConversationId.get(conversation.getId())
             ));
         }
 
         items.sort(Comparator
-            .comparing(ConversationListItemResponse::lastMessageAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .comparing(ConversationListItemResponse::isPinned, Comparator.reverseOrder())
+            .thenComparing(ConversationListItemResponse::pinnedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(ConversationListItemResponse::lastMessageAt, Comparator.nullsLast(Comparator.reverseOrder()))
             .thenComparing(ConversationListItemResponse::id, Comparator.nullsLast(String::compareTo)));
 
         return items;
     }
 
     public ConversationListItemResponse getConversationListItem(String userId, UUID conversationId) {
+        Instant pinnedAt = pinnedConversationRepository
+            .findByUserIdAndConversationId(userId, conversationId.toString())
+            .map(UserPinnedConversationEntity::getPinnedAt)
+            .orElse(null);
         Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
         if (privateConversation.isPresent()) {
             ConversationEntity entity = privateConversation.get();
@@ -1214,7 +1279,8 @@ public class ChatRealtimeService {
                 null,
                 peerUserId,
                 online,
-                entity.isPinnedBy(userId)
+                pinnedAt != null,
+                pinnedAt
             );
         }
 
@@ -1833,6 +1899,10 @@ public class ChatRealtimeService {
     }
 
     private ConversationListItemResponse toGroupConversationListItem(ConversationDocument conversation, String requesterId) {
+        Instant pinnedAt = pinnedConversationRepository
+            .findByUserIdAndConversationId(requesterId, conversation.getId())
+            .map(UserPinnedConversationEntity::getPinnedAt)
+            .orElse(null);
         return new ConversationListItemResponse(
             conversation.getId(),
             CONVERSATION_TYPE_GROUP,
@@ -1848,7 +1918,8 @@ public class ChatRealtimeService {
             conversation.getOwnerId(),
             conversation.getOwnerId(),
             false,
-            conversation.getPinnedUserIds().contains(requesterId)
+            pinnedAt != null,
+            pinnedAt
         );
     }
 

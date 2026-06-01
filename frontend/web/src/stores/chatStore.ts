@@ -6,7 +6,7 @@ type ChatState = {
     selectedConversationId: string | null;
     totalUnreadCount: number;
     setConversations: (items: ConversationItem[]) => void;
-    upsertConversation: (patch: Partial<ConversationItem> & { id: string }) => void;
+    upsertConversation: (patch: ConversationPatch) => void;
     removeConversation: (conversationId: string) => void;
     setSelectedConversationId: (conversationId: string | null) => void;
     clearSelectedConversation: () => void;  // NEW: Clear selection for Welcome Screen
@@ -14,8 +14,21 @@ type ChatState = {
     syncTotalUnread: (value: number) => void;
 };
 
+type ConversationPatch = Partial<ConversationItem> & {
+    id: string;
+    pinned?: boolean;
+};
+
 function sortByLatest(conversations: ConversationItem[]) {
     return [...conversations].sort((a, b) => {
+        const pinnedDiff = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
+        if (pinnedDiff !== 0) return pinnedDiff;
+
+        if (Boolean(a.isPinned) && Boolean(b.isPinned)) {
+            const pinnedAtDiff = toMillis(b.pinnedAt) - toMillis(a.pinnedAt);
+            if (pinnedAtDiff !== 0) return pinnedAtDiff;
+        }
+
         const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
         const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
         return bTime - aTime;
@@ -32,6 +45,12 @@ function toMillis(value: string | null | undefined) {
     }
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function omitUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+    return Object.fromEntries(
+        Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+    ) as Partial<T>;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -108,6 +127,7 @@ export const useChatStore = create<ChatState>((set) => ({
         set((state) => {
             const current = state.conversations;
             const index = current.findIndex((item) => item.id === patch.id);
+            const resolvedPinned = patch.isPinned ?? patch.pinned;
             if (index === -1) {
                 const created: ConversationItem = {
                     id: patch.id,
@@ -124,6 +144,8 @@ export const useChatStore = create<ChatState>((set) => ({
                     participants: patch.participants ?? [],
                     admins: patch.admins ?? [],
                     ownerId: patch.ownerId ?? null,
+                    isPinned: resolvedPinned ?? false,
+                    pinnedAt: resolvedPinned ? (patch.pinnedAt ?? new Date().toISOString()) : null,
                 };
                 const next = sortByLatest([...current, created]);
                 return {
@@ -132,9 +154,17 @@ export const useChatStore = create<ChatState>((set) => ({
                 };
             }
 
+            const patchWithoutUndefined = omitUndefined(patch);
             const updated = {
                 ...current[index],
-                ...patch,
+                ...patchWithoutUndefined,
+                isPinned: resolvedPinned ?? current[index].isPinned ?? false,
+                pinnedAt:
+                    resolvedPinned === false
+                        ? null
+                        : resolvedPinned === true
+                            ? (patch.pinnedAt ?? current[index].pinnedAt ?? new Date().toISOString())
+                            : patch.pinnedAt ?? current[index].pinnedAt ?? null,
                 unreadCount: (() => {
                     const currentUnread = Math.max(0, current[index].unreadCount ?? 0);
                     const patchedUnread = patch.unreadCount;

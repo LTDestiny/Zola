@@ -71,6 +71,7 @@ function normalizeConversationItem(item: ConversationPayload): ConversationItem 
     admins: item.admins ?? [],
     ownerId: item.ownerId ?? null,
     isPinned: Boolean(item.isPinned),
+    pinnedAt: item.pinnedAt ?? null,
     isOnline: item.isOnline ?? null,
     otherUserId: item.otherUserId ?? null,
   };
@@ -537,6 +538,15 @@ export async function getConversations() {
   };
 }
 
+export async function getPinnedConversations() {
+  const response = await httpClient.get<ApiResponse<ConversationPayload[]>>("/api/v1/chat/conversations/pinned");
+  const normalized = (response.data.data ?? []).map((item) => normalizeConversationItem(item));
+  return {
+    ...response.data,
+    data: normalized,
+  };
+}
+
 export async function createDirectConversation(targetUserId: string) {
   const response = await httpClient.post<ApiResponse<ConversationPayload>>("/api/v1/chat/conversations/direct", {
     targetUserId,
@@ -624,6 +634,42 @@ export async function unpinGroupMessage(conversationId: string, messageId: strin
     `/api/v1/chat/conversations/${conversationId}/pins/${messageId}`,
   );
   return response.data;
+}
+
+export async function pinConversation(conversationId: string) {
+  const response = await httpClient.post<ApiResponse<ConversationPayload>>(
+    `/api/v1/chat/conversations/${conversationId}/pin`,
+    {},
+  );
+  return {
+    ...response.data,
+    data: normalizeConversationItem(response.data.data),
+  };
+}
+
+export async function unpinConversation(conversationId: string) {
+  try {
+    const response = await httpClient.delete<ApiResponse<ConversationPayload>>(
+      `/api/v1/chat/conversations/${conversationId}/pin`,
+    );
+    return {
+      ...response.data,
+      data: normalizeConversationItem(response.data.data),
+    };
+  } catch (error) {
+    if (!shouldFallbackLegacyEndpoint(error)) {
+      throw error;
+    }
+  }
+
+  const fallback = await httpClient.post<ApiResponse<ConversationPayload>>(
+    `/api/v1/chat/conversations/${conversationId}/pin/unpin`,
+    {},
+  );
+  return {
+    ...fallback.data,
+    data: normalizeConversationItem(fallback.data.data),
+  };
 }
 
 export async function deleteGroupConversation(conversationId: string) {

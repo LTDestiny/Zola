@@ -57,6 +57,9 @@ function sortConversations(items: ConversationItem[]): ConversationItem[] {
     const pinnedDiff = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
     if (pinnedDiff !== 0) return pinnedDiff;
 
+    const pinnedAtDiff = toMillis(b.pinnedAt) - toMillis(a.pinnedAt);
+    if (pinnedAtDiff !== 0) return pinnedAtDiff;
+
     // Then by lastMessageAt descending
     const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
     const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
@@ -74,6 +77,12 @@ function toMillis(value: string | null | undefined): number {
   if (!value) return 0;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function omitUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as Partial<T>;
 }
 
 // ─── HELPER: Merge messages with deduplication ───────────────────────────────
@@ -174,11 +183,12 @@ export const useChatStore = create<ChatState>()(
           lastMessageAt: patch.lastMessageAt ?? new Date().toISOString(),
           unreadCount: patch.unreadCount ?? 0,
           isPinned: patch.isPinned ?? false,
+          pinnedAt: patch.pinnedAt ?? null,
           participants: patch.participants ?? [],
         });
       } else {
         // CRITICAL: Create new object reference for updated item
-        next[index] = { ...next[index], ...patch };
+        next[index] = { ...next[index], ...omitUndefined(patch) };
       }
 
       const sorted = sortConversations(next);
