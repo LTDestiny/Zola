@@ -196,11 +196,19 @@ export function InAppCallOverlay({
               remoteStreams.length > 0 ? (
                 <div
                   className={`grid h-full w-full gap-2 p-2 ${
-                    remoteStreams.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                    remoteStreams.length === 1
+                      ? "grid-cols-1"
+                      : remoteStreams.length === 2
+                        ? "grid-cols-1 sm:grid-cols-2 grid-rows-2 sm:grid-rows-1"
+                        : remoteStreams.length <= 4
+                          ? "grid-cols-2 grid-rows-2"
+                          : "grid-cols-2 sm:grid-cols-3 grid-rows-3 sm:grid-rows-2"
                   }`}
                 >
                   {remoteStreams.map((stream, index) => (
-                    <RemoteVideoTile key={`${activeCall.callId}-${index}`} stream={stream} />
+                    <div key={`${activeCall.callId}-${index}`} className="min-h-0 min-w-0 h-full w-full">
+                      <RemoteVideoTile stream={stream} />
+                    </div>
                   ))}
                 </div>
               ) : (

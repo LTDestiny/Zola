@@ -6171,10 +6171,6 @@ export function ChatPage() {
           accepted.requesterId,
         );
         await fetchConversations();
-        hasUserOpenedConversationRef.current = true;
-        manuallyOpenedConversationIdRef.current = conversation.data.id;
-        pendingReadSyncOnOpenRef.current = true;
-        setActiveConversationId(conversation.data.id);
       }
 
       setBannerMessage(
@@ -8743,9 +8739,10 @@ export function ChatPage() {
                   setActiveConversationId(null);
                   setMessages([]);
                 }}
-                className="absolute left-3 top-3 z-30 rounded-full border border-white/10 bg-slate-950/75 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-lg backdrop-blur md:hidden"
+                className="absolute left-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/75 text-lg font-semibold text-slate-100 shadow-lg backdrop-blur md:hidden"
+                aria-label={language === "vi" ? "Quay lai danh sach" : "Back to chats"}
               >
-                {language === "vi" ? "‹ Danh sach" : "‹ Chats"}
+                ‹
               </button>
             )}
             {showJoinGroupCallNotice && activeGroupCallNotice && (

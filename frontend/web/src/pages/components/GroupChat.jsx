@@ -722,7 +722,7 @@ export function GroupChat({
       <div className="min-w-0 flex flex-1 flex-col overflow-hidden">{children}</div>
 
       <aside
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] shrink-0 flex-col border-l border-[#1f4673] bg-[#0d2442] transform transition-transform duration-300 lg:relative lg:inset-auto lg:z-auto lg:w-[24rem] lg:shrink-0 lg:transform-none lg:transition-none ${isPanelOpen ? "translate-x-0" : "translate-x-full"} ${isPanelOpen ? "flex lg:flex" : "hidden lg:hidden"}`}
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[24rem] shrink-0 flex-col border-l border-[#1f4673] bg-[#0d2442] pt-[var(--zola-mobile-top-safe-area)] lg:pt-0 transform transition-transform duration-300 lg:relative lg:inset-auto lg:z-auto lg:w-[24rem] lg:shrink-0 lg:transform-none lg:transition-none ${isPanelOpen ? "translate-x-0" : "translate-x-full"} ${isPanelOpen ? "flex lg:flex" : "hidden lg:hidden"}`}
       >
         <div className="shrink-0 border-b border-[#1f4673] px-3 py-3 lg:px-4">
           <div className="flex items-center justify-between">

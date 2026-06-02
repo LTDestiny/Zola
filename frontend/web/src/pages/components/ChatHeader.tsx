@@ -76,7 +76,7 @@ export const ChatHeader = memo(function ChatHeader({
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
       {/* Left section: Back button + Avatar + Info */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 pr-2">
         {/* Back button (mobile) */}
         {showBackButton && onBack && (
           <button

@@ -1493,7 +1493,7 @@ export function DirectConversationPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-zola-surface)]">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#183654_0%,#14314e_100%)] px-3 sm:h-16 sm:px-5">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#183654_0%,#14314e_100%)] pl-[52px] pr-3 md:px-5 sm:h-16 sm:pr-5">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
