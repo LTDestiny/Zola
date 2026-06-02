@@ -16,16 +16,22 @@ public class SessionSyncPublisher {
 
     private final RestClient restClient;
     private final String chatServiceUrl;
+    private final String gatewaySecret;
 
-    public SessionSyncPublisher(@Value("${services.chat-url:http://chat-service:8083}") String chatServiceUrl) {
+    public SessionSyncPublisher(
+        @Value("${services.chat-url:http://chat-service:8083}") String chatServiceUrl,
+        @Value("${app.internal.gateway-secret:internal-dev-secret}") String gatewaySecret
+    ) {
         this.restClient = RestClient.builder().build();
         this.chatServiceUrl = chatServiceUrl;
+        this.gatewaySecret = gatewaySecret;
     }
 
     public void publish(UUID userId, String eventType, String payload) {
         try {
             restClient.post()
                 .uri(chatServiceUrl + "/api/v1/sync/users/{userId}/emit", Map.of("userId", userId.toString()))
+                .header("X-Internal-Gateway-Secret", gatewaySecret)
                 .body(Map.of(
                     "userId", userId.toString(),
                     "sourceClient", "auth-service",

@@ -21,12 +21,16 @@ public class FriendEventPublisher {
     private final RestTemplate restTemplate;
     private final String chatServiceBaseUrl;
 
+    private final String gatewaySecret;
+
     public FriendEventPublisher(
         RestTemplate restTemplate,
-        @Value("${app.chat-service.base-url}") String chatServiceBaseUrl
+        @Value("${app.chat-service.base-url}") String chatServiceBaseUrl,
+        @Value("${app.internal.gateway-secret:internal-dev-secret}") String gatewaySecret
     ) {
         this.restTemplate = restTemplate;
         this.chatServiceBaseUrl = chatServiceBaseUrl;
+        this.gatewaySecret = gatewaySecret;
     }
 
     public void publishFriendRequestReceived(UUID addresseeId, UUID friendshipId, UUID requesterId) {
@@ -82,7 +86,12 @@ public class FriendEventPublisher {
                 "payload", payload,
                 "timestamp", Instant.now().toString()
             );
-            restTemplate.postForObject(url, body, Map.class);
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.set("X-Internal-Gateway-Secret", gatewaySecret);
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> entity = new org.springframework.http.HttpEntity<>(body, headers);
+            restTemplate.postForObject(url, entity, Map.class);
+            log.info("[FriendEvent] Successfully emitted {} to user {}", eventType, userId);
         } catch (Exception ex) {
             log.warn("[FriendEvent] Failed to emit {} to user {}: {}", eventType, userId, ex.getMessage());
         }

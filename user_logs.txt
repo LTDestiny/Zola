@@ -1,0 +1,59 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-06-02T06:20:53.361Z  INFO 1 --- [user-service] [           main] com.zola.user.UserServiceApplication     : Starting UserServiceApplication using Java 17.0.19 with PID 1 (/opt/app/app.jar started by root in /opt/app)
+2026-06-02T06:20:53.365Z  INFO 1 --- [user-service] [           main] com.zola.user.UserServiceApplication     : No active profile set, falling back to 1 default profile: "default"
+2026-06-02T06:20:55.691Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-06-02T06:20:55.695Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-06-02T06:20:55.951Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 245 ms. Found 2 JPA repository interfaces.
+2026-06-02T06:20:55.987Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-06-02T06:20:55.989Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-06-02T06:20:56.013Z  INFO 1 --- [user-service] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.zola.user.repository.MessageBlockRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-06-02T06:20:56.014Z  INFO 1 --- [user-service] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.zola.user.repository.FriendshipRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-06-02T06:20:56.014Z  INFO 1 --- [user-service] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 8 ms. Found 0 Redis repository interfaces.
+2026-06-02T06:20:58.002Z  INFO 1 --- [user-service] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8082 (http)
+2026-06-02T06:20:58.035Z  INFO 1 --- [user-service] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-06-02T06:20:58.036Z  INFO 1 --- [user-service] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
+2026-06-02T06:20:58.124Z  INFO 1 --- [user-service] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-06-02T06:20:58.138Z  INFO 1 --- [user-service] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 4658 ms
+2026-06-02T06:20:59.584Z  INFO 1 --- [user-service] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-06-02T06:21:00.020Z  INFO 1 --- [user-service] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@72001c71
+2026-06-02T06:21:00.024Z  INFO 1 --- [user-service] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-06-02T06:21:00.101Z  INFO 1 --- [user-service] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://postgres:5432/zola_user_db (PostgreSQL 15.18)
+2026-06-02T06:21:00.355Z  INFO 1 --- [user-service] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 5 migrations (execution time 00:00.179s)
+2026-06-02T06:21:00.400Z  INFO 1 --- [user-service] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": 5
+2026-06-02T06:21:00.407Z  INFO 1 --- [user-service] [           main] o.f.core.internal.command.DbMigrate      : Schema "public" is up to date. No migration necessary.
+2026-06-02T06:21:00.699Z  INFO 1 --- [user-service] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-06-02T06:21:00.828Z  INFO 1 --- [user-service] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.5.3.Final
+2026-06-02T06:21:00.926Z  INFO 1 --- [user-service] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-06-02T06:21:01.522Z  INFO 1 --- [user-service] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-06-02T06:21:02.543Z  INFO 1 --- [user-service] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-06-02T06:21:02.547Z  INFO 1 --- [user-service] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-06-02T06:21:03.014Z  INFO 1 --- [user-service] [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-06-02T06:21:04.301Z  WARN 1 --- [user-service] [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-06-02T06:21:04.379Z  WARN 1 --- [user-service] [           main] .s.s.UserDetailsServiceAutoConfiguration : 
+
+Using generated security password: 3715ac2e-b488-4feb-b68e-361e66503d6a
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-02T06:21:04.405Z  INFO 1 --- [user-service] [           main] r$InitializeUserDetailsManagerConfigurer : Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-02T06:21:06.686Z  INFO 1 --- [user-service] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 2 endpoints beneath base path '/actuator'
+2026-06-02T06:21:06.878Z  INFO 1 --- [user-service] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8082 (http) with context path '/'
+2026-06-02T06:21:06.899Z  INFO 1 --- [user-service] [           main] com.zola.user.UserServiceApplication     : Started UserServiceApplication in 14.467 seconds (process running for 15.227)
+2026-06-02T06:28:52.503Z  INFO 1 --- [user-service] [nio-8082-exec-2] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-02T06:28:52.503Z  INFO 1 --- [user-service] [nio-8082-exec-2] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-06-02T06:28:52.506Z  INFO 1 --- [user-service] [nio-8082-exec-2] o.s.web.servlet.DispatcherServlet        : Completed initialization in 3 ms
+2026-06-02T06:46:03.360Z  WARN 1 --- [user-service] [nio-8082-exec-3] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_RECEIVED to user 0283ca96-5d87-4b33-a8c6-ebec53009cfd: 401 : [no body]
+2026-06-02T06:46:22.308Z  WARN 1 --- [user-service] [nio-8082-exec-7] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_ACCEPTED to user 81b0e16d-8ad5-42ee-a82b-bc9cdb4ed9af: 401 : [no body]
+2026-06-02T06:46:22.319Z  WARN 1 --- [user-service] [nio-8082-exec-7] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_ACCEPTED to user 0283ca96-5d87-4b33-a8c6-ebec53009cfd: 401 : [no body]
+2026-06-02T06:48:32.223Z  WARN 1 --- [user-service] [io-8082-exec-10] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_RECEIVED to user 11111111-1111-1111-1111-111111111111: 401 : [no body]
+2026-06-02T06:48:42.353Z  WARN 1 --- [user-service] [nio-8082-exec-1] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_ACCEPTED to user 0283ca96-5d87-4b33-a8c6-ebec53009cfd: 401 : [no body]
+2026-06-02T06:48:42.364Z  WARN 1 --- [user-service] [nio-8082-exec-1] c.z.user.service.FriendEventPublisher    : [FriendEvent] Failed to emit FRIENDSHIP_REQUEST_ACCEPTED to user 11111111-1111-1111-1111-111111111111: 401 : [no body]

@@ -309,8 +309,10 @@ public class GatewayProxyController {
             ensureDirectConversationForFriendship(response);
             emitFriendshipSync(response, "FRIENDSHIP_REQUEST_ACCEPTED");
         } else if ("PENDING".equals(status)) {
-            emitSyncEvent(userId, "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + body.addresseeId() + "\"}");
-            emitSyncEvent(body.addresseeId().toString(), "FRIENDSHIP_REQUEST_SENT", "{\"friendshipWith\":\"" + userId + "\"}");
+            String addresseeId = body.addresseeId().toString();
+            String payload = "{\"requesterId\":\"" + userId + "\",\"addresseeId\":\"" + addresseeId + "\",\"friendshipWith\":\"";
+            emitSyncEvent(userId, "FRIENDSHIP_REQUEST_SENT", payload + addresseeId + "\"}");
+            emitSyncEvent(addresseeId, "FRIENDSHIP_REQUEST_RECEIVED", payload + userId + "\"}");
         }
 
         return response;

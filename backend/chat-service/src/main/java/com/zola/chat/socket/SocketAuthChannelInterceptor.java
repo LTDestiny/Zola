@@ -7,6 +7,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -30,9 +31,12 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
-        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-        StompCommand command = accessor.getCommand();
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (accessor == null) {
+            return message;
+        }
 
+        StompCommand command = accessor.getCommand();
         if (command == null) {
             return message;
         }
@@ -67,8 +71,6 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
                 LOGGER.warn("[ws-auth] Reject websocket CONNECT due to token parse failure: {}", ex.getMessage());
                 return null;
             }
-
-            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         }
 
         if (
@@ -90,11 +92,11 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
             }
 
             String destination = accessor.getDestination();
-            if (isCallDestination(destination)) {
+            if (StompCommand.SUBSCRIBE.equals(command) || isCallDestination(destination)) {
                 Principal principal = accessor.getUser();
                 String principalName = principal == null ? "unknown" : principal.getName();
                 LOGGER.info(
-                    "[call-frame] command={} destination={} sessionId={} user={} restoredUser={}",
+                    "[ws-frame] command={} destination={} sessionId={} user={} restoredUser={}",
                     command,
                     destination,
                     accessor.getSessionId(),
@@ -102,8 +104,6 @@ public class SocketAuthChannelInterceptor implements ChannelInterceptor {
                     restoredUserId != null
                 );
             }
-
-            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         }
 
         return message;

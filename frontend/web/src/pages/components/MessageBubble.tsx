@@ -255,11 +255,11 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                     onClick={() => setIsImagePreviewOpen(true)}
                     className="relative block overflow-hidden rounded-2xl"
                 >
-                    {isImageLoading && <div className="h-44 w-64 animate-pulse bg-slate-200" />}
+                    {isImageLoading && <div className="absolute inset-0 z-10 animate-pulse bg-slate-200" />}
                     <img
                         src={mediaUrl}
                         alt={message.fileName ?? "image"}
-                        className={`h-44 w-64 object-cover ${isImageLoading ? "hidden" : "block"}`}
+                        className={`h-44 w-64 object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"}`}
                         onLoad={() => setIsImageLoading(false)}
                         onError={() => {
                             setIsImageLoading(false);

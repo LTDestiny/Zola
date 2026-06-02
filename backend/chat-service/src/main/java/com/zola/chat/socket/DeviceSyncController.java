@@ -1,6 +1,8 @@
 package com.zola.chat.socket;
 
 import com.zola.common.response.ApiResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -17,6 +19,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/sync")
 public class DeviceSyncController {
+
+    private static final Logger log = LoggerFactory.getLogger(DeviceSyncController.class);
 
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -38,7 +42,8 @@ public class DeviceSyncController {
     }
 
     @PostMapping("/users/{userId}/emit")
-    public ApiResponse<Map<String, Object>> emitToUser(@PathVariable String userId, @RequestBody SyncEventMessage message) {
+    public ApiResponse<Map<String, Object>> emitToUser(@PathVariable("userId") String userId, @RequestBody SyncEventMessage message) {
+        log.info("[SyncEmit] Received emit request for user {} eventType {}", userId, message.eventType());
         SyncEventMessage normalized = new SyncEventMessage(
             userId,
             message.sourceClient(),
@@ -47,6 +52,7 @@ public class DeviceSyncController {
             Instant.now()
         );
         messagingTemplate.convertAndSendToUser(userId, "/queue/sync", normalized);
+        log.info("[SyncEmit] Successfully sent sync event {} to user queue", message.eventType());
         return ApiResponse.ok("Sync event emitted", Map.of("userId", userId, "eventType", message.eventType()));
     }
 }

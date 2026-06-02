@@ -110,6 +110,7 @@ services:
       REDIS_HOST: redis
       REDIS_PASSWORD: redis_pass
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      APP_INTERNAL_GATEWAY_SECRET: ${APP_INTERNAL_GATEWAY_SECRET:-internal-dev-secret}
       AUTH_SERVICE_URL: http://auth-service:8081
       USER_SERVICE_URL: http://user-service:8082
       CHAT_SERVICE_URL: http://chat-service:8083
@@ -136,6 +137,7 @@ services:
       DB_NAME: ${AUTH_DB_NAME:-zola_identity_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      APP_INTERNAL_GATEWAY_SECRET: ${APP_INTERNAL_GATEWAY_SECRET:-internal-dev-secret}
       CHAT_SERVICE_URL: http://chat-service:8083
       SAME_PLATFORM_SESSION_POLICY: ${SAME_PLATFORM_SESSION_POLICY:-REVOKE}
       SMTP_HOST: ${SMTP_HOST}
@@ -162,6 +164,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${USER_DB_NAME:-zola_user_db}
       REDIS_HOST: redis
+      APP_INTERNAL_GATEWAY_SECRET: ${APP_INTERNAL_GATEWAY_SECRET:-internal-dev-secret}
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
@@ -183,6 +186,7 @@ services:
       MONGO_URI: ${CHAT_MONGO_URI:-mongodb://mongodb:27017/zola_chat_db}
       REDIS_HOST: redis
       JWT_SECRET: ${JWT_SECRET:-dev-secret-key-dev-secret-key-dev-secret-key-12345}
+      APP_INTERNAL_GATEWAY_SECRET: ${APP_INTERNAL_GATEWAY_SECRET:-internal-dev-secret}
       CHAT_SERVICE_SSL_ENABLED: ${CHAT_SERVICE_SSL_ENABLED:-false}
       CHAT_SERVICE_SSL_PORT: ${CHAT_SERVICE_SSL_PORT:-18443}
       CHAT_SERVICE_SSL_KEY_STORE: /certs/zola-dev-10.18.76.36.p12
@@ -236,6 +240,7 @@ services:
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       S3_PATH_STYLE: ${S3_PATH_STYLE:-false}
       MEDIA_LOCAL_STORAGE_DIR: /data/media
+      APP_INTERNAL_GATEWAY_SECRET: ${APP_INTERNAL_GATEWAY_SECRET:-internal-dev-secret}
     volumes:
       - file_media_data:/data/media
     depends_on:

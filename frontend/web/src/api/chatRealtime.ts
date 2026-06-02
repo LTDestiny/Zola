@@ -1,4 +1,5 @@
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs";
+import { getAccessToken } from "../auth/token";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTION-READY WEB REALTIME CLIENT
@@ -34,7 +35,7 @@ function resolveWsUrl() {
 }
 
 const CALL_LOG_PATTERN =
-  /\/app\/(call\.signal|signal\/call)|\/topic\/call|\/user\/queue\/call|\/queue\/call|CALL_|WEBRTC_|\bERROR\b/i;
+  /\/app\/(call\.signal|signal\/call)|\/topic\/call|\/user\/queue\/(call|sync|chat|notifications)|\/queue\/(call|sync|chat|notifications)|CALL_|WEBRTC_|FRIENDSHIP_|\bERROR\b/i;
 
 function toLogString(value: unknown): string {
   if (typeof value === "string") {
@@ -234,6 +235,15 @@ export class ChatRealtimeClient {
       reconnectDelay: 3000,
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`,
+      },
+      beforeConnect: () => {
+        const currentToken = getAccessToken();
+        if (currentToken) {
+          this.client.connectHeaders = {
+            ...this.client.connectHeaders,
+            Authorization: `Bearer ${currentToken}`,
+          };
+        }
       },
       debug: (str) => {
         if (CALL_DEBUG && CALL_LOG_PATTERN.test(str)) {
@@ -486,13 +496,15 @@ export class ChatRealtimeClient {
     this.userQueueSubscription = this.client.subscribe(
       "/user/queue/chat",
       (message) => {
+        console.log("[chatRealtime][chatQueue] Received raw message:", message.body);
         try {
           const event = JSON.parse(message.body) as ChatRealtimeEvent;
           log("event", `[user/queue/chat] ${event.eventType}`, {
             conversationId: event.conversationId?.slice(0, 8),
           });
           this.onEvent(event);
-        } catch {
+        } catch (err) {
+          console.error("[chatRealtime][chatQueue] Parse error:", err);
           this.onError?.("Cannot parse user queue realtime event");
         }
       },
@@ -504,6 +516,7 @@ export class ChatRealtimeClient {
     this.notificationsQueueSubscription = this.client.subscribe(
       "/user/queue/notifications",
       (message) => {
+        console.log("[chatRealtime][notificationsQueue] Received raw message:", message.body);
         try {
           const event = JSON.parse(message.body) as ChatRealtimeEvent;
           log("event", `[user/queue/notifications] ${event.eventType}`, {
@@ -511,7 +524,8 @@ export class ChatRealtimeClient {
             totalUnreadCount: event.totalUnreadCount,
           });
           this.onEvent(event);
-        } catch {
+        } catch (err) {
+          console.error("[chatRealtime][notificationsQueue] Parse error:", err);
           this.onError?.("Cannot parse notifications queue event");
         }
       },
@@ -523,11 +537,13 @@ export class ChatRealtimeClient {
     this.syncQueueSubscription = this.client.subscribe(
       "/user/queue/sync",
       (message) => {
+        console.log("[chatRealtime][syncQueue] Received raw message:", message.body);
         try {
           const event = JSON.parse(message.body) as SyncRealtimeEvent;
           log("event", `[user/queue/sync] ${event.eventType}`);
           this.onSyncEvent?.(event);
-        } catch {
+        } catch (err) {
+          console.error("[chatRealtime][syncQueue] Parse error:", err);
           this.onError?.("Cannot parse sync realtime event");
         }
       },

@@ -726,6 +726,10 @@ export function DirectConversationPane({
   const imageInputId = `${fileInputId}-image`;
   const videoInputId = `${fileInputId}-video`;
   const mobileCameraInputId = `${fileInputId}-camera`;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileCameraInputRef = useRef<HTMLInputElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1029,6 +1033,14 @@ export function DirectConversationPane({
       document.removeEventListener("mousedown", onPointerDown);
     };
   }, [showAttachMenu]);
+
+  const openAttachmentInput = (input: HTMLInputElement | null) => {
+    if (!input || input.disabled) {
+      return;
+    }
+    input.click();
+    setShowAttachMenu(false);
+  };
 
   const jumpToMessageById = (messageId: string) => {
     if (!messageId) {
@@ -2251,8 +2263,9 @@ export function DirectConversationPane({
             </button>
             <input
               id={fileInputId}
+              ref={fileInputRef}
               type="file"
-              className="hidden"
+              className="sr-only"
               multiple
               disabled={isSending}
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,image/*,.heic,.heif,.avif,.jfif,video/*,.mkv,.avi"
@@ -2266,8 +2279,9 @@ export function DirectConversationPane({
             />
             <input
               id={imageInputId}
+              ref={imageInputRef}
               type="file"
-              className="hidden"
+              className="sr-only"
               multiple
               accept="image/*,.heic,.heif,.avif,.jfif"
               onChange={(event) => {
@@ -2280,8 +2294,9 @@ export function DirectConversationPane({
             />
             <input
               id={videoInputId}
+              ref={videoInputRef}
               type="file"
-              className="hidden"
+              className="sr-only"
               accept="video/*,.mkv,.avi"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -2293,8 +2308,9 @@ export function DirectConversationPane({
             />
             <input
               id={mobileCameraInputId}
+              ref={mobileCameraInputRef}
               type="file"
-              className="hidden"
+              className="sr-only"
               accept="image/*,video/*"
               capture="environment"
               onChange={(event) => {
@@ -2366,32 +2382,32 @@ export function DirectConversationPane({
           <div ref={attachMenuRef} className="absolute bottom-[calc(100%+8px)] left-3 z-20 w-56 rounded-2xl border border-slate-600 bg-slate-800 p-2 shadow-2xl sm:left-4">
             <button
               type="button"
-              onClick={() => document.getElementById(imageInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
+              onClick={() => openAttachmentInput(imageInputRef.current)}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
               <span>{language === "vi" ? "Gui hinh anh" : "Send image"}</span>
             </button>
             <button
               type="button"
-              onClick={() => document.getElementById(videoInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
+              onClick={() => openAttachmentInput(videoInputRef.current)}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <Video size={16} />
               <span>{language === "vi" ? "Gui video" : "Send video"}</span>
             </button>
             <button
               type="button"
-              onClick={() => document.getElementById(fileInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
+              onClick={() => openAttachmentInput(fileInputRef.current)}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <FileText size={16} />
               <span>{language === "vi" ? "Gui tep tin" : "Send file"}</span>
             </button>
             <button
               type="button"
-              onClick={() => document.getElementById(mobileCameraInputId)?.click()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
+              onClick={() => openAttachmentInput(mobileCameraInputRef.current)}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
               <span>{language === "vi" ? "Chup anh/Quay nhanh" : "Capture photo/video"}</span>
