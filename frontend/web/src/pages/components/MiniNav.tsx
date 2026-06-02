@@ -3,13 +3,15 @@ import {
     Settings,
     UserCircle2,
     Users,
+    Bot,
 } from "lucide-react";
 
 export type MiniNavTab =
     | "messages"
     | "contacts"
     | "profile"
-    | "settings";
+    | "settings"
+    | "chatbot";
 
 export interface MiniNavProps {
     active: MiniNavTab;
@@ -27,6 +29,7 @@ interface NavItem {
 const middleItems: NavItem[] = [
     { key: "messages", icon: MessageSquare, label: "Messages" },
     { key: "contacts", icon: Users, label: "Contacts" },
+    { key: "chatbot", icon: Bot, label: "Zola AI" },
 ];
 
 const bottomItems: NavItem[] = [

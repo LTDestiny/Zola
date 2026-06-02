@@ -102,6 +102,7 @@ import {
 import { DirectConversationPane } from "./components/direct/DirectConversationPane";
 import { GroupConversationPane } from "./components/group/GroupConversationPane";
 import { UserProfilePreviewModal } from "./components/UserProfilePreviewModal";
+import { ChatbotPane } from "./components/chatbot/ChatbotPane";
 import { normalizeFriendshipStatus, resolveBlockedState, type FriendshipStatus } from "../utils/friendship";
 
 function initials(name: string) {
@@ -8295,6 +8296,12 @@ export function ChatPage() {
                   )}
                 </div>
               </section>
+            </div>
+          )}
+
+          {activeTab === "chatbot" && (
+            <div className="h-full w-full">
+              <ChatbotPane />
             </div>
           )}
 
