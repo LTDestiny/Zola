@@ -7,6 +7,7 @@ import {
 } from "../api/authApi";
 import { saveAuthTokens } from "../auth/token";
 import { useLanguage } from "../i18n/language";
+import toast from "react-hot-toast";
 
 export function RegisterPage() {
   const { t, language, setLanguage } = useLanguage();
@@ -17,14 +18,46 @@ export function RegisterPage() {
   const [otp, setOtp] = useState("");
   const [otpRequired, setOtpRequired] = useState(false);
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  const onRegister = async () => {
+  const validateForm = () => {
+    if (!fullName.trim() || !email.trim() || !password.trim()) {
+      toast.error(t("registerMissingFields"));
+      return false;
+    }
+    
+    if (fullName.trim().length < 2) {
+      toast.error(t("invalidFullName"));
+      return false;
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      toast.error(t("invalidEmail"));
+      return false;
+    }
+    
+    if (password.length < 8) {
+      toast.error(t("passwordTooShort"));
+      return false;
+    }
+
     if (password !== confirmPassword) {
-      setMessage(t("passwordMismatch"));
+      toast.error(t("passwordMismatch"));
+      return false;
+    }
+    
+    return true;
+  };
+
+  const onRegister = async () => {
+    if (otpRequired && resendCooldown > 0) {
+      toast.error(t("resendOtpWait"));
       return;
     }
+
+    if (!validateForm()) return;
 
     try {
       setLoading(true);
@@ -37,15 +70,43 @@ export function RegisterPage() {
         policyVersion: "v1",
       });
       setOtpRequired(result.data.otpRequired);
-      setMessage(t("registerOtpSent"));
+      toast.success(t("registerOtpSent"));
+      
+      // Start cooldown when OTP is sent
+      setResendCooldown(60);
+      const interval = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
     } catch (error) {
-      setMessage(toErrorMessage(error));
+      const errMsg = toErrorMessage(error);
+      const lower = errMsg.toLowerCase();
+      if (lower.includes("email") && lower.includes("use")) toast.error(t("emailInUse"));
+      else if (lower.includes("phone") && lower.includes("use")) toast.error(t("phoneInUse"));
+      else if (lower.includes("send") || lower.includes("mail")) toast.error(t("sendOtpFailed"));
+      else toast.error(errMsg);
     } finally {
       setLoading(false);
     }
   };
 
   const onVerifyRegisterOtp = async () => {
+    if (!otp.trim()) {
+      toast.error(t("invalidOtpFormat"));
+      return;
+    }
+    
+    if (otp.trim().length !== 6 || !/^\d+$/.test(otp.trim())) {
+      toast.error(t("invalidOtpFormat"));
+      return;
+    }
+
     try {
       setLoading(true);
       const result = await verifyRegisterOtp({
@@ -61,9 +122,17 @@ export function RegisterPage() {
         sessionId: result.data.sessionId,
         accessExpiresInSeconds: result.data.accessExpiresInSeconds,
       });
-      window.location.href = "/chat";
+      
+      toast.success(t("registerSuccess"));
+      setTimeout(() => {
+        window.location.href = "/chat";
+      }, 1000);
     } catch (error) {
-      setMessage(toErrorMessage(error));
+      const errMsg = toErrorMessage(error);
+      const lower = errMsg.toLowerCase();
+      if (lower.includes("invalid") || lower.includes("incorrect")) toast.error(t("invalidOtp"));
+      else if (lower.includes("expire")) toast.error(t("expiredOtp"));
+      else toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -196,18 +265,14 @@ export function RegisterPage() {
                 className="h-11 rounded-lg border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 type="button"
                 onClick={() => void onRegister()}
-                disabled={loading}
+                disabled={loading || resendCooldown > 0}
               >
-                {language === "vi" ? "Gui lai OTP" : "Resend OTP"}
+                {language === "vi" ? "Gửi lại OTP" : "Resend OTP"} {resendCooldown > 0 ? `(${resendCooldown}s)` : ""}
               </button>
             </>
           )}
 
-          {message && (
-            <p className="m-0 p-3 rounded-lg border border-sky-200 bg-sky-50 text-sky-900 text-sm">
-              {message}
-            </p>
-          )}
+          {/* Remove old message display since we use toast now */}
 
           <div className="flex justify-center gap-2 text-sm">
             <span>{t("loginTitle")}</span>

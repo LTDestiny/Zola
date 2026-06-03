@@ -20,3 +20,8 @@ management:
     web:
       exposure:
         include: health,info
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:AQ.Ab8RN6J4NYHepW2o4sr0IsY4nQdOOvVLXlzZ2bkK0r75EKHrsw}
+    url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent}

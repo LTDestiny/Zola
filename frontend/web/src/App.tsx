@@ -14,6 +14,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { PolicyPage } from "./pages/PolicyPage";
 import { RegisterPage } from "./pages/RegisterPage";
 
+import { Toaster } from "react-hot-toast";
+
 export function App() {
   const Router =
     typeof window !== "undefined" &&
@@ -23,6 +25,7 @@ export function App() {
 
   return (
     <LanguageProvider>
+      <Toaster position="top-right" />
       <Router>
         <Routes>
           <Route path="/" element={<HomePage />} />

@@ -50,6 +50,20 @@ const dictionary: Dictionary = {
   forgotTitle: { vi: "Khôi phục mật khẩu", en: "Recover password" },
   forgotSub: { vi: "Nhận OTP qua email để xác nhận", en: "Get OTP via email to verify" },
   verifyOtp: { vi: "Xác nhận OTP", en: "Verify OTP" },
+  registerSuccess: { vi: "Đăng ký tài khoản thành công.", en: "Account registered successfully." },
+  registerMissingFields: { vi: "Vui lòng nhập đầy đủ họ tên, email và mật khẩu.", en: "Please enter your full name, email, and password." },
+  invalidFullName: { vi: "Họ và tên không hợp lệ.", en: "Invalid full name." },
+  invalidEmail: { vi: "Email không đúng định dạng.", en: "Invalid email format." },
+  passwordTooShort: { vi: "Mật khẩu phải có ít nhất 8 ký tự.", en: "Password must be at least 8 characters." },
+  invalidPhone: { vi: "Số điện thoại không hợp lệ.", en: "Invalid phone number." },
+  emailInUse: { vi: "Email đã được sử dụng.", en: "Email is already in use." },
+  phoneInUse: { vi: "Số điện thoại đã được sử dụng.", en: "Phone number is already in use." },
+  invalidOtpFormat: { vi: "Vui lòng nhập mã OTP gồm 6 chữ số.", en: "Please enter a 6-digit OTP code." },
+  invalidOtp: { vi: "Mã OTP không đúng.", en: "Incorrect OTP code." },
+  expiredOtp: { vi: "Mã OTP đã hết hạn.", en: "OTP code has expired." },
+  verifyEmailSuccess: { vi: "Xác nhận email thành công.", en: "Email verified successfully." },
+  resendOtpWait: { vi: "Chỉ gửi lại mã sau 60 giây.", en: "Please wait 60 seconds before resending." },
+  sendOtpFailed: { vi: "Không thể gửi email xác thực, vui lòng thử lại sau.", en: "Cannot send verification email, please try again later." },
 };
 
 type LanguageContextType = {

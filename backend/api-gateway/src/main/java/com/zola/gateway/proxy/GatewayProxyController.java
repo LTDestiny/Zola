@@ -31,10 +31,12 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Map;
 
 @RestController
@@ -51,6 +53,7 @@ public class GatewayProxyController {
     private final String userServiceUrl;
     private final String chatServiceUrl;
     private final String fileServiceUrl;
+    private final String aiServiceUrl;
     private final String internalGatewaySecret;
 
     public GatewayProxyController(
@@ -58,6 +61,7 @@ public class GatewayProxyController {
         @Value("${services.user-url}") String userServiceUrl,
         @Value("${services.chat-url}") String chatServiceUrl,
         @Value("${services.file-url}") String fileServiceUrl,
+        @Value("${services.ai-url}") String aiServiceUrl,
         @Value("${app.internal.gateway-secret:internal-dev-secret}") String internalGatewaySecret
     ) {
         this.restClient = RestClient.builder()
@@ -67,6 +71,7 @@ public class GatewayProxyController {
         this.userServiceUrl = userServiceUrl;
         this.chatServiceUrl = chatServiceUrl;
         this.fileServiceUrl = fileServiceUrl;
+        this.aiServiceUrl = aiServiceUrl;
         this.internalGatewaySecret = internalGatewaySecret;
     }
 
@@ -126,6 +131,54 @@ public class GatewayProxyController {
         } catch (RestClientResponseException ex) {
             throw toStatusException(ex);
         }
+    }
+
+    @PostMapping("/ai/chat")
+    public ApiResponse<Object> aiChat(
+        @RequestBody Map<String, Object> body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        return postMap(aiServiceUrl + "/api/v1/ai/chat", body, null, Map.of("X-User-Id", userId));
+    }
+
+    @PostMapping(value = "/ai/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<StreamingResponseBody> aiChatStream(
+        @RequestBody Map<String, Object> body,
+        HttpServletRequest request
+    ) {
+        String userId = currentUserId(request);
+        
+        return restClient.post()
+            .uri(aiServiceUrl + "/api/v1/ai/chat/stream")
+            .header("X-User-Id", userId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(body)
+            .exchange((req, response) -> {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.TEXT_EVENT_STREAM);
+                
+                StreamingResponseBody stream = out -> {
+                    try (InputStream is = response.getBody()) {
+                        byte[] buffer = new byte[1024];
+                        int bytesRead;
+                        while ((bytesRead = is.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytesRead);
+                            out.flush();
+                        }
+                    } catch (Exception e) {
+                        // Suppress log
+                    }
+                };
+                
+                return new ResponseEntity<>(stream, headers, response.getStatusCode());
+            });
+    }
+
+    @GetMapping("/ai/chat/history")
+    public ApiResponse<Object> aiChatHistory(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return getMap(aiServiceUrl + "/api/v1/ai/chat/history", null, null, Map.of("X-User-Id", userId));
     }
 
     @PostMapping("/auth/register")
