@@ -79,6 +79,9 @@ type DirectConversationPaneProps = {
   onLoadOlderMessages: () => void | Promise<void>;
   onViewportBottomChange?: (atBottom: boolean) => void;
   onTogglePin?: () => void;
+  showDirectPanelToggle?: boolean;
+  isDirectPanelOpen?: boolean;
+  onToggleDirectPanel?: () => void;
 };
 
 type PollCreateEvent = {
@@ -696,6 +699,9 @@ export function DirectConversationPane({
   onLoadOlderMessages,
   onViewportBottomChange,
   onTogglePin,
+  showDirectPanelToggle = false,
+  isDirectPanelOpen = true,
+  onToggleDirectPanel,
 }: DirectConversationPaneProps) {
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -1616,12 +1622,20 @@ export function DirectConversationPane({
               <Pin size={18} />
             </button>
           )}
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white sm:h-9 sm:w-9"
-          >
-            <Info size={18} />
-          </button>
+          {showDirectPanelToggle && (
+            <button
+              type="button"
+              onClick={onToggleDirectPanel}
+              className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isDirectPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
+              title={
+                language === "vi"
+                  ? "Bat/tat bang dieu khien"
+                  : "Toggle control panel"
+              }
+            >
+              <Info size={18} />
+            </button>
+          )}
         </div>
       </header>
 

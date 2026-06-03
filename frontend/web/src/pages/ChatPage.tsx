@@ -90,6 +90,8 @@ import {
 import { CreateGroupModal } from "./components/CreateGroupModal.jsx";
 // @ts-expect-error JSX module without TS declarations
 import { GroupChat } from "./components/GroupChat.jsx";
+// @ts-expect-error JSX module without TS declarations
+import { DirectChat } from "./components/DirectChat.jsx";
 import type { ChatListItem } from "./components/ChatList";
 import type { MiniNavTab } from "./components/MiniNav";
 import { useChatStore } from "../stores/chatStore";
@@ -728,6 +730,7 @@ export function ChatPage() {
     () => loadGroupPreferences(),
   );
   const [isGroupPanelOpen, setIsGroupPanelOpen] = useState(false);
+  const [isDirectPanelOpen, setIsDirectPanelOpen] = useState(false);
   const [scrollToMessageRequest, setScrollToMessageRequest] = useState<{ messageId: string; nonce: number } | null>(null);
 
   const [bannerMessage, setBannerMessage] = useState("");
@@ -8961,6 +8964,25 @@ export function ChatPage() {
                 </div>
               </div>
             ) : (
+              <DirectChat
+                language={language}
+                conversation={activeConversationForView}
+                isPanelOpen={isDirectPanelOpen}
+                userProfileMap={userProfileMap}
+                messages={messages}
+                currentUserId={myProfile?.id ?? null}
+                onBlockPeer={() => {
+                  if (activeDirectPeerUserId) {
+                    if (isActiveDirectPeerBlockedByMe) {
+                      void onUnblockUser(activeDirectPeerUserId);
+                    } else {
+                      void onBlockUser(activeDirectPeerUserId);
+                    }
+                  }
+                }}
+                isBlockedByMe={isActiveDirectPeerBlockedByMe}
+                onClosePanel={() => setIsDirectPanelOpen(false)}
+              >
               <DirectConversationPane
                 language={language}
                 activeConversation={activeConversationForView}
@@ -9050,7 +9072,11 @@ export function ChatPage() {
                 }}
                 onBlockPeer={() => {
                   if (activeDirectPeerUserId) {
-                    void onBlockUser(activeDirectPeerUserId);
+                    if (isActiveDirectPeerBlockedByMe) {
+                      void onUnblockUser(activeDirectPeerUserId);
+                    } else {
+                      void onBlockUser(activeDirectPeerUserId);
+                    }
                   }
                 }}
                 isUpdatingPeerRelationship={
@@ -9063,7 +9089,11 @@ export function ChatPage() {
                 onOpenUserProfile={(userId) => {
                   void onOpenUserPreview(userId);
                 }}
+                showDirectPanelToggle
+                isDirectPanelOpen={isDirectPanelOpen}
+                onToggleDirectPanel={() => setIsDirectPanelOpen((prev) => !prev)}
               />
+              </DirectChat>
             )}
           </section>
         ) : (
