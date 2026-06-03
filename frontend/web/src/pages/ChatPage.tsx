@@ -1939,6 +1939,35 @@ export function ChatPage() {
     }
   };
 
+  const onCreateDirectBoardNote = async (noteText: string, pinToTop: boolean) => {
+    if (!activeConversationId || activeConversation?.type !== "private") return;
+    const trimmed = noteText.trim();
+    if (!trimmed) return;
+    const nowIso = new Date().toISOString();
+    const payload = {
+      kind: "BOARD_NOTE",
+      title: trimmed,
+      note: trimmed,
+      preview: trimmed.replace(/\s+/g, " ").slice(0, 140),
+      pinToTop,
+      createdAt: nowIso,
+    };
+    try {
+      const result = await sendMessage(activeConversationId, JSON.stringify(payload), { type: "NOTE" });
+      if (result && result.data) {
+        if (pinToTop) {
+          void onPinGroupMessage({
+            id: result.data.id,
+            text: result.data.content ?? "Ghi chu"
+          });
+        }
+        setBannerMessage(language === "vi" ? "Da tao ghi chu" : "Note created");
+      }
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
   const onCreateGroupBoardNote = async (noteText: string, pinToTop: boolean) => {
     if (!activeConversationId || activeConversation?.type !== "group") {
       return;
@@ -2096,6 +2125,24 @@ export function ChatPage() {
 
       setBannerMessage(language === "vi" ? "Da tao cuoc binh chon" : "Poll created");
       await fetchConversations({ silent: true });
+      return true;
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+      return false;
+    }
+  };
+
+  const onCreateDirectReminder = async (input: { title: string; when?: string | null }) => {
+    if (!activeConversationId || activeConversation?.type !== "private") return false;
+    const title = input.title.trim();
+    if (!title) {
+      setBannerMessage(language === "vi" ? "Tieu de nhac hen khong duoc de trong" : "Reminder title cannot be empty");
+      return false;
+    }
+    const payload = { kind: "REMINDER", title, when: input.when || null };
+    try {
+      await sendMessage(activeConversationId, JSON.stringify(payload), { type: "REMINDER" });
+      setBannerMessage(language === "vi" ? "Da tao nhac hen" : "Reminder created");
       return true;
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -8981,6 +9028,24 @@ export function ChatPage() {
                   }
                 }}
                 isBlockedByMe={isActiveDirectPeerBlockedByMe}
+                pinnedMessages={activePinnedBoardItems}
+                onOpenPinnedMessage={(sourceMessageId: string) => {
+                  setScrollToMessageRequest({ messageId: sourceMessageId, nonce: Date.now() });
+                }}
+                onUnpinPinnedMessage={(sourceMessageId: string) => {
+                  void onUnpinGroupMessage(sourceMessageId);
+                }}
+                onCreateBoardNote={(noteText: string, pinToTop: boolean) => {
+                  void onCreateDirectBoardNote(noteText, pinToTop);
+                }}
+                onCreateReminder={(input: { title: string; when?: string | null }) =>
+                  onCreateDirectReminder(input)}
+                preferences={activeGroupPreference}
+                onPreferenceChange={(patch: Partial<GroupPreferenceItem>) => {
+                  if (activeConversationForView?.id) {
+                    updateGroupPreference(activeConversationForView.id, patch);
+                  }
+                }}
                 onClosePanel={() => setIsDirectPanelOpen(false)}
               >
               <DirectConversationPane
@@ -9025,6 +9090,13 @@ export function ChatPage() {
                 onForwardMessage={onForwardMessage}
                 onForwardMessages={onForwardMessages}
                 onReactMessage={onReactMessage}
+                pinnedMessages={activePinnedBoardItems}
+                onPinMessage={(targetMessage) => {
+                  void onPinGroupMessage(targetMessage);
+                }}
+                onUnpinMessage={(targetMessage) => {
+                  void onUnpinGroupMessage(targetMessage.id);
+                }}
                 pendingUploads={pendingUploads}
                 onRetryUpload={onRetryUpload}
                 onCancelUpload={onCancelUpload}

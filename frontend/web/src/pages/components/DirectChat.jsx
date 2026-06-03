@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronUp, Image as ImageIcon, FileText, Link as LinkIcon, Shield, Ban } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  Image as ImageIcon,
+  FileText,
+  Link as LinkIcon,
+  Shield,
+  Ban,
+  Plus,
+  AlertTriangle,
+  BellOff,
+} from "lucide-react";
 import { resolveMediaUrl } from "../utils/mediaUrl";
 
 function initials(name) {
@@ -22,6 +34,15 @@ function tryParseJson(raw) {
 function extractLinks(text) {
   const matches = String(text ?? "").match(/https?:\/\/[^\s]+/g);
   return matches ?? [];
+}
+
+function formatShortDate(value) {
+  if (!value) return "--/--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--/--";
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  return `${day}/${month}`;
 }
 
 function toDomain(link) {
@@ -61,22 +82,40 @@ export function DirectChat({
   currentUserId,
   onBlockPeer,
   isBlockedByMe,
+  pinnedMessages,
+  onOpenPinnedMessage,
+  onUnpinPinnedMessage,
+  onCreateBoardNote,
+  onCreateReminder,
+  preferences,
+  onPreferenceChange,
   onClosePanel,
   children,
 }) {
   const safeMessages = messages ?? [];
+  const safePinnedMessages = pinnedMessages ?? [];
 
   const [panelView, setPanelView] = useState("default");
+  const [boardTab, setBoardTab] = useState("all");
   const [archiveTab, setArchiveTab] = useState("media");
   const [archiveSenderFilter, setArchiveSenderFilter] = useState("all");
   const [archiveDateFilter, setArchiveDateFilter] = useState("all");
 
   const [openSections, setOpenSections] = useState({
+    board: true,
     media: true,
     files: true,
     links: true,
     security: true,
   });
+
+  const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [isNotePinnedToTop, setIsNotePinnedToTop] = useState(true);
+
+  const [isCreateReminderOpen, setIsCreateReminderOpen] = useState(false);
+  const [reminderTitleDraft, setReminderTitleDraft] = useState("");
+  const [reminderTimeDraft, setReminderTimeDraft] = useState("");
 
   const peerId = conversation?.participants?.find((p) => p && p !== currentUserId) ?? null;
   const peerProfile = userProfileMap?.[peerId ?? ""];
@@ -85,9 +124,12 @@ export function DirectChat({
 
   useEffect(() => {
     setPanelView("default");
+    setBoardTab("all");
     setArchiveTab("media");
     setArchiveSenderFilter("all");
     setArchiveDateFilter("all");
+    setIsCreateNoteOpen(false);
+    setIsCreateReminderOpen(false);
   }, [conversation?.id]);
 
   const parsedMessages = useMemo(() => {
@@ -145,6 +187,61 @@ export function DirectChat({
   const previewFileItems = useMemo(() => fileItems.slice(0, 3), [fileItems]);
   const previewLinkItems = useMemo(() => linkItems.slice(0, 3), [linkItems]);
 
+  const reminderItems = useMemo(() => {
+    return parsedMessages
+      .filter((item) => item.type === "REMINDER")
+      .map((item) => {
+        const title = String(item.json?.title ?? item.content ?? "").trim();
+        const eventTime = String(item.json?.when ?? item.json?.eventTime ?? item.createdAt ?? "");
+        return {
+          id: item.id,
+          title: title || (language === "vi" ? "Nhac hen" : "Reminder"),
+          eventTime,
+          createdAtMs: item.createdAtMs,
+        };
+      })
+      .sort((left, right) => right.createdAtMs - left.createdAtMs);
+  }, [parsedMessages, language]);
+
+  const boardFeedItems = useMemo(() => {
+    const pinnedItems = safePinnedMessages.map((item) => ({
+      id: `pin-${item.id}`,
+      sourceId: item.sourceMessageId,
+      createdAtMs: item.createdAtMs,
+      createdAt: new Date(item.createdAtMs || Date.now()).toISOString(),
+      title: item.title,
+      preview: item.preview,
+      itemType: item.itemType,
+      senderId: null,
+    }));
+
+    const noteItems = parsedMessages
+      .filter((item) => item.type === "NOTE")
+      .filter((item) => {
+        const kind = String(item.json?.kind ?? "").toUpperCase();
+        return kind === "BOARD_NOTE";
+      })
+      .map((item) => ({
+        id: `note-${item.id}`,
+        sourceId: item.id,
+        createdAtMs: item.createdAtMs,
+        createdAt: item.createdAt,
+        title: String(item.json?.title ?? (language === "vi" ? "Ghi chu" : "Note")),
+        preview: String(item.json?.note ?? item.json?.preview ?? item.content ?? ""),
+        itemType: "note",
+        senderId: item.senderId ?? null,
+      }));
+
+    return [...pinnedItems, ...noteItems].sort((left, right) => right.createdAtMs - left.createdAtMs);
+  }, [safePinnedMessages, parsedMessages, language]);
+
+  const boardItemsForView = useMemo(() => {
+    if (boardTab === "all") return boardFeedItems;
+    if (boardTab === "pins") return boardFeedItems.filter((item) => item.itemType === "pin");
+    if (boardTab === "notes") return boardFeedItems.filter((item) => item.itemType === "note");
+    return boardFeedItems;
+  }, [boardFeedItems, boardTab]);
+
   const archiveSenderOptions = useMemo(() => {
     const senderIds = new Set();
     [...mediaItems, ...fileItems, ...linkItems].forEach((item) => {
@@ -184,10 +281,7 @@ export function DirectChat({
   const archiveLinkItems = useMemo(() => applyArchiveFilters(linkItems), [linkItems, archiveSenderFilter, archiveDateFilter]);
 
   const toggleSection = (key) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const openArchiveView = (tab) => {
@@ -195,6 +289,28 @@ export function DirectChat({
     setPanelView("archive");
   };
   const backToDefaultPanel = () => setPanelView("default");
+
+  const submitBoardNote = async () => {
+    const trimmed = noteDraft.trim();
+    if (!trimmed) return;
+    await onCreateBoardNote?.(trimmed, isNotePinnedToTop);
+    setNoteDraft("");
+    setIsNotePinnedToTop(true);
+    setIsCreateNoteOpen(false);
+  };
+
+  const submitReminder = async () => {
+    const titleTrimmed = reminderTitleDraft.trim();
+    if (!titleTrimmed) return;
+    let finalTime = reminderTimeDraft.trim() || null;
+    if (finalTime && !finalTime.includes("T")) {
+      finalTime = new Date(finalTime).toISOString();
+    }
+    await onCreateReminder?.({ title: titleTrimmed, when: finalTime });
+    setReminderTitleDraft("");
+    setReminderTimeDraft("");
+    setIsCreateReminderOpen(false);
+  };
 
   return (
     <div className="flex h-full min-h-0">
@@ -231,7 +347,6 @@ export function DirectChat({
                 </div>
               )}
             </div>
-
             <h1 className="mt-2 text-center text-xl font-bold text-slate-100 lg:text-2xl">
               {displayName}
             </h1>
@@ -241,28 +356,48 @@ export function DirectChat({
         <div className="flex-1 overflow-y-auto px-3 py-4 lg:px-4 space-y-4">
           {panelView === "default" && (
             <>
-              <Section
-                title={language === "vi" ? "Bao mat" : "Security"}
-                open={openSections.security}
-                onToggle={() => toggleSection("security")}
-              >
-                <button
-                  type="button"
-                  onClick={onBlockPeer}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-400 hover:bg-rose-500/10"
+              {boardFeedItems.length > 0 && (
+                <Section
+                  title={language === "vi" ? "Bang tin" : "Board"}
+                  open={openSections.board}
+                  onToggle={() => toggleSection("board")}
                 >
-                  <Ban size={18} />
-                  <span>
-                    {isBlockedByMe
-                      ? language === "vi"
-                        ? "Bo chan nguoi nay"
-                        : "Unblock this user"
-                      : language === "vi"
-                        ? "Chan nguoi nay"
-                        : "Block this user"}
-                  </span>
-                </button>
-              </Section>
+                  <div className="space-y-2">
+                    {boardFeedItems.slice(0, 2).map((item) => (
+                      <div key={item.id} className="rounded-lg bg-slate-900/45 p-2">
+                        <p className="truncate text-sm font-semibold text-slate-100">{item.title}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          {item.itemType === "pin" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onOpenPinnedMessage?.(item.sourceId)}
+                                className="rounded-md bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-500"
+                              >
+                                {language === "vi" ? "Xem" : "Open"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
+                                className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
+                              >
+                                {language === "vi" ? "Bo ghim" : "Unpin"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPanelView("board")}
+                    className="mt-3 w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                  >
+                    {language === "vi" ? "Xem tat ca" : "View all"}
+                  </button>
+                </Section>
+              )}
 
               <Section
                 title={language === "vi" ? "Anh/Video" : "Media"}
@@ -280,16 +415,9 @@ export function DirectChat({
                         className="group relative aspect-square overflow-hidden rounded-lg bg-slate-900"
                       >
                         {item.type === "VIDEO" ? (
-                          <video
-                            src={item.resolvedFileUrl}
-                            className="h-full w-full object-cover opacity-80"
-                          />
+                          <video src={item.resolvedFileUrl} className="h-full w-full object-cover opacity-80" />
                         ) : (
-                          <img
-                            src={item.resolvedFileUrl}
-                            alt="Media"
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={item.resolvedFileUrl} alt="Media" className="h-full w-full object-cover" />
                         )}
                       </a>
                     ))}
@@ -329,9 +457,7 @@ export function DirectChat({
                           <FileText size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-200">
-                            {item.fileName || "File"}
-                          </p>
+                          <p className="truncate text-sm font-semibold text-slate-200">{item.fileName || "File"}</p>
                         </div>
                       </a>
                     ))}
@@ -371,9 +497,7 @@ export function DirectChat({
                           <LinkIcon size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-200">
-                            {toDomain(item.link)}
-                          </p>
+                          <p className="truncate text-sm font-semibold text-slate-200">{toDomain(item.link)}</p>
                           <p className="truncate text-xs text-slate-400">{item.link}</p>
                         </div>
                       </a>
@@ -393,6 +517,69 @@ export function DirectChat({
                     {language === "vi" ? "Xem tat ca" : "View all"}
                   </button>
                 )}
+              </Section>
+
+              <Section
+                title={language === "vi" ? "Thiet lap bao mat" : "Security settings"}
+                open={openSections.security}
+                onToggle={() => toggleSection("security")}
+              >
+                <div className="space-y-2 text-sm text-slate-200">
+                  <div className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <BellOff size={15} className="text-slate-300" />
+                      <span>{language === "vi" ? "Tat thong bao" : "Mute notifications"}</span>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(preferences?.muted)}
+                        onChange={(event) => onPreferenceChange?.({ muted: event.target.checked })}
+                        className="peer sr-only"
+                      />
+                      <div className="peer h-5 w-9 rounded-full bg-slate-700 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-sky-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <Shield size={15} className="text-slate-300" />
+                      <span>{language === "vi" ? "Tin nhan tu xoa" : "Self-destruct"}</span>
+                    </div>
+                    <span className="text-xs text-slate-400">
+                      {language === "vi" ? "Khong bao gio" : "Never"}
+                    </span>
+                  </div>
+
+                  <label className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={15} className="text-slate-300" />
+                      <span>{language === "vi" ? "An tro chuyen" : "Hide conversation"}</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(preferences?.hidden)}
+                      onChange={(event) => onPreferenceChange?.({ hidden: event.target.checked })}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={onBlockPeer}
+                    className="mt-2 flex w-full items-center gap-3 rounded-xl bg-slate-900/45 px-3 py-2 text-left text-sm font-semibold text-rose-400 hover:bg-rose-500/10"
+                  >
+                    <Ban size={18} />
+                    <span>
+                      {isBlockedByMe
+                        ? language === "vi"
+                          ? "Bo chan nguoi nay"
+                          : "Unblock this user"
+                        : language === "vi"
+                          ? "Chan nguoi nay"
+                          : "Block this user"}
+                    </span>
+                  </button>
+                </div>
               </Section>
             </>
           )}
@@ -416,33 +603,21 @@ export function DirectChat({
                 <button
                   type="button"
                   onClick={() => setArchiveTab("media")}
-                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${
-                    archiveTab === "media"
-                      ? "border-sky-400 text-sky-300"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
+                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${archiveTab === "media" ? "border-sky-400 text-sky-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
                 >
                   {language === "vi" ? "Anh/Video" : "Media"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setArchiveTab("files")}
-                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${
-                    archiveTab === "files"
-                      ? "border-sky-400 text-sky-300"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
+                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${archiveTab === "files" ? "border-sky-400 text-sky-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
                 >
                   {language === "vi" ? "Tai lieu" : "Files"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setArchiveTab("links")}
-                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${
-                    archiveTab === "links"
-                      ? "border-sky-400 text-sky-300"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
+                  className={`border-b-2 px-3 py-2 text-sm font-semibold ${archiveTab === "links" ? "border-sky-400 text-sky-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
                 >
                   {language === "vi" ? "Link" : "Links"}
                 </button>
@@ -452,24 +627,11 @@ export function DirectChat({
                 {archiveTab === "media" && (
                   <div className="grid grid-cols-3 gap-1.5">
                     {archiveMediaItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={item.resolvedFileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="group relative aspect-square overflow-hidden rounded-lg bg-slate-900"
-                      >
+                      <a key={item.id} href={item.resolvedFileUrl} target="_blank" rel="noreferrer" className="group relative aspect-square overflow-hidden rounded-lg bg-slate-900">
                         {item.type === "VIDEO" ? (
-                          <video
-                            src={item.resolvedFileUrl}
-                            className="h-full w-full object-cover opacity-80"
-                          />
+                          <video src={item.resolvedFileUrl} className="h-full w-full object-cover opacity-80" />
                         ) : (
-                          <img
-                            src={item.resolvedFileUrl}
-                            alt="Media"
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={item.resolvedFileUrl} alt="Media" className="h-full w-full object-cover" />
                         )}
                       </a>
                     ))}
@@ -478,20 +640,12 @@ export function DirectChat({
                 {archiveTab === "files" && (
                   <div className="space-y-2">
                     {archiveFileItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={item.resolvedFileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-3 rounded-lg border border-[#2a4b73] bg-[#0f294a] p-3 hover:bg-[#15365f]"
-                      >
+                      <a key={item.id} href={item.resolvedFileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border border-[#2a4b73] bg-[#0f294a] p-3 hover:bg-[#15365f]">
                         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-indigo-500/20 text-indigo-400">
                           <FileText size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-200">
-                            {item.fileName || "File"}
-                          </p>
+                          <p className="truncate text-sm font-semibold text-slate-200">{item.fileName || "File"}</p>
                         </div>
                       </a>
                     ))}
@@ -500,20 +654,12 @@ export function DirectChat({
                 {archiveTab === "links" && (
                   <div className="space-y-2">
                     {archiveLinkItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={item.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-3 rounded-lg border border-[#2a4b73] bg-[#0f294a] p-3 hover:bg-[#15365f]"
-                      >
+                      <a key={item.id} href={item.link} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border border-[#2a4b73] bg-[#0f294a] p-3 hover:bg-[#15365f]">
                         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-sky-500/20 text-sky-400">
                           <LinkIcon size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-200">
-                            {toDomain(item.link)}
-                          </p>
+                          <p className="truncate text-sm font-semibold text-slate-200">{toDomain(item.link)}</p>
                           <p className="truncate text-xs text-slate-400">{item.link}</p>
                         </div>
                       </a>
@@ -523,6 +669,210 @@ export function DirectChat({
               </div>
             </div>
           )}
+
+          {panelView === "board" && (
+            <section className="rounded-2xl border border-slate-700 bg-[#1a2433] p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={backToDefaultPanel}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
+                >
+                  <ArrowLeft size={15} />
+                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                </button>
+                <h3 className="text-base font-semibold text-slate-100">
+                  {language === "vi" ? "Bang tin" : "Board"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateNoteOpen(true)}
+                  className="grid h-8 w-8 place-items-center rounded-lg bg-sky-600 text-white hover:bg-sky-500"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-900/45 p-1">
+                {[
+                  { id: "all", labelVi: "Tat ca", labelEn: "All" },
+                  { id: "pins", labelVi: "Tin ghim", labelEn: "Pins" },
+                  { id: "notes", labelVi: "Ghi chu", labelEn: "Notes" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setBoardTab(tab.id)}
+                    className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${boardTab === tab.id ? "bg-sky-600 text-white" : "text-slate-300 hover:bg-slate-700"}`}
+                  >
+                    {language === "vi" ? tab.labelVi : tab.labelEn}
+                  </button>
+                ))}
+              </div>
+
+              <div className="max-h-[44vh] space-y-2 overflow-y-auto pr-1">
+                {boardItemsForView.length === 0 ? (
+                  <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
+                    {language === "vi" ? "Chua co du lieu trong muc nay" : "No items in this tab yet"}
+                  </p>
+                ) : (
+                  boardItemsForView.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-slate-700 bg-slate-900/45 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-100">{item.title}</p>
+                        <span className="text-[11px] text-slate-400">{formatShortDate(item.createdAtMs)}</span>
+                      </div>
+                      {item.preview && <p className="mt-1 text-xs text-slate-300">{item.preview}</p>}
+                      <div className="mt-2 flex items-center gap-2">
+                        {item.itemType === "pin" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => onOpenPinnedMessage?.(item.sourceId)}
+                              className="rounded-md bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-500"
+                            >
+                              {language === "vi" ? "Xem" : "Open"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
+                              className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
+                            >
+                              {language === "vi" ? "Bo ghim" : "Unpin"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {isCreateNoteOpen && (
+                <div className="mt-4 rounded-xl border border-slate-600 bg-slate-800 p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-100">
+                    {language === "vi" ? "Tao ghi chu moi" : "Create new note"}
+                  </p>
+                  <textarea
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder={language === "vi" ? "Nhap noi dung ghi chu..." : "Enter note content..."}
+                    rows={3}
+                    className="w-full resize-none rounded-lg border border-slate-600 bg-slate-900 px-2.5 py-2 text-sm text-slate-100"
+                  />
+                  <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={isNotePinnedToTop}
+                      onChange={(e) => setIsNotePinnedToTop(e.target.checked)}
+                      className="h-4 w-4 accent-lime-500"
+                    />
+                    <span>
+                      {language === "vi"
+                        ? "Ghim len dau tro chuyen"
+                        : "Pin to top of conversation"}
+                    </span>
+                  </label>
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateNoteOpen(false)}
+                      className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    >
+                      {language === "vi" ? "Huy" : "Cancel"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitBoardNote}
+                      disabled={!noteDraft.trim()}
+                      className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {language === "vi" ? "Tao ghi chu" : "Create note"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {panelView === "reminders" && (
+            <section className="rounded-2xl border border-slate-700 bg-[#1a2433] p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={backToDefaultPanel}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
+                >
+                  <ArrowLeft size={15} />
+                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                </button>
+                <h3 className="text-base font-semibold text-slate-100">
+                  {language === "vi" ? "Danh sach nhac hen" : "Reminder list"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateReminderOpen(true)}
+                  className="grid h-8 w-8 place-items-center rounded-lg bg-sky-600 text-white hover:bg-sky-500"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {reminderItems.length === 0 ? (
+                  <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
+                    {language === "vi" ? "Chua co nhac hen" : "No reminders yet"}
+                  </p>
+                ) : (
+                  reminderItems.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-slate-700 bg-slate-900/45 p-3">
+                      <p className="text-sm font-semibold text-slate-100">{item.title}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {item.eventTime ? formatShortDate(item.eventTime) : formatShortDate(item.createdAtMs)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+              {isCreateReminderOpen && (
+                <div className="mt-4 rounded-xl border border-slate-600 bg-slate-800 p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-100">
+                    {language === "vi" ? "Tao nhac hen moi" : "Create new reminder"}
+                  </p>
+                  <input
+                    type="text"
+                    value={reminderTitleDraft}
+                    onChange={(e) => setReminderTitleDraft(e.target.value)}
+                    placeholder={language === "vi" ? "Tieu de nhac hen..." : "Reminder title..."}
+                    className="mb-2 h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-100"
+                  />
+                  <input
+                    type="datetime-local"
+                    value={reminderTimeDraft}
+                    onChange={(e) => setReminderTimeDraft(e.target.value)}
+                    className="mb-2 h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-100"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateReminderOpen(false)}
+                      className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    >
+                      {language === "vi" ? "Huy" : "Cancel"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitReminder}
+                      disabled={!reminderTitleDraft.trim()}
+                      className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {language === "vi" ? "Tao nhac hen" : "Create reminder"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
         </div>
       </aside>
     </div>

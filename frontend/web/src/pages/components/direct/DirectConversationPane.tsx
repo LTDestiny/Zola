@@ -51,6 +51,9 @@ type DirectConversationPaneProps = {
   onForwardMessage: (messageId: string) => void | Promise<void>;
   onForwardMessages?: (messageIds: string[]) => void | Promise<void>;
   onReactMessage: (messageId: string, emoji: string) => void | Promise<void>;
+  pinnedMessages?: Array<{ id: string; title: string; sourceMessageId: string }>;
+  onPinMessage?: (message: ChatMessage) => void | Promise<void>;
+  onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
   pendingUploads: Array<{
     localId: string;
     fileName: string;
@@ -679,6 +682,9 @@ export function DirectConversationPane({
   onForwardMessage,
   onForwardMessages,
   onReactMessage,
+  pinnedMessages = [],
+  onPinMessage,
+  onUnpinMessage,
   pendingUploads,
   onRetryUpload,
   onCancelUpload,
@@ -1876,7 +1882,7 @@ export function DirectConversationPane({
                         ...message,
                         reactions: serverMessage?.reactions,
                         replyPreviewText: replySource?.content,
-                        isPinned: false,
+                        isPinned: pinnedMessages.some((p) => p.sourceMessageId === message.id),
                         poll: undefined,
                       }}
                       isMine={isMine}
@@ -1921,7 +1927,7 @@ export function DirectConversationPane({
                         if (isMessageActionExpired(messageId, RECALL_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Khong the thu hoi tin nhan sau 5p"
+                              ? "Khong the thu hoi tin nhan vi qua 5p"
                               : "Cannot recall this message after 5 minutes",
                           );
                           return;
@@ -1930,6 +1936,9 @@ export function DirectConversationPane({
                         return onRecallMessage(messageId);
                       }}
                       onReact={(messageId, emoji) => onReactMessage(messageId, emoji)}
+                      onPin={(targetMessage) => onPinMessage?.(targetMessage)}
+                      onUnpin={(targetMessage) => onUnpinMessage?.(targetMessage)}
+                      canPin={true}
                     />
                     )}
                   </div>
