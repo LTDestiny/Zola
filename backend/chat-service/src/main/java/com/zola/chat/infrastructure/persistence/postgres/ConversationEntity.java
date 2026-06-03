@@ -57,6 +57,9 @@ public class ConversationEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "pinned_messages", columnDefinition = "TEXT")
+    private String pinnedMessages;
+
     public UUID getId() {
         return id;
     }
@@ -239,5 +242,13 @@ public class ConversationEntity {
 
     public void setUser2IsPinned(boolean user2IsPinned) {
         this.user2IsPinned = user2IsPinned;
+    }
+
+    public String getPinnedMessages() {
+        return pinnedMessages;
+    }
+
+    public void setPinnedMessages(String pinnedMessages) {
+        this.pinnedMessages = pinnedMessages;
     }
 }

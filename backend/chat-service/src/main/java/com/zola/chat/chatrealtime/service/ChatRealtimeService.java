@@ -32,6 +32,8 @@ import com.zola.chat.infrastructure.persistence.postgres.PostgresMessageHiddenRe
 import com.zola.chat.infrastructure.persistence.postgres.UserPinnedConversationEntity;
 import com.zola.chat.infrastructure.persistence.postgres.UserPinnedConversationRepository;
 import com.zola.chat.repository.ConversationRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -72,6 +74,7 @@ public class ChatRealtimeService {
     private final PresenceManager presenceManager;
     private final PostgresMessageHiddenRepository messageHiddenRepository;
     private final UserRelationshipClient userRelationshipClient;
+    private final ObjectMapper objectMapper;
     private final long editWindowSeconds;
     private final long recallWindowSeconds;
 
@@ -96,6 +99,7 @@ public class ChatRealtimeService {
         PresenceManager presenceManager,
         PostgresMessageHiddenRepository messageHiddenRepository,
         UserRelationshipClient userRelationshipClient,
+        ObjectMapper objectMapper,
         @Value("${app.chat.edit-window-seconds:900}") long editWindowSeconds,
         @Value("${app.chat.recall-window-seconds:86400}") long recallWindowSeconds
     ) {
@@ -107,6 +111,7 @@ public class ChatRealtimeService {
         this.presenceManager = presenceManager;
         this.messageHiddenRepository = messageHiddenRepository;
         this.userRelationshipClient = userRelationshipClient;
+        this.objectMapper = objectMapper;
         this.editWindowSeconds = editWindowSeconds;
         this.recallWindowSeconds = recallWindowSeconds;
     }
@@ -479,6 +484,11 @@ public class ChatRealtimeService {
 
     @Transactional
     public Map<String, Object> getGroupSettings(String actorId, UUID conversationId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            return toDirectSettingsPayload(privateConversation.get(), actorId);
+        }
+
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
         ensureInviteCode(conversation);
@@ -653,6 +663,11 @@ public class ChatRealtimeService {
 
     @Transactional
     public Map<String, Object> pinGroupMessage(String actorId, UUID conversationId, String sourceMessageId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            return pinDirectMessage(actorId, privateConversation.get(), sourceMessageId);
+        }
+
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
 
@@ -693,6 +708,11 @@ public class ChatRealtimeService {
 
     @Transactional
     public Map<String, Object> unpinGroupMessage(String actorId, UUID conversationId, String sourceMessageId) {
+        Optional<ConversationEntity> privateConversation = conversationRepository.findOptionalById(conversationId);
+        if (privateConversation.isPresent()) {
+            return unpinDirectMessage(actorId, privateConversation.get(), sourceMessageId);
+        }
+
         ConversationDocument conversation = findGroupConversation(conversationId.toString());
         ensureGroupMember(conversation, actorId);
 
@@ -2010,10 +2030,87 @@ public class ChatRealtimeService {
     }
 
     private List<PinnedMessageItem> sortPinnedMessagesDescending(List<PinnedMessageItem> pinnedMessages) {
-        pinnedMessages.sort(Comparator.comparing(
-            (PinnedMessageItem item) -> Optional.ofNullable(item.getCreatedAt()).orElse(Instant.EPOCH)
-        ).reversed());
-        return pinnedMessages;
+        if (pinnedMessages == null || pinnedMessages.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return pinnedMessages.stream()
+            .sorted(Comparator.comparing(PinnedMessageItem::getCreatedAt).reversed())
+            .toList();
+    }
+
+    private List<PinnedMessageItem> parsePinnedMessages(String json) {
+        if (json == null || json.isBlank()) return Collections.emptyList();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<PinnedMessageItem>>() {});
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private String serializePinnedMessages(List<PinnedMessageItem> list) {
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private Map<String, Object> toDirectSettingsPayload(ConversationEntity conversation, String actorId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("conversationId", conversation.getId().toString());
+        payload.put("type", conversation.getType());
+        payload.put("pinnedMessages", parsePinnedMessages(conversation.getPinnedMessages()));
+        return payload;
+    }
+
+    private Map<String, Object> pinDirectMessage(String actorId, ConversationEntity conversation, String sourceMessageId) {
+        ensureMember(conversation, actorId);
+        String normalizedMessageId = sourceMessageId == null ? "" : sourceMessageId.trim();
+        if (normalizedMessageId.isBlank()) {
+            throw new IllegalArgumentException("sourceMessageId must not be blank");
+        }
+
+        MessageDocument targetMessage = messageRepository.findByConversationIdAndId(conversation.getId().toString(), normalizedMessageId)
+            .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
+
+        List<PinnedMessageItem> pinnedMessages = new ArrayList<>(parsePinnedMessages(conversation.getPinnedMessages()));
+        boolean alreadyPinned = pinnedMessages.stream()
+            .anyMatch(item -> normalizedMessageId.equals(item.getSourceMessageId()));
+        if (alreadyPinned) {
+            return toDirectSettingsPayload(conversation, actorId);
+        }
+        if (pinnedMessages.size() >= MAX_PINNED_MESSAGES) {
+            throw new ForbiddenOperationException("You can pin up to 3 messages");
+        }
+
+        PinnedMessageItem pinnedMessage = new PinnedMessageItem();
+        pinnedMessage.setSourceMessageId(normalizedMessageId);
+        pinnedMessage.setTitle(buildPinnedMessageTitle(targetMessage));
+        pinnedMessage.setPreview(buildPinnedMessagePreview(targetMessage));
+        pinnedMessage.setCreatedAt(Instant.now());
+        pinnedMessages.add(pinnedMessage);
+
+        conversation.setPinnedMessages(serializePinnedMessages(sortPinnedMessagesDescending(pinnedMessages)));
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
+        return toDirectSettingsPayload(conversation, actorId);
+    }
+
+    private Map<String, Object> unpinDirectMessage(String actorId, ConversationEntity conversation, String sourceMessageId) {
+        ensureMember(conversation, actorId);
+        String normalizedMessageId = sourceMessageId == null ? "" : sourceMessageId.trim();
+        if (normalizedMessageId.isBlank()) {
+            throw new IllegalArgumentException("sourceMessageId must not be blank");
+        }
+
+        List<PinnedMessageItem> nextPinnedMessages = parsePinnedMessages(conversation.getPinnedMessages()).stream()
+            .filter(item -> !normalizedMessageId.equals(item.getSourceMessageId()))
+            .collect(Collectors.toCollection(ArrayList::new));
+
+        conversation.setPinnedMessages(serializePinnedMessages(sortPinnedMessagesDescending(nextPinnedMessages)));
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
+        return toDirectSettingsPayload(conversation, actorId);
     }
 
     private String buildPinnedMessageTitle(MessageDocument message) {

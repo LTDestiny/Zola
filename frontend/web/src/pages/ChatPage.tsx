@@ -1833,23 +1833,25 @@ export function ChatPage() {
   };
 
   const onPinGroupMessage = async (targetMessage: { id: string; text: string }) => {
-    if (!activeConversationId || activeConversation?.type !== "group") {
+    if (!activeConversationId) {
       return;
     }
 
-    const activeSettings = groupSettingsMap[activeConversationId] ?? null;
-    const canPinBoardItems = Boolean(
-      activeSettings?.isOwner ||
-      activeSettings?.isAdmin ||
-      activeSettings?.allowMembersPinBoardItems,
-    );
-    if (!canPinBoardItems) {
-      setBannerMessage(
-        language === "vi"
-          ? "Chi truong/pho nhom moi duoc ghim tin nhan"
-          : "Only owner/admin can pin messages",
+    if (activeConversation?.type === "group") {
+      const activeSettings = groupSettingsMap[activeConversationId] ?? null;
+      const canPinBoardItems = Boolean(
+        activeSettings?.isOwner ||
+        activeSettings?.isAdmin ||
+        activeSettings?.allowMembersPinBoardItems,
       );
-      return;
+      if (!canPinBoardItems) {
+        setBannerMessage(
+          language === "vi"
+            ? "Chi truong/pho nhom moi duoc ghim tin nhan"
+            : "Only owner/admin can pin messages",
+        );
+        return;
+      }
     }
 
     if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
@@ -1897,7 +1899,7 @@ export function ChatPage() {
   };
 
   const onUnpinGroupMessage = async (sourceMessageId: string) => {
-    if (!activeConversationId || activeConversation?.type !== "group") {
+    if (!activeConversationId) {
       return;
     }
 
@@ -7327,9 +7329,6 @@ export function ChatPage() {
     : false;
 
   const activePinnedBoardItems = useMemo(() => {
-    if (activeConversationForView?.type !== "group") {
-      return [] as PinnedBoardItem[];
-    }
 
     const orderedEvents = messages
       .map((item) => parsePinBoardEvent(item))
@@ -9075,6 +9074,8 @@ export function ChatPage() {
                   setDraftMessage(value);
                   onTypingTextChange(value);
                 }}
+                pinnedMessages={activePinnedBoardItems}
+                latestPinnedSummary={latestPinnedSummary}
                 onVoiceCall={() => {
                   void onStartQuickCall("voice");
                 }}
@@ -9090,7 +9091,6 @@ export function ChatPage() {
                 onForwardMessage={onForwardMessage}
                 onForwardMessages={onForwardMessages}
                 onReactMessage={onReactMessage}
-                pinnedMessages={activePinnedBoardItems}
                 onPinMessage={(targetMessage) => {
                   void onPinGroupMessage(targetMessage);
                 }}

@@ -51,7 +51,20 @@ type DirectConversationPaneProps = {
   onForwardMessage: (messageId: string) => void | Promise<void>;
   onForwardMessages?: (messageIds: string[]) => void | Promise<void>;
   onReactMessage: (messageId: string, emoji: string) => void | Promise<void>;
-  pinnedMessages?: Array<{ id: string; title: string; sourceMessageId: string }>;
+  pinnedMessages?: Array<{
+    id: string;
+    itemType: "pin" | "note";
+    title: string;
+    preview: string;
+    sourceMessageId: string;
+  }>;
+  latestPinnedSummary?: {
+    itemType: "pin" | "note";
+    title: string;
+    preview: string;
+    sourceMessageId: string;
+    count: number;
+  } | null;
   onPinMessage?: (message: ChatMessage) => void | Promise<void>;
   onUnpinMessage?: (message: ChatMessage) => void | Promise<void>;
   pendingUploads: Array<{
@@ -683,6 +696,7 @@ export function DirectConversationPane({
   onForwardMessages,
   onReactMessage,
   pinnedMessages = [],
+  latestPinnedSummary,
   onPinMessage,
   onUnpinMessage,
   pendingUploads,
@@ -727,6 +741,9 @@ export function DirectConversationPane({
     null,
   );
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
+  const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
+  const pinnedListRef = useRef<HTMLDivElement>(null);
+  const pinnedListButtonRef = useRef<HTMLButtonElement>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [messageSearchMatchIndex, setMessageSearchMatchIndex] = useState(0);
   const [messageSearchFeedback, setMessageSearchFeedback] = useState<string | null>(null);
@@ -1045,6 +1062,26 @@ export function DirectConversationPane({
       document.removeEventListener("mousedown", onPointerDown);
     };
   }, [showAttachMenu]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!isPinnedListOpen) {
+        return;
+      }
+      if (
+        pinnedListRef.current &&
+        !pinnedListRef.current.contains(event.target as Node) &&
+        pinnedListButtonRef.current &&
+        !pinnedListButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsPinnedListOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isPinnedListOpen]);
 
   const openAttachmentInput = (input: HTMLInputElement | null) => {
     if (!input || input.disabled) {
@@ -1645,6 +1682,86 @@ export function DirectConversationPane({
         </div>
       </header>
 
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {latestPinnedSummary && (
+          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 sm:px-6">
+            <button
+              ref={pinnedListButtonRef}
+              type="button"
+              onClick={() => setIsPinnedListOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left hover:bg-amber-500/10"
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                  {language === "vi" ? "Ghim/ghi chu gan nhat" : "Latest pinned/note"}
+                </p>
+                <p className="truncate text-sm font-semibold text-amber-100">
+                  <span className="mr-1 inline-flex align-middle">
+                    {latestPinnedSummary.itemType === "note" ? <FileText size={14} /> : <Pin size={14} />}
+                  </span>
+                  <span className="align-middle">{latestPinnedSummary.title}</span>
+                </p>
+                {latestPinnedSummary.preview && (
+                  <p className="truncate text-xs text-amber-100/90">{latestPinnedSummary.preview}</p>
+                )}
+              </div>
+              <span className="shrink-0 rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                {latestPinnedSummary.count}
+              </span>
+            </button>
+
+            {isPinnedListOpen && (
+              <div ref={pinnedListRef} className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
+                {(pinnedMessages ?? []).length === 0 ? (
+                  <p className="px-1 py-1 text-xs text-amber-100/80">
+                    {language === "vi" ? "Chua co tin nhan ghim" : "No pinned messages"}
+                  </p>
+                ) : (
+                  (pinnedMessages ?? []).map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-md border border-transparent px-2 py-1.5 hover:border-amber-300/40 hover:bg-amber-500/10"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPinnedListOpen(false);
+                          jumpToMessageById(item.sourceMessageId);
+                        }}
+                        className="w-full text-left"
+                      >
+                        <p className="truncate text-xs font-semibold text-amber-100">
+                          <span className="mr-1 inline-flex align-middle">
+                            {item.itemType === "note" ? <FileText size={12} /> : <Pin size={12} />}
+                          </span>
+                          <span className="align-middle">{item.title}</span>
+                        </p>
+                        {item.preview && <p className="truncate text-[11px] text-amber-100/85">{item.preview}</p>}
+                      </button>
+                      {item.itemType === "pin" && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const sourceMessage = localMessages.find((msg) => msg.id === item.sourceMessageId);
+                            void onUnpinMessage?.(
+                              sourceMessage ?? ({ id: item.sourceMessageId, text: item.preview } as ChatMessage)
+                            );
+                          }}
+                          className="mt-1 flex w-full items-center gap-1.5 rounded p-1 text-xs text-amber-200/80 hover:bg-amber-500/20 hover:text-amber-100"
+                        >
+                          <Ban size={12} />
+                          {language === "vi" ? "Bo ghim" : "Unpin"}
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
       {conversationNotice && (
         <div
           className={`border-b px-4 py-3 text-sm sm:px-5 ${conversationNotice.tone === "danger"
@@ -1793,8 +1910,8 @@ export function DirectConversationPane({
         )}
         <div className="w-full">
           {isLoadingMessages ? (
-            <div className="flex justify-center py-10">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-300"></div>
+            <div className="flex flex-1 items-center justify-center p-8">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
             </div>
           ) : (
             <div className="flex flex-col">
@@ -1948,6 +2065,7 @@ export function DirectConversationPane({
             </div>
           )}
         </div>
+      </div>
       </div>
 
       <footer className="relative mt-auto border-t border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#14314e_0%,#122b45_100%)] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
