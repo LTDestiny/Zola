@@ -154,7 +154,7 @@ export function ChatbotPane() {
           </div>
         )}
 
-        <div className="mx-auto flex max-w-4xl items-end gap-3 rounded-2xl border border-white/10 bg-[#0b0f17] p-2 transition-colors focus-within:border-indigo-500/50 focus-within:shadow-[0_0_15px_rgba(99,102,241,0.1)]">
+        <div className={`mx-auto flex max-w-4xl items-end gap-3 rounded-2xl border border-white/10 bg-[#0b0f17] p-2 transition-colors ${isLoading ? "opacity-50 pointer-events-none" : "focus-within:border-indigo-500/50 focus-within:shadow-[0_0_15px_rgba(99,102,241,0.1)]"}`}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
