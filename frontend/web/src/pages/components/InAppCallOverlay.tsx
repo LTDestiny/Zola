@@ -50,15 +50,15 @@ function toInitials(name: string) {
 
 function getStatusText(status: InAppCallStatus, language: "vi" | "en") {
   if (status === "calling") {
-    return language === "vi" ? "Dang goi..." : "Calling...";
+    return language === "vi" ? "Đang gọi..." : "Calling...";
   }
   if (status === "ringing") {
-    return language === "vi" ? "Dang do chuong..." : "Ringing...";
+    return language === "vi" ? "Đang đổ chuông..." : "Ringing...";
   }
   if (status === "connecting") {
-    return language === "vi" ? "Dang ket noi..." : "Connecting...";
+    return language === "vi" ? "Đang kết nối..." : "Connecting...";
   }
-  return language === "vi" ? "Da ket noi" : "Connected";
+  return language === "vi" ? "Đã kết nối" : "Connected";
 }
 
 function formatDuration(totalSeconds: number) {
@@ -153,10 +153,10 @@ export function InAppCallOverlay({
             <p className="text-xs uppercase tracking-wide text-indigo-300">
               {incomingCall.mode === "video"
                 ? language === "vi"
-                  ? "Cuoc goi video den"
+                  ? "Cuộc gọi video đến"
                   : "Incoming video call"
                 : language === "vi"
-                  ? "Cuoc goi thoai den"
+                  ? "Cuộc gọi thoại đến"
                   : "Incoming voice call"}
             </p>
             <h3 className="mt-2 text-xl font-semibold text-white">
@@ -164,7 +164,7 @@ export function InAppCallOverlay({
             </h3>
             <p className="mt-1 text-sm text-slate-300">
               {language === "vi"
-                ? "Ban co muon nhan cuoc goi nay khong?"
+                ? "Bạn có muốn nhận cuộc gọi này không?"
                 : "Do you want to answer this call?"}
             </p>
             <div className="mt-5 flex items-center justify-end gap-2">
@@ -174,7 +174,7 @@ export function InAppCallOverlay({
                 className="inline-flex items-center gap-1 rounded-lg border border-rose-400/60 px-3 py-2 text-sm font-medium text-rose-200 transition hover:bg-rose-500/10"
               >
                 <X size={16} />
-                {language === "vi" ? "Tu choi" : "Decline"}
+                {language === "vi" ? "Từ chối" : "Decline"}
               </button>
               <button
                 type="button"
@@ -182,7 +182,7 @@ export function InAppCallOverlay({
                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400"
               >
                 <Phone size={16} />
-                {language === "vi" ? "Nhan" : "Answer"}
+                {language === "vi" ? "Nhận" : "Answer"}
               </button>
             </div>
           </div>
@@ -274,7 +274,7 @@ export function InAppCallOverlay({
                 type="button"
                 onClick={onToggleMicrophone}
                 className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-white transition ${microphoneEnabled ? "border-slate-400 bg-slate-700/70 hover:bg-slate-700" : "border-amber-300 bg-amber-600/80 hover:bg-amber-600"}`}
-                title={language === "vi" ? "Bat/tat micro" : "Toggle microphone"}
+                title={language === "vi" ? "Bật/tắt micro" : "Toggle microphone"}
               >
                 {microphoneEnabled ? <Mic size={18} /> : <MicOff size={18} />}
               </button>
@@ -284,7 +284,7 @@ export function InAppCallOverlay({
                   type="button"
                   onClick={onToggleCamera}
                   className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-white transition ${cameraEnabled ? "border-slate-400 bg-slate-700/70 hover:bg-slate-700" : "border-amber-300 bg-amber-600/80 hover:bg-amber-600"}`}
-                  title={language === "vi" ? "Bat/tat camera" : "Toggle camera"}
+                  title={language === "vi" ? "Bật/tắt camera" : "Toggle camera"}
                 >
                   {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
                 </button>
@@ -294,7 +294,7 @@ export function InAppCallOverlay({
                 type="button"
                 onClick={onEndCall}
                 className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-rose-600 text-white transition hover:bg-rose-500"
-                title={language === "vi" ? "Ket thuc cuoc goi" : "End call"}
+                title={language === "vi" ? "Kết thúc cuộc gọi" : "End call"}
               >
                 <PhoneOff size={20} />
               </button>

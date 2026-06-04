@@ -14,7 +14,7 @@ export function GroupCallNotice({ language, description, onJoin }: GroupCallNoti
           onClick={onJoin}
           className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-400"
         >
-          {language === "vi" ? "Tham gia cuoc goi" : "Join call"}
+          {language === "vi" ? "Tham gia cuộc gọi" : "Join call"}
         </button>
       </div>
     </div>

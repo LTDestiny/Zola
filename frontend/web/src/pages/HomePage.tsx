@@ -39,7 +39,7 @@ export function HomePage() {
             </h2>
             <ul className="mt-6 space-y-2 text-slate-700 list-disc pl-5 marker:text-zola-blue">
               <li>Gui file, anh, video cuc nhanh len den 1GB</li>
-              <li>Dong bo tin nhan voi dien thoai</li>
+              <li>Đồng bộ tin nhắn với điện thoại</li>
               <li>Toi uu cho chat nhom va trao doi cong viec</li>
             </ul>
 

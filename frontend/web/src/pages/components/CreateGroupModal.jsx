@@ -64,34 +64,34 @@ export function CreateGroupModal({
     <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-900/60 p-4">
       <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
         <h3 className="text-xl font-semibold text-slate-900">
-          {language === "vi" ? "Tao nhom" : "Create Group"}
+          {language === "vi" ? "Tạo nhóm" : "Create Group"}
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           {language === "vi"
-            ? "Dat ten nhom va chon thanh vien de bat dau"
+            ? "Đặt tên nhóm và chọn thành viên để bắt đầu"
             : "Name the group and choose members to start chatting"}
         </p>
 
         <label className="mt-4 block text-xs font-semibold text-slate-500">
-          {language === "vi" ? "Ten nhom" : "Group name"}
+          {language === "vi" ? "Tên nhóm" : "Group name"}
           <input
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder={language === "vi" ? "Nhap ten nhom" : "Enter group name"}
+            placeholder={language === "vi" ? "Nhập tên nhóm" : "Enter group name"}
             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
           />
         </label>
 
         <div className="mt-4">
           <p className="mb-2 text-xs font-semibold text-slate-500">
-            {language === "vi" ? "Thanh vien" : "Members"}
+            {language === "vi" ? "Thành viên" : "Members"}
           </p>
           <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-2">
             {selectableContacts.length === 0 && (
               <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
                 {language === "vi"
-                  ? "Chua co ban be de tao nhom"
+                  ? "Chưa có bạn bè để tạo nhóm"
                   : "No contacts available for group creation"}
               </div>
             )}
@@ -129,7 +129,7 @@ export function CreateGroupModal({
             onClick={handleClose}
             className="h-10 rounded-lg border border-slate-300 px-4 text-sm text-slate-700"
           >
-            {language === "vi" ? "Dong" : "Close"}
+            {language === "vi" ? "Đóng" : "Close"}
           </button>
           <button
             type="button"
@@ -141,10 +141,10 @@ export function CreateGroupModal({
           >
             {isSubmitting
               ? language === "vi"
-                ? "Dang tao..."
+                ? "Đang tạo..."
                 : "Creating..."
               : language === "vi"
-                ? "Tao nhom"
+                ? "Tạo nhóm"
                 : "Create"}
           </button>
         </div>

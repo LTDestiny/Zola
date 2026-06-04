@@ -43,17 +43,17 @@ function normalizeGender(value: string | null | undefined, language: "vi" | "en"
     return language === "vi" ? "Nam" : "Male";
   }
   if (normalized === "FEMALE") {
-    return language === "vi" ? "Nu" : "Female";
+    return language === "vi" ? "Nữ" : "Female";
   }
   if (normalized === "OTHER") {
-    return language === "vi" ? "Khac" : "Other";
+    return language === "vi" ? "Khác" : "Other";
   }
-  return language === "vi" ? "Chua cap nhat" : "Not updated";
+  return language === "vi" ? "Chưa cập nhật" : "Not updated";
 }
 
 function formatBirthdate(value: string | null | undefined, language: "vi" | "en") {
   if (!value) {
-    return language === "vi" ? "Da an hoac chua cap nhat" : "Hidden or not updated";
+    return language === "vi" ? "Đã ẩn hoặc chưa cập nhật" : "Hidden or not updated";
   }
 
   const date = new Date(value);
@@ -75,47 +75,47 @@ function friendshipLabel(
   blockedByPeer: boolean,
 ) {
   if (blockedByMe) {
-    return language === "vi" ? "Da chan" : "You blocked";
+    return language === "vi" ? "Đã chặn" : "You blocked";
   }
   if (blockedByPeer) {
-    return language === "vi" ? "Bi chan" : "Blocked you";
+    return language === "vi" ? "Bị chặn" : "Blocked you";
   }
 
   const normalized = String(status ?? "NONE").trim().toUpperCase();
   if (normalized === "FRIEND") {
-    return language === "vi" ? "Ban be" : "Friends";
+    return language === "vi" ? "Bạn bè" : "Friends";
   }
   if (normalized === "FRIENDS") {
-    return language === "vi" ? "Ban be" : "Friends";
+    return language === "vi" ? "Bạn bè" : "Friends";
   }
   if (normalized === "OUTGOING_REQUEST" || normalized === "OUTGOING_PENDING") {
-    return language === "vi" ? "Da gui loi moi" : "Request sent";
+    return language === "vi" ? "Đã gửi lời mời" : "Request sent";
   }
   if (normalized === "INCOMING_REQUEST" || normalized === "INCOMING_PENDING") {
-    return language === "vi" ? "Loi moi den" : "Incoming request";
+    return language === "vi" ? "Lời mời đến" : "Incoming request";
   }
   if (normalized === "BLOCKED_BY_ME") {
-    return language === "vi" ? "Da chan" : "You blocked";
+    return language === "vi" ? "Đã chặn" : "You blocked";
   }
   if (normalized === "BLOCKED_ME") {
-    return language === "vi" ? "Bi chan" : "Blocked you";
+    return language === "vi" ? "Bị chặn" : "Blocked you";
   }
   if (normalized === "ACCEPTED") {
-    return language === "vi" ? "Ban be" : "Friends";
+    return language === "vi" ? "Bạn bè" : "Friends";
   }
   if (normalized === "PENDING") {
-    return language === "vi" ? "Dang cho xac nhan" : "Pending";
+    return language === "vi" ? "Đang chờ xác nhận" : "Pending";
   }
   if (normalized === "BLOCKED") {
-    return language === "vi" ? "Da chan" : "Blocked";
+    return language === "vi" ? "Đã chặn" : "Blocked";
   }
   if (normalized === "REJECTED" || normalized === "DECLINED") {
-    return language === "vi" ? "Da tu choi" : "Declined";
+    return language === "vi" ? "Đã từ chối" : "Declined";
   }
   if (normalized === "CANCELLED" || normalized === "CANCELED") {
-    return language === "vi" ? "Da thu hoi loi moi" : "Cancelled";
+    return language === "vi" ? "Đã thu hồi lời mời" : "Cancelled";
   }
-  return language === "vi" ? "Nguoi la" : "Stranger";
+  return language === "vi" ? "Người lạ" : "Stranger";
 }
 
 export function UserProfilePreviewModal({
@@ -201,7 +201,7 @@ export function UserProfilePreviewModal({
       <div className="w-full max-w-xl overflow-hidden rounded-[1.75rem] border border-slate-700 bg-[#1b2028] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
         <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
           <h3 className="text-xl font-semibold text-white">
-            {language === "vi" ? "Thong tin tai khoan" : "Account info"}
+            {language === "vi" ? "Thông tin tài khoản" : "Account info"}
           </h3>
           <button
             type="button"
@@ -242,13 +242,13 @@ export function UserProfilePreviewModal({
                 >
                   {isCurrentUser
                     ? language === "vi"
-                      ? "Tai khoan cua ban"
+                      ? "Tài khoản của bạn"
                       : "Your account"
                     : friendshipLabel(friendshipStatus, language, blockedByMe, blockedByPeer)}
                 </span>
               </div>
               <p className="mt-2 text-sm text-slate-300">
-                {profile.email ?? (language === "vi" ? "Email dang duoc an" : "Email is hidden")}
+                {profile.email ?? (language === "vi" ? "Email đang được ẩn" : "Email is hidden")}
               </p>
             </div>
           </div>
@@ -264,7 +264,7 @@ export function UserProfilePreviewModal({
           {!isCurrentUser && isBlockedByPeer && (
             <div className="mt-5 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {language === "vi"
-                ? "Nguoi dung nay da chan ban. Ban khong the nhan tin hoac gui loi moi ket ban."
+                ? "Người dùng này đã chặn bạn. Bạn không thể nhắn tin hoặc gửi lời mời kết bạn."
                 : "This user blocked you. Messaging and friend actions are unavailable."}
             </div>
           )}
@@ -272,7 +272,7 @@ export function UserProfilePreviewModal({
           {!isCurrentUser && isOutgoingPending && !isBlocked && (
             <div className="mt-5 rounded-2xl border border-amber-300/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               {language === "vi"
-                ? "Ban da gui loi moi ket ban. Ban co muon thu hoi loi moi nay khong?"
+                ? "Bạn đã gửi lời mời kết bạn. Bạn có muốn thu hồi lời mời này không?"
                 : "You already sent a friend request. Do you want to cancel it?"}
             </div>
           )}
@@ -287,7 +287,7 @@ export function UserProfilePreviewModal({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Ban size={16} />
-                  <span>{language === "vi" ? "Bo chan" : "Unblock"}</span>
+                  <span>{language === "vi" ? "Bỏ chặn" : "Unblock"}</span>
                 </button>
               ) : showActionRow ? (
                 <div className="grid grid-cols-2 gap-3">
@@ -300,12 +300,12 @@ export function UserProfilePreviewModal({
                       canMessage
                         ? undefined
                         : language === "vi"
-                          ? "Khong the nhan tin do trang thai quan he hien tai khong cho phep."
+                          ? "Không thể nhắn tin do trạng thái quan hệ hiện tại không cho phép."
                           : "Messaging is unavailable because of the current relationship status."
                     }
                   >
                     <MessageCircle size={16} />
-                    <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
+                    <span>{language === "vi" ? "Nhắn tin" : "Message"}</span>
                   </button>
                   <button
                     type="button"
@@ -314,7 +314,7 @@ export function UserProfilePreviewModal({
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Ban size={16} />
-                    <span>{language === "vi" ? "Chan" : "Block"}</span>
+                    <span>{language === "vi" ? "Chặn" : "Block"}</span>
                   </button>
                 </div>
               ) : null}
@@ -328,7 +328,7 @@ export function UserProfilePreviewModal({
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <UserPlus size={16} />
-                    <span>{language === "vi" ? "Chap nhan" : "Accept"}</span>
+                    <span>{language === "vi" ? "Chấp nhận" : "Accept"}</span>
                   </button>
                   <button
                     type="button"
@@ -337,7 +337,7 @@ export function UserProfilePreviewModal({
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <X size={16} />
-                    <span>{language === "vi" ? "Tu choi" : "Decline"}</span>
+                    <span>{language === "vi" ? "Từ chối" : "Decline"}</span>
                   </button>
                 </div>
               )}
@@ -350,7 +350,7 @@ export function UserProfilePreviewModal({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <X size={16} />
-                  <span>{language === "vi" ? "Thu hoi loi moi" : "Cancel request"}</span>
+                  <span>{language === "vi" ? "Thu hồi lời mời" : "Cancel request"}</span>
                 </button>
               )}
 
@@ -362,7 +362,7 @@ export function UserProfilePreviewModal({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/35 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-100 transition hover:bg-orange-500/15 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <X size={16} />
-                  <span>{language === "vi" ? "Huy ket ban" : "Remove friend"}</span>
+                  <span>{language === "vi" ? "Hủy kết bạn" : "Remove friend"}</span>
                 </button>
               )}
 
@@ -374,7 +374,7 @@ export function UserProfilePreviewModal({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <UserPlus size={16} />
-                  <span>{language === "vi" ? "Ket ban" : "Add friend"}</span>
+                  <span>{language === "vi" ? "Kết bạn" : "Add friend"}</span>
                 </button>
               )}
 
@@ -386,7 +386,7 @@ export function UserProfilePreviewModal({
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-300 opacity-60"
                   >
                     <MessageCircle size={16} />
-                    <span>{language === "vi" ? "Nhan tin" : "Message"}</span>
+                    <span>{language === "vi" ? "Nhắn tin" : "Message"}</span>
                   </button>
                   <button
                     type="button"
@@ -394,7 +394,7 @@ export function UserProfilePreviewModal({
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-300 opacity-60"
                   >
                     <UserPlus size={16} />
-                    <span>{language === "vi" ? "Ket ban" : "Add friend"}</span>
+                    <span>{language === "vi" ? "Kết bạn" : "Add friend"}</span>
                   </button>
                 </div>
               )}
@@ -405,28 +405,28 @@ export function UserProfilePreviewModal({
           <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-900/40">
             <div className="border-b border-slate-700 px-5 py-4">
               <h5 className="text-xl font-semibold text-white">
-                {language === "vi" ? "Thong tin ca nhan" : "Personal info"}
+                {language === "vi" ? "Thông tin cá nhân" : "Personal info"}
               </h5>
             </div>
             <div className="space-y-4 px-5 py-4 text-sm text-slate-200">
               <div className="grid grid-cols-[110px_1fr] gap-4">
                 <span className="text-slate-400">{language === "vi" ? "Email" : "Email"}</span>
                 <span>
-                  {profile.email ?? (language === "vi" ? "Email dang duoc an" : "Email is hidden")}
+                  {profile.email ?? (language === "vi" ? "Email đang được ẩn" : "Email is hidden")}
                 </span>
               </div>
               <div className="grid grid-cols-[110px_1fr] gap-4">
-                <span className="text-slate-400">{language === "vi" ? "So dien thoai" : "Phone"}</span>
+                <span className="text-slate-400">{language === "vi" ? "Số điện thoại" : "Phone"}</span>
                 <span>
-                  {profile.phone ?? (language === "vi" ? "So dien thoai dang duoc an" : "Phone is hidden")}
+                  {profile.phone ?? (language === "vi" ? "Số điện thoại đang được ẩn" : "Phone is hidden")}
                 </span>
               </div>
               <div className="grid grid-cols-[110px_1fr] gap-4">
-                <span className="text-slate-400">{language === "vi" ? "Gioi tinh" : "Gender"}</span>
+                <span className="text-slate-400">{language === "vi" ? "Giới tính" : "Gender"}</span>
                 <span>{normalizeGender(profile.gender, language)}</span>
               </div>
               <div className="grid grid-cols-[110px_1fr] gap-4">
-                <span className="text-slate-400">{language === "vi" ? "Ngay sinh" : "Birthdate"}</span>
+                <span className="text-slate-400">{language === "vi" ? "Ngày sinh" : "Birthdate"}</span>
                 <span>{formatBirthdate(profile.birthdate, language)}</span>
               </div>
             </div>

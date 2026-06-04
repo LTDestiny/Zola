@@ -423,10 +423,10 @@ function buildReactionSummary(reactions: string[] | undefined) {
 }
 
 function formatTime(value: string | null, language: "vi" | "en") {
-  if (!value) return language === "vi" ? "Khong ro" : "N/A";
+  if (!value) return language === "vi" ? "Không rõ" : "N/A";
   const date = new Date(value);
   if (Number.isNaN(date.getTime()))
-    return language === "vi" ? "Khong ro" : "N/A";
+    return language === "vi" ? "Không rõ" : "N/A";
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -488,7 +488,7 @@ function formatSystemMessageContent(
 ) {
   const content = String(rawContent ?? "").trim();
   if (!content) {
-    return language === "vi" ? "Thong bao he thong" : "System notification";
+    return language === "vi" ? "Thông báo hệ thống" : "System notification";
   }
 
   const prefixed = content.replace(/^\[System\]\s*/i, "").trim();
@@ -498,7 +498,7 @@ function formatSystemMessageContent(
     const actor = toDisplayNameFromId(addedMatch[1], language, myId, userProfileMap);
     const target = toDisplayNameFromId(addedMatch[2], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da them ${target} vao nhom`
+      ? `${actor} đã thêm ${target} vào nhóm`
       : `${actor} added ${target} to the group`;
   }
 
@@ -507,7 +507,7 @@ function formatSystemMessageContent(
     const actor = toDisplayNameFromId(removedMatch[1], language, myId, userProfileMap);
     const target = toDisplayNameFromId(removedMatch[2], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da xoa ${target} khoi nhom`
+      ? `${actor} đã xóa ${target} khỏi nhóm`
       : `${actor} removed ${target} from the group`;
   }
 
@@ -515,7 +515,7 @@ function formatSystemMessageContent(
   if (joinedMatch) {
     const actor = toDisplayNameFromId(joinedMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da tham gia nhom bang link moi`
+      ? `${actor} đã tham gia nhóm bằng link mời`
       : `${actor} joined via invite link`;
   }
 
@@ -523,7 +523,7 @@ function formatSystemMessageContent(
   if (leftMatch) {
     const actor = toDisplayNameFromId(leftMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da roi nhom`
+      ? `${actor} đã rời nhóm`
       : `${actor} left the group`;
   }
 
@@ -541,8 +541,8 @@ function mapToUiMessage(
   const recalledText =
     language === "vi"
       ? isMine
-        ? "Ban da thu hoi mot tin nhan"
-        : "Tin nhan da duoc thu hoi"
+        ? "Bạn đã thu hồi một tin nhắn"
+        : "Tin nhắn đã được thu hồi"
       : isMine
         ? "You recalled a message"
         : "This message was recalled";
@@ -619,12 +619,12 @@ function getInlineNoticeMessage(
   const kind = String(payload.kind ?? "").toUpperCase();
   if (kind === "PIN_MESSAGE") {
     return language === "vi"
-      ? "Da ghim mot tin nhan"
+      ? "Đã ghim một tin nhắn"
       : "Pinned a message";
   }
   if (kind === "UNPIN_MESSAGE") {
     return language === "vi"
-      ? "Da bo ghim mot tin nhan"
+      ? "Đã bỏ ghim một tin nhắn"
       : "Unpinned a message";
   }
 
@@ -1200,7 +1200,7 @@ export function DirectConversationPane({
     if (!selectedText) {
       setSelectionActionFeedback(
         language === "vi"
-          ? "Chua co noi dung de sao chep."
+          ? "Chưa có nội dung để sao chép."
           : "No message content available to copy.",
       );
       return;
@@ -1209,11 +1209,11 @@ export function DirectConversationPane({
     try {
       await navigator.clipboard.writeText(selectedText);
       setSelectionActionFeedback(
-        language === "vi" ? "Da sao chep tin nhan da chon." : "Selected messages copied.",
+        language === "vi" ? "Đã sao chép tin nhắn đã chọn." : "Selected messages copied.",
       );
     } catch {
       setSelectionActionFeedback(
-        language === "vi" ? "Khong the sao chep luc nay." : "Cannot copy right now.",
+        language === "vi" ? "Không thể sao chép lúc này." : "Cannot copy right now.",
       );
     }
   };
@@ -1223,7 +1223,7 @@ export function DirectConversationPane({
     if (selectedIds.length === 0) {
       setSelectionActionFeedback(
         language === "vi"
-          ? "Chua co tin nhan hop le de chia se."
+          ? "Chưa có tin nhắn hợp lệ để chia sẻ."
           : "No valid messages available to share.",
       );
       return;
@@ -1231,7 +1231,7 @@ export function DirectConversationPane({
     if (!onForwardMessages) {
       setSelectionActionFeedback(
         language === "vi"
-          ? "Tinh nang chia se hien chua san sang."
+          ? "Tính năng chia sẻ hiện chưa sẵn sàng."
           : "Sharing is not available here yet.",
       );
       return;
@@ -1242,7 +1242,7 @@ export function DirectConversationPane({
       clearSelectedMessages();
     } catch {
       setSelectionActionFeedback(
-        language === "vi" ? "Khong the chia se luc nay." : "Cannot share right now.",
+        language === "vi" ? "Không thể chia sẻ lúc này." : "Cannot share right now.",
       );
     }
   };
@@ -1251,7 +1251,7 @@ export function DirectConversationPane({
     if (selectedRecallableMessages.length === 0) {
       setSelectionActionFeedback(
         language === "vi"
-          ? "Chi thu hoi duoc tin nhan cua ban trong 5 phut."
+          ? "Chỉ thu hồi được tin nhắn của bạn trong 5 phút."
           : "You can only recall your own messages within 5 minutes.",
       );
       return;
@@ -1266,10 +1266,10 @@ export function DirectConversationPane({
     setPolicyModalMessage(
       skippedCount > 0
         ? language === "vi"
-          ? `Da thu hoi ${selectedRecallableMessages.length} tin nhan, bo qua ${skippedCount} tin khong hop le.`
+          ? `Đã thu hồi ${selectedRecallableMessages.length} tin nhắn, bỏ qua ${skippedCount} tin không hợp lệ.`
           : `Recalled ${selectedRecallableMessages.length} message(s), skipped ${skippedCount} ineligible item(s).`
         : language === "vi"
-          ? `Da thu hoi ${selectedRecallableMessages.length} tin nhan.`
+          ? `Đã thu hồi ${selectedRecallableMessages.length} tin nhắn.`
           : `Recalled ${selectedRecallableMessages.length} message(s).`,
     );
   };
@@ -1277,7 +1277,7 @@ export function DirectConversationPane({
   const handleDeleteSelectedMessages = async () => {
     if (selectedPersistedMessages.length === 0) {
       setSelectionActionFeedback(
-        language === "vi" ? "Khong co tin nhan hop le de xoa." : "No valid messages to delete.",
+        language === "vi" ? "Không có tin nhắn hợp lệ để xóa." : "No valid messages to delete.",
       );
       return;
     }
@@ -1290,7 +1290,7 @@ export function DirectConversationPane({
     clearSelectedMessages();
     setPolicyModalMessage(
       language === "vi"
-        ? `Da xoa ${deletedCount} tin nhan khoi khung chat cua ban.`
+        ? `Đã xóa ${deletedCount} tin nhắn khỏi khung chat của bạn.`
         : `Deleted ${deletedCount} message(s) from your chat view.`,
     );
   };
@@ -1299,7 +1299,7 @@ export function DirectConversationPane({
     if (!normalizedMessageSearchQuery) {
       setMessageSearchFeedback(
         language === "vi"
-          ? "Nhap tu khoa can tim trong tin nhan."
+          ? "Nhập từ khóa cần tìm trong tin nhắn."
           : "Enter the words you want to find in messages.",
       );
       return;
@@ -1309,10 +1309,10 @@ export function DirectConversationPane({
       setMessageSearchFeedback(
         hasMoreMessages
           ? language === "vi"
-            ? "Chua tim thay trong cac tin nhan da tai. Hay tai them tin nhan cu hon roi thu lai."
+            ? "Chưa tìm thấy trong các tin nhắn đã tải. Hãy tải thêm tin nhắn cũ hơn rồi thử lại."
             : "No keyword match in loaded messages yet. Load older messages and try again."
           : language === "vi"
-            ? "Khong tim thay tin nhan chua cum tu nay."
+            ? "Không tìm thấy tin nhắn chứa cụm từ này."
             : "No matching messages found.",
       );
       return;
@@ -1424,7 +1424,7 @@ export function DirectConversationPane({
       if (isMessageActionExpired(editingMessage.id, EDIT_WINDOW_MS)) {
         setPolicyModalMessage(
           language === "vi"
-            ? "Khong the sua tin nhan vi qua 15p"
+            ? "Không thể sửa tin nhắn vì quá 15p"
             : "Cannot edit this message after 15 minutes",
         );
         setEditingMessage(null);
@@ -1479,7 +1479,7 @@ export function DirectConversationPane({
         error instanceof Error && error.message
           ? error.message
           : language === "vi"
-            ? "Khong the gui tin nhan. Vui long thu lai."
+            ? "Không thể gửi tin nhắn. Vui lòng thử lại."
             : "Could not send this message. Please try again.",
       );
     }
@@ -1528,11 +1528,11 @@ export function DirectConversationPane({
             <Sparkles size={32} />
           </div>
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-slate-100">
-            {language === "vi" ? "Chon cuoc tro chuyen" : "Pick a conversation"}
+            {language === "vi" ? "Chọn cuộc trò chuyện" : "Pick a conversation"}
           </h2>
           <p className="text-sm leading-relaxed text-slate-300">
             {language === "vi"
-              ? "Danh sach ben trai theo phong cach Zalo. Chon mot doan chat de bat dau, khung nhap tin se luon nam o day man hinh."
+              ? "Danh sách bên trái theo phong cách Zalo. Chọn một đoạn chat để bắt đầu, khung nhập tin sẽ luôn nằm ở đáy màn hình."
               : "Use the Zalo-style list on the left. Select a chat to start, the composer stays pinned at the bottom."}
           </p>
         </div>
@@ -1612,7 +1612,7 @@ export function DirectConversationPane({
             onClick={onVoiceCall}
             disabled={!allowComposer}
             className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45 sm:h-9 sm:w-9"
-            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
+            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Không thể gọi lúc này" : "Calls are unavailable right now") : undefined}
           >
             <Phone size={18} />
           </button>
@@ -1620,8 +1620,8 @@ export function DirectConversationPane({
             type="button"
             onClick={() => setIsMessageSearchOpen((prev) => !prev)}
             className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
-            title={language === "vi" ? "Tim tin nhan" : "Search messages"}
-            aria-label={language === "vi" ? "Tim tin nhan" : "Search messages"}
+            title={language === "vi" ? "Tìm tin nhắn" : "Search messages"}
+            aria-label={language === "vi" ? "Tìm tin nhắn" : "Search messages"}
           >
             <Search size={18} />
           </button>
@@ -1630,7 +1630,7 @@ export function DirectConversationPane({
             onClick={onVideoCall}
             disabled={!allowComposer}
             className="grid h-8 w-8 place-items-center rounded-lg border border-transparent transition-all duration-200 hover:border-[#335b89] hover:bg-[#14365f] hover:text-white disabled:cursor-not-allowed disabled:opacity-45 sm:h-9 sm:w-9"
-            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Khong the goi luc nay" : "Calls are unavailable right now") : undefined}
+            title={!allowComposer ? composerDisabledMessage ?? (language === "vi" ? "Không thể gọi lúc này" : "Calls are unavailable right now") : undefined}
           >
             <Video size={18} />
           </button>
@@ -1646,19 +1646,19 @@ export function DirectConversationPane({
               title={
                 activeConversationPinned
                   ? language === "vi"
-                    ? "Bo ghim hoi thoai"
+                    ? "Bỏ ghim hội thoại"
                     : "Unpin conversation"
                   : language === "vi"
-                    ? "Ghim hoi thoai"
+                    ? "Ghim hội thoại"
                     : "Pin conversation"
               }
               aria-label={
                 activeConversationPinned
                   ? language === "vi"
-                    ? "Bo ghim hoi thoai"
+                    ? "Bỏ ghim hội thoại"
                     : "Unpin conversation"
                   : language === "vi"
-                    ? "Ghim hoi thoai"
+                    ? "Ghim hội thoại"
                     : "Pin conversation"
               }
             >
@@ -1672,7 +1672,7 @@ export function DirectConversationPane({
               className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isDirectPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
               title={
                 language === "vi"
-                  ? "Bat/tat bang dieu khien"
+                  ? "Bật/tắt bảng điều khiển"
                   : "Toggle control panel"
               }
             >
@@ -1693,7 +1693,7 @@ export function DirectConversationPane({
             >
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-200">
-                  {language === "vi" ? "Ghim/ghi chu gan nhat" : "Latest pinned/note"}
+                  {language === "vi" ? "Ghim/ghi chú gần nhất" : "Latest pinned/note"}
                 </p>
                 <p className="truncate text-sm font-semibold text-amber-100">
                   <span className="mr-1 inline-flex align-middle">
@@ -1714,7 +1714,7 @@ export function DirectConversationPane({
               <div ref={pinnedListRef} className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
                 {(pinnedMessages ?? []).length === 0 ? (
                   <p className="px-1 py-1 text-xs text-amber-100/80">
-                    {language === "vi" ? "Chua co tin nhan ghim" : "No pinned messages"}
+                    {language === "vi" ? "Chưa có tin nhắn ghim" : "No pinned messages"}
                   </p>
                 ) : (
                   (pinnedMessages ?? []).map((item) => (
@@ -1751,7 +1751,7 @@ export function DirectConversationPane({
                           className="mt-1 flex w-full items-center gap-1.5 rounded p-1 text-xs text-amber-200/80 hover:bg-amber-500/20 hover:text-amber-100"
                         >
                           <Ban size={12} />
-                          {language === "vi" ? "Bo ghim" : "Unpin"}
+                          {language === "vi" ? "Bỏ ghim" : "Unpin"}
                         </button>
                       )}
                     </div>
@@ -1806,7 +1806,7 @@ export function DirectConversationPane({
                 }}
                 placeholder={
                   language === "vi"
-                    ? "Nhap tu hoac cum tu trong tin nhan"
+                    ? "Nhập từ hoặc cụm từ trong tin nhắn"
                     : "Enter a word or phrase from the message"
                 }
                 className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-400"
@@ -1819,15 +1819,15 @@ export function DirectConversationPane({
                 onClick={() => runMessageSearch()}
                 className="rounded-lg bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400"
               >
-                {language === "vi" ? "Tim tin nhan" : "Search messages"}
+                {language === "vi" ? "Tìm tin nhắn" : "Search messages"}
               </button>
               <button
                 type="button"
                 onClick={() => moveBetweenSearchMatches(-1)}
                 disabled={matchedMessages.length === 0 || messageSearchMatchIndex === 0}
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
-                title={language === "vi" ? "Ket qua truoc" : "Previous match"}
-                aria-label={language === "vi" ? "Ket qua truoc" : "Previous match"}
+                title={language === "vi" ? "Kết quả trước" : "Previous match"}
+                aria-label={language === "vi" ? "Kết quả trước" : "Previous match"}
               >
                 <ChevronUp size={16} />
               </button>
@@ -1839,8 +1839,8 @@ export function DirectConversationPane({
                   messageSearchMatchIndex >= matchedMessages.length - 1
                 }
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
-                title={language === "vi" ? "Ket qua tiep theo" : "Next match"}
-                aria-label={language === "vi" ? "Ket qua tiep theo" : "Next match"}
+                title={language === "vi" ? "Kết quả tiếp theo" : "Next match"}
+                aria-label={language === "vi" ? "Kết quả tiếp theo" : "Next match"}
               >
                 <ChevronDown size={16} />
               </button>
@@ -1851,8 +1851,8 @@ export function DirectConversationPane({
                   setMessageSearchFeedback(null);
                 }}
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f]"
-                title={language === "vi" ? "Dong tim kiem" : "Close search"}
-                aria-label={language === "vi" ? "Dong tim kiem" : "Close search"}
+                title={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
+                aria-label={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
               >
                 <X size={16} />
               </button>
@@ -1861,12 +1861,12 @@ export function DirectConversationPane({
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-1 font-semibold text-sky-100">
-              {language === "vi" ? "So khop theo tu/cum tu" : "Word or phrase match"}
+              {language === "vi" ? "So khớp theo từ/cụm từ" : "Word or phrase match"}
             </span>
             {normalizedMessageSearchQuery && matchedMessages.length > 0 && (
               <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-emerald-100">
                 {language === "vi"
-                  ? `Ket qua ${messageSearchMatchIndex + 1}/${matchedMessages.length}`
+                  ? `Kết quả ${messageSearchMatchIndex + 1}/${matchedMessages.length}`
                   : `Match ${messageSearchMatchIndex + 1}/${matchedMessages.length}`}
               </span>
             )}
@@ -1904,7 +1904,7 @@ export function DirectConversationPane({
         {isDragOverComposer && (
           <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-900/60">
             <p className="text-sm font-semibold text-sky-100">
-              {language === "vi" ? "Tha file de gui" : "Drop files to upload"}
+              {language === "vi" ? "Thả file để gửi" : "Drop files to upload"}
             </p>
           </div>
         )}
@@ -1927,10 +1927,10 @@ export function DirectConversationPane({
                   >
                     {isLoadingMoreMessages
                       ? language === "vi"
-                        ? "Dang tai..."
+                        ? "Đang tải..."
                         : "Loading..."
                       : language === "vi"
-                        ? "Tai tin nhan cu hon"
+                        ? "Tải tin nhắn cũ hơn"
                         : "Load older messages"}
                   </button>
                 </div>
@@ -1962,7 +1962,7 @@ export function DirectConversationPane({
                   senderProfile?.fullName ??
                   (message.senderId === currentUserId
                     ? language === "vi"
-                      ? "Ban"
+                      ? "Bạn"
                       : "You"
                     : `User ${message.senderId.slice(0, 8)}`);
                 const senderInitial = initials(senderDisplayName);
@@ -1982,7 +1982,7 @@ export function DirectConversationPane({
                   >
                     {highlightedMessageId === message.id && (
                       <div className="mb-1 rounded-lg border border-amber-300/60 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-100">
-                        {language === "vi" ? "Tin nhan dang duoc nhay den" : "Jumped to this message"}
+                        {language === "vi" ? "Tin nhắn đang được nhảy đến" : "Jumped to this message"}
                       </div>
                     )}
                     {inlineNoticeMessage && (
@@ -2027,7 +2027,7 @@ export function DirectConversationPane({
                         if (isMessageActionExpired(messageId, EDIT_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Khong the sua tin nhan vi qua 15p"
+                              ? "Không thể sửa tin nhắn vì quá 15p"
                               : "Cannot edit this message after 15 minutes",
                           );
                           return;
@@ -2044,7 +2044,7 @@ export function DirectConversationPane({
                         if (isMessageActionExpired(messageId, RECALL_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Khong the thu hoi tin nhan vi qua 5p"
+                              ? "Không thể thu hồi tin nhắn vì quá 5p"
                               : "Cannot recall this message after 5 minutes",
                           );
                           return;
@@ -2071,7 +2071,7 @@ export function DirectConversationPane({
       <footer className="relative mt-auto border-t border-[var(--color-zola-border-strong)] bg-[linear-gradient(180deg,#14314e_0%,#122b45_100%)] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
         {isTyping && (
           <div className="mb-2 text-xs text-slate-300">
-            {typingText ?? (language === "vi" ? "Dang go..." : "Typing...")}
+            {typingText ?? (language === "vi" ? "Đang gõ..." : "Typing...")}
           </div>
         )}
 
@@ -2080,14 +2080,14 @@ export function DirectConversationPane({
             <p className="text-xs font-semibold text-amber-200">
               {resolvedStrangerActionMode === "incoming-request"
                 ? language === "vi"
-                  ? "Nguoi nay da gui loi moi ket ban cho ban. Ban muon xac nhan hay tu choi?"
+                  ? "Người này đã gửi lời mời kết bạn cho bạn. Bạn muốn xác nhận hay từ chối?"
                   : "This user sent you a friend request. Accept or decline?"
                 : resolvedStrangerActionMode === "outgoing-request"
                   ? language === "vi"
-                    ? "Ban da gui loi moi ket ban. Ban co muon thu hoi loi moi nay khong?"
+                    ? "Bạn đã gửi lời mời kết bạn. Bạn có muốn thu hồi lời mời này không?"
                     : "You already sent a friend request. Do you want to cancel it?"
                   : language === "vi"
-                    ? "Ban co muon gui loi moi ket ban voi nguoi nay hoac chan ho?"
+                    ? "Bạn có muốn gửi lời mời kết bạn với người này hoặc chặn họ?"
                     : "Do you want to send a friend request to this user or block them?"}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -2102,7 +2102,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <UserPlus size={13} />
-                    {language === "vi" ? "Xac nhan" : "Accept"}
+                    {language === "vi" ? "Xác nhận" : "Accept"}
                   </button>
                   <button
                     type="button"
@@ -2113,7 +2113,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-slate-300/60 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <X size={13} />
-                    {language === "vi" ? "Tu choi" : "Decline"}
+                    {language === "vi" ? "Từ chối" : "Decline"}
                   </button>
                   <button
                     type="button"
@@ -2124,7 +2124,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-rose-300/60 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
-                    {language === "vi" ? "Chan" : "Block"}
+                    {language === "vi" ? "Chặn" : "Block"}
                   </button>
                 </>
               )}
@@ -2140,7 +2140,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-amber-300/60 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <X size={13} />
-                    {language === "vi" ? "Thu hoi loi moi" : "Cancel request"}
+                    {language === "vi" ? "Thu hồi lời mời" : "Cancel request"}
                   </button>
                   <button
                     type="button"
@@ -2151,7 +2151,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-rose-300/60 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
-                    {language === "vi" ? "Chan" : "Block"}
+                    {language === "vi" ? "Chặn" : "Block"}
                   </button>
                 </>
               )}
@@ -2167,7 +2167,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <UserPlus size={13} />
-                    {language === "vi" ? "Ket ban" : "Add friend"}
+                    {language === "vi" ? "Kết bạn" : "Add friend"}
                   </button>
                   <button
                     type="button"
@@ -2178,7 +2178,7 @@ export function DirectConversationPane({
                     className="inline-flex items-center gap-1 rounded-lg border border-rose-300/60 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
-                    {language === "vi" ? "Chan" : "Block"}
+                    {language === "vi" ? "Chặn" : "Block"}
                   </button>
                 </>
               )}
@@ -2190,7 +2190,7 @@ export function DirectConversationPane({
           <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             {composerDisabledMessage ??
               (language === "vi"
-                ? "Ban khong the nhan tin trong cuoc tro chuyen nay."
+                ? "Bạn không thể nhắn tin trong cuộc trò chuyện này."
                 : "You cannot send messages in this conversation.")}
           </div>
         )}
@@ -2213,7 +2213,7 @@ export function DirectConversationPane({
                         }}
                         className="rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10"
                       >
-                        {language === "vi" ? "Gui lai" : "Retry"}
+                        {language === "vi" ? "Gửi lại" : "Retry"}
                       </button>
                     )}
                     <button
@@ -2221,7 +2221,7 @@ export function DirectConversationPane({
                       onClick={() => onCancelUpload(item.localId)}
                       className="rounded-md border border-slate-500 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
                     >
-                      {language === "vi" ? "Huy" : "Cancel"}
+                      {language === "vi" ? "Hủy" : "Cancel"}
                     </button>
                   </div>
                 </div>
@@ -2241,7 +2241,7 @@ export function DirectConversationPane({
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-sky-200">
-                {language === "vi" ? "Dang tra loi" : "Replying"}
+                {language === "vi" ? "Đang trả lời" : "Replying"}
               </p>
               <p className="truncate text-xs text-sky-100">
                 {replyingTo.text}
@@ -2252,7 +2252,7 @@ export function DirectConversationPane({
               onClick={() => setReplyingTo(null)}
               className="shrink-0 rounded-md border border-sky-300/40 px-2 py-1 text-[11px] text-sky-200 hover:bg-sky-500/15"
             >
-              {language === "vi" ? "Huy" : "Cancel"}
+              {language === "vi" ? "Hủy" : "Cancel"}
             </button>
           </div>
         )}
@@ -2261,7 +2261,7 @@ export function DirectConversationPane({
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-amber-200">
-                {language === "vi" ? "Dang chinh sua" : "Editing message"}
+                {language === "vi" ? "Đang chỉnh sửa" : "Editing message"}
               </p>
               <p className="truncate text-xs text-amber-100">
                 {editingMessage.originalText}
@@ -2275,7 +2275,7 @@ export function DirectConversationPane({
               }}
               className="shrink-0 rounded-md border border-amber-300/45 px-2 py-1 text-[11px] text-amber-200 hover:bg-amber-500/15"
             >
-              {language === "vi" ? "Huy" : "Cancel"}
+              {language === "vi" ? "Hủy" : "Cancel"}
             </button>
           </div>
         )}
@@ -2289,11 +2289,11 @@ export function DirectConversationPane({
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-100">
-                    {language === "vi" ? "Da chon tin nhan" : "Selected messages"}
+                    {language === "vi" ? "Đã chọn tin nhắn" : "Selected messages"}
                   </p>
                   <p className="text-xs text-slate-300">
                     {language === "vi"
-                      ? "Giu va keo chuot trai qua tu 2 bong chat tro len de bat dau chon."
+                      ? "Giữ và kéo chuột trái qua từ 2 bóng chat trở lên để bắt đầu chọn."
                       : "Hold and drag the left mouse across 2 or more message bubbles to start selecting."}
                   </p>
                 </div>
@@ -2308,7 +2308,7 @@ export function DirectConversationPane({
                   className="inline-flex h-9 items-center gap-1 rounded-full border border-[#335b89] px-3 text-sm font-semibold text-slate-100 hover:bg-[#14365f]"
                 >
                   <Copy size={15} />
-                  {language === "vi" ? "Sao chep" : "Copy"}
+                  {language === "vi" ? "Sao chép" : "Copy"}
                 </button>
                 <button
                   type="button"
@@ -2318,7 +2318,7 @@ export function DirectConversationPane({
                   className="inline-flex h-9 items-center gap-1 rounded-full border border-[#335b89] px-3 text-sm font-semibold text-slate-100 hover:bg-[#14365f]"
                 >
                   <Share2 size={15} />
-                  {language === "vi" ? "Chia se" : "Share"}
+                  {language === "vi" ? "Chia sẻ" : "Share"}
                 </button>
                 <button
                   type="button"
@@ -2329,7 +2329,7 @@ export function DirectConversationPane({
                   className="inline-flex h-9 items-center gap-1 rounded-full border border-rose-400/40 px-3 text-sm font-semibold text-rose-200 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Undo2 size={15} />
-                  {language === "vi" ? "Thu hoi" : "Recall"}
+                  {language === "vi" ? "Thu hồi" : "Recall"}
                 </button>
                 <button
                   type="button"
@@ -2340,14 +2340,14 @@ export function DirectConversationPane({
                   className="inline-flex h-9 items-center gap-1 rounded-full bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Trash2 size={15} />
-                  {language === "vi" ? "Xoa" : "Delete"}
+                  {language === "vi" ? "Xóa" : "Delete"}
                 </button>
                 <button
                   type="button"
                   onClick={clearSelectedMessages}
                   className="inline-flex h-9 items-center rounded-full px-3 text-sm font-semibold text-slate-300 hover:bg-white/5"
                 >
-                  {language === "vi" ? "Huy" : "Cancel"}
+                  {language === "vi" ? "Hủy" : "Cancel"}
                 </button>
               </div>
             </div>
@@ -2360,7 +2360,7 @@ export function DirectConversationPane({
                 {selectedRecallableMessages.length !== selectedMessages.length && (
                   <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-amber-100">
                     {language === "vi"
-                      ? `Chi ${selectedRecallableMessages.length}/${selectedMessages.length} tin duoc thu hoi trong 5 phut`
+                      ? `Chỉ ${selectedRecallableMessages.length}/${selectedMessages.length} tin được thu hồi trong 5 phút`
                       : `Only ${selectedRecallableMessages.length}/${selectedMessages.length} message(s) can be recalled within 5 minutes`}
                   </span>
                 )}
@@ -2397,8 +2397,8 @@ export function DirectConversationPane({
               ref={attachButtonRef}
               onClick={() => setShowAttachMenu((prev) => !prev)}
               className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f]"
-              title={language === "vi" ? "Dinh kem" : "Attachment"}
-              aria-label={language === "vi" ? "Dinh kem" : "Attachment"}
+              title={language === "vi" ? "Đính kèm" : "Attachment"}
+              aria-label={language === "vi" ? "Đính kèm" : "Attachment"}
             >
               <Paperclip size={18} />
             </button>
@@ -2480,7 +2480,7 @@ export function DirectConversationPane({
             value={draftMessage}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
-              language === "vi" ? "Nhap tin nhan..." : "Type a message..."
+              language === "vi" ? "Nhập tin nhắn..." : "Type a message..."
             }
             onKeyDown={(event) => {
               void handleKeyDown(event);
@@ -2493,7 +2493,7 @@ export function DirectConversationPane({
             onClick={() => {
               void onQuickSendText?.("❤️");
             }}
-            title={language === "vi" ? "Tim" : "Heart"}
+            title={language === "vi" ? "Tìm" : "Heart"}
             disabled={isSending}
           >
             <Heart size={16} />
@@ -2510,10 +2510,10 @@ export function DirectConversationPane({
             <SendHorizontal size={16} />
             {editingMessage
               ? language === "vi"
-                ? "Luu"
+                ? "Lưu"
                 : "Save"
               : language === "vi"
-                ? "Gui"
+                ? "Gửi"
                 : "Send"}
           </button>
         </div>
@@ -2527,7 +2527,7 @@ export function DirectConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
-              <span>{language === "vi" ? "Gui hinh anh" : "Send image"}</span>
+              <span>{language === "vi" ? "Gửi hình ảnh" : "Send image"}</span>
             </button>
             <button
               type="button"
@@ -2535,7 +2535,7 @@ export function DirectConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <Video size={16} />
-              <span>{language === "vi" ? "Gui video" : "Send video"}</span>
+              <span>{language === "vi" ? "Gửi video" : "Send video"}</span>
             </button>
             <button
               type="button"
@@ -2543,7 +2543,7 @@ export function DirectConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <FileText size={16} />
-              <span>{language === "vi" ? "Gui tep tin" : "Send file"}</span>
+              <span>{language === "vi" ? "Gửi tệp tin" : "Send file"}</span>
             </button>
             <button
               type="button"
@@ -2551,7 +2551,7 @@ export function DirectConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
-              <span>{language === "vi" ? "Chup anh/Quay nhanh" : "Capture photo/video"}</span>
+              <span>{language === "vi" ? "Chụp ảnh/Quay nhanh" : "Capture photo/video"}</span>
             </button>
           </div>
         )}
@@ -2562,7 +2562,7 @@ export function DirectConversationPane({
           <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <h3 className="text-sm font-semibold text-slate-800">
-                {language === "vi" ? "Xem truoc truoc khi gui" : "Preview before send"}
+                {language === "vi" ? "Xem trước trước khi gửi" : "Preview before send"}
               </h3>
               <button
                 type="button"
@@ -2605,7 +2605,7 @@ export function DirectConversationPane({
                 value={mediaCaption}
                 onChange={(event) => setMediaCaption(event.target.value)}
                 className="mt-3 min-h-20 w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300"
-                placeholder={language === "vi" ? "Them chu thich (caption)..." : "Add a caption..."}
+                placeholder={language === "vi" ? "Thêm chú thích (caption)..." : "Add a caption..."}
               />
             </div>
 
@@ -2615,7 +2615,7 @@ export function DirectConversationPane({
                 onClick={clearPreviewFiles}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
               >
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -2624,7 +2624,7 @@ export function DirectConversationPane({
                 }}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
               >
-                {language === "vi" ? "Gui" : "Send"}
+                {language === "vi" ? "Gửi" : "Send"}
               </button>
             </div>
           </div>
@@ -2635,7 +2635,7 @@ export function DirectConversationPane({
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
             <h3 className="text-base font-semibold text-slate-900">
-              {language === "vi" ? "Thong bao" : "Notice"}
+              {language === "vi" ? "Thông báo" : "Notice"}
             </h3>
             <p className="mt-2 text-sm text-slate-600">{policyModalMessage}</p>
             <div className="mt-4 flex justify-end">

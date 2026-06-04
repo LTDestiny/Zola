@@ -134,7 +134,7 @@ function toPolicyViolationMessage(
     rawMessage.includes("expired")
   ) {
     return language === "vi"
-      ? "Khong the sua tin nhan vi qua 15p"
+      ? "Không thể sửa tin nhắn vì quá 15p"
       : "Cannot edit this message after 15 minutes";
   }
 
@@ -146,7 +146,7 @@ function toPolicyViolationMessage(
     rawMessage.includes("expired")
   ) {
     return language === "vi"
-      ? "Khong the thu hoi tin nhan sau 5p"
+      ? "Không thể thu hồi tin nhắn sau 5p"
       : "Cannot recall this message after 5 minutes";
   }
 
@@ -1183,7 +1183,7 @@ export function ChatPage() {
 
   const getConversationDisplayName = (conversation: ConversationItem) => {
     if (conversation.type === "group") {
-      return conversation.name || (language === "vi" ? "Nhom" : "Group");
+      return conversation.name || (language === "vi" ? "Nhóm" : "Group");
     }
 
     const peerUserId = resolvePeerUserId(conversation);
@@ -1205,7 +1205,7 @@ export function ChatPage() {
 
   const getParticipantDisplayName = (userId: string | null | undefined) => {
     if (!userId) {
-      return language === "vi" ? "Nguoi dung" : "User";
+      return language === "vi" ? "Người dùng" : "User";
     }
 
     const normalizedMyId = myUserIdRef.current ?? myProfile?.id ?? null;
@@ -1329,7 +1329,7 @@ export function ChatPage() {
     const firstPin =
       window.prompt(
         language === "vi"
-          ? "Tao ma PIN (4-8 so) de an cuoc tro chuyen"
+          ? "Tạo mã PIN (4-8 số) để ẩn cuộc trò chuyện"
           : "Create a PIN (4-8 digits) to hide conversations",
       ) ?? "";
 
@@ -1337,7 +1337,7 @@ export function ChatPage() {
     if (!isValidConversationPin(normalizedFirstPin)) {
       setBannerMessage(
         language === "vi"
-          ? "PIN phai gom 4 den 8 chu so"
+          ? "PIN phải gồm 4 đến 8 chữ số"
           : "PIN must contain 4 to 8 digits",
       );
       return null;
@@ -1345,19 +1345,19 @@ export function ChatPage() {
 
     const secondPin =
       window.prompt(
-        language === "vi" ? "Nhap lai ma PIN" : "Confirm your PIN",
+        language === "vi" ? "Nhập lại mã PIN" : "Confirm your PIN",
       ) ?? "";
 
     if (secondPin.trim() !== normalizedFirstPin) {
       setBannerMessage(
-        language === "vi" ? "PIN xac nhan khong khop" : "PIN confirmation does not match",
+        language === "vi" ? "PIN xác nhận không khớp" : "PIN confirmation does not match",
       );
       return null;
     }
 
     setHiddenConversationPin(normalizedFirstPin);
     persistHiddenConversationPin(normalizedFirstPin);
-    setBannerMessage(language === "vi" ? "Da tao ma PIN an chat" : "Hidden-chat PIN created");
+    setBannerMessage(language === "vi" ? "Đã tạo mã PIN ẩn chat" : "Hidden-chat PIN created");
     return normalizedFirstPin;
   }, [hiddenConversationPin, language]);
 
@@ -1369,12 +1369,12 @@ export function ChatPage() {
     const enteredPin =
       window.prompt(
         language === "vi"
-          ? "Nhap ma PIN de xac nhan an cuoc tro chuyen"
+          ? "Nhập mã PIN để xác nhận ẩn cuộc trò chuyện"
           : "Enter PIN to hide this conversation",
       ) ?? "";
 
     if (enteredPin.trim() !== hiddenConversationPin) {
-      setBannerMessage(language === "vi" ? "Sai ma PIN" : "Incorrect PIN");
+      setBannerMessage(language === "vi" ? "Sai mã PIN" : "Incorrect PIN");
       return false;
     }
 
@@ -1402,7 +1402,7 @@ export function ChatPage() {
           if (pinnedCount >= 3) {
             setBannerMessage(
               language === "vi"
-                ? "Chi duoc ghim toi da 3 hoi thoai"
+                ? "Chỉ được ghim tối đa 3 hội thoại"
                 : "You can pin up to 3 conversations only",
             );
             return prev;
@@ -1491,7 +1491,7 @@ export function ChatPage() {
     if (idsToAdd.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Nhung nguoi da chon da co trong nhom"
+          ? "Những người đã chọn đã có trong nhóm"
           : "Selected users are already in this group",
       );
       return false;
@@ -1516,7 +1516,7 @@ export function ChatPage() {
       if (failedCount === 0) {
         setBannerMessage(
           language === "vi"
-            ? `Da them ${successCount} thanh vien`
+            ? `Đã thêm ${successCount} thành viên`
             : `Added ${successCount} member(s)`,
         );
         return true;
@@ -1530,7 +1530,7 @@ export function ChatPage() {
           firstRejected
             ? toApiErrorMessage(firstRejected.reason)
             : language === "vi"
-              ? "Khong the them thanh vien"
+              ? "Không thể thêm thành viên"
               : "Unable to add members",
         );
         return false;
@@ -1538,7 +1538,7 @@ export function ChatPage() {
 
       setBannerMessage(
         language === "vi"
-          ? `Da them ${successCount} thanh vien, ${failedCount} nguoi that bai`
+          ? `Đã thêm ${successCount} thành viên, ${failedCount} người thất bại`
           : `Added ${successCount} member(s), ${failedCount} failed`,
       );
       return true;
@@ -1559,7 +1559,7 @@ export function ChatPage() {
       await fetchConversations({ silent: true });
       await refreshGroupSettings(activeConversationId);
       setBannerMessage(
-        language === "vi" ? "Da xoa thanh vien" : "Member removed",
+        language === "vi" ? "Đã xóa thành viên" : "Member removed",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -1577,10 +1577,10 @@ export function ChatPage() {
       setBannerMessage(
         admin
           ? language === "vi"
-            ? "Da cap quyen pho nhom"
+            ? "Đã cấp quyền phó nhóm"
             : "Admin role granted"
           : language === "vi"
-            ? "Da go quyen pho nhom"
+            ? "Đã gỡ quyền phó nhóm"
             : "Admin role revoked",
       );
     } catch (error) {
@@ -1646,7 +1646,7 @@ export function ChatPage() {
     const trimmedName = nextName.trim();
     if (!trimmedName) {
       setBannerMessage(
-        language === "vi" ? "Ten nhom khong duoc de trong" : "Group name is required",
+        language === "vi" ? "Tên nhóm không được để trống" : "Group name is required",
       );
       return false;
     }
@@ -1666,7 +1666,7 @@ export function ChatPage() {
     if (!file.type.startsWith("image/")) {
       setBannerMessage(
         language === "vi"
-          ? "Vui long chon file hinh anh"
+          ? "Vui lòng chọn file hình ảnh"
           : "Please choose an image file",
       );
       return false;
@@ -1675,7 +1675,7 @@ export function ChatPage() {
     if (file.size > MAX_IMAGE_BYTES) {
       setBannerMessage(
         language === "vi"
-          ? "Anh nhom vuot qua 10MB"
+          ? "Ảnh nhóm vượt quá 10MB"
           : "Group avatar exceeds 10MB",
       );
       return false;
@@ -1720,7 +1720,7 @@ export function ChatPage() {
       hasUserOpenedConversationRef.current = false;
       manuallyOpenedConversationIdRef.current = null;
       setActiveConversationId(null);
-      setBannerMessage(language === "vi" ? "Da roi nhom" : "Left group");
+      setBannerMessage(language === "vi" ? "Đã rời nhóm" : "Left group");
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -1737,7 +1737,7 @@ export function ChatPage() {
       manuallyOpenedConversationIdRef.current = null;
       setActiveConversationId(null);
       setBannerMessage(
-        language === "vi" ? "Da giai tan nhom" : "Group deleted",
+        language === "vi" ? "Đã giải tán nhóm" : "Group deleted",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -1782,11 +1782,11 @@ export function ChatPage() {
     const title =
       type === "MEETING"
         ? language === "vi"
-          ? "Hop nhanh"
+          ? "Họp nhanh"
           : "Quick meeting"
         : window.prompt(
             language === "vi"
-              ? `Nhap noi dung ${prefixByType[type]}`
+              ? `Nhập nội dung ${prefixByType[type]}`
               : `Enter ${prefixByType[type]} content`,
           ) ?? "";
 
@@ -1823,7 +1823,7 @@ export function ChatPage() {
 
       setBannerMessage(
         language === "vi"
-          ? `Da gui ${prefixByType[type].toLowerCase()}`
+          ? `Đã gửi ${prefixByType[type].toLowerCase()}`
           : `${prefixByType[type]} sent`,
       );
       await fetchConversations({ silent: true });
@@ -1847,7 +1847,7 @@ export function ChatPage() {
       if (!canPinBoardItems) {
         setBannerMessage(
           language === "vi"
-            ? "Chi truong/pho nhom moi duoc ghim tin nhan"
+            ? "Chỉ trưởng/phó nhóm mới được ghim tin nhắn"
             : "Only owner/admin can pin messages",
         );
         return;
@@ -1855,11 +1855,11 @@ export function ChatPage() {
     }
 
     if (activePinnedBoardItems.some((item) => item.sourceMessageId === targetMessage.id)) {
-      setBannerMessage(language === "vi" ? "Tin nhan nay da duoc ghim" : "This message is already pinned");
+      setBannerMessage(language === "vi" ? "Tin nhắn này đã được ghim" : "This message is already pinned");
       return;
     }
     if (activePinnedBoardItems.length >= 3) {
-      setBannerMessage(language === "vi" ? "Chi duoc ghim toi da 3 tin nhan" : "You can pin up to 3 messages");
+      setBannerMessage(language === "vi" ? "Chỉ được ghim tối đa 3 tin nhắn" : "You can pin up to 3 messages");
       return;
     }
 
@@ -1867,7 +1867,7 @@ export function ChatPage() {
     const preview = targetMessage.text.trim().replace(/\s+/g, " ").slice(0, 140);
     const title =
       language === "vi"
-        ? "Tin nhan da duoc ghim"
+        ? "Tin nhắn đã được ghim"
         : "Pinned message";
 
     const payload = {
@@ -1891,7 +1891,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da ghim tin nhan" : "Message pinned");
+      setBannerMessage(language === "vi" ? "Đã ghim tin nhắn" : "Message pinned");
       await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -1911,7 +1911,7 @@ export function ChatPage() {
     const nowIso = new Date().toISOString();
     const title =
       language === "vi"
-        ? "Tin nhan da duoc bo ghim"
+        ? "Tin nhắn đã được bỏ ghim"
         : "Unpinned message";
 
     const payload = {
@@ -1934,7 +1934,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da bo ghim tin nhan" : "Message unpinned");
+      setBannerMessage(language === "vi" ? "Đã bỏ ghim tin nhắn" : "Message unpinned");
       await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -1960,10 +1960,10 @@ export function ChatPage() {
         if (pinToTop) {
           void onPinGroupMessage({
             id: result.data.id,
-            text: result.data.content ?? "Ghi chu"
+            text: result.data.content ?? "Ghi chú"
           });
         }
-        setBannerMessage(language === "vi" ? "Da tao ghi chu" : "Note created");
+        setBannerMessage(language === "vi" ? "Đã tạo ghi chú" : "Note created");
       }
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -1984,7 +1984,7 @@ export function ChatPage() {
     if (!canCreateNotes) {
       setBannerMessage(
         language === "vi"
-          ? "Chi truong/pho nhom moi duoc tao ghi chu"
+          ? "Chỉ trưởng/phó nhóm mới được tạo ghi chú"
           : "Only owner/admin can create notes",
       );
       return;
@@ -2022,7 +2022,7 @@ export function ChatPage() {
         language === "vi"
           ? pinToTop
             ? "Da tao ghi chu va ghim len dau"
-            : "Da tao ghi chu"
+            : "Đã tạo ghi chú"
           : pinToTop
             ? "Note created and pinned"
             : "Note created",
@@ -2045,7 +2045,7 @@ export function ChatPage() {
       isCurrentOwner || isCurrentAdmin || activeSettings?.allowMembersCreatePolls,
     );
     if (!canCreatePolls) {
-      setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc tao binh chon" : "Only owner/admin can create polls");
+      setBannerMessage(language === "vi" ? "Chỉ trưởng/phó nhóm mới được tạo bình chọn" : "Only owner/admin can create polls");
       return false;
     }
 
@@ -2064,32 +2064,32 @@ export function ChatPage() {
     }
 
     if (!question) {
-      setBannerMessage(language === "vi" ? "Noi dung binh chon khong duoc de trong" : "Poll question cannot be empty");
+      setBannerMessage(language === "vi" ? "Nội dung bình chọn không được để trống" : "Poll question cannot be empty");
       return false;
     }
 
     if (question.length > 200) {
-      setBannerMessage(language === "vi" ? "Noi dung binh chon toi da 200 ky tu" : "Poll question cannot exceed 200 characters");
+      setBannerMessage(language === "vi" ? "Nội dung bình chọn tối đa 200 ký tự" : "Poll question cannot exceed 200 characters");
       return false;
     }
 
     if (dedupedOptions.length < 2) {
-      setBannerMessage(language === "vi" ? "Cuoc binh chon phai co it nhat 2 lua chon" : "Poll must have at least 2 options");
+      setBannerMessage(language === "vi" ? "Cuộc bình chọn phải có ít nhất 2 lựa chọn" : "Poll must have at least 2 options");
       return false;
     }
 
     if (dedupedOptions.length > 10) {
-      setBannerMessage(language === "vi" ? "Toi da 10 lua chon cho moi cuoc binh chon" : "Poll supports up to 10 options");
+      setBannerMessage(language === "vi" ? "Tối đa 10 lựa chọn cho mỗi cuộc bình chọn" : "Poll supports up to 10 options");
       return false;
     }
 
     if (dedupedOptions.some((option) => option.length > 80)) {
-      setBannerMessage(language === "vi" ? "Moi lua chon toi da 80 ky tu" : "Each option can contain up to 80 characters");
+      setBannerMessage(language === "vi" ? "Mỗi lựa chọn tối đa 80 ký tự" : "Each option can contain up to 80 characters");
       return false;
     }
 
     if (!Number.isFinite(input.deadlineMinutes) || input.deadlineMinutes < 5 || input.deadlineMinutes > 10080) {
-      setBannerMessage(language === "vi" ? "Han binh chon tu 5 phut den 7 ngay" : "Poll duration must be between 5 minutes and 7 days");
+      setBannerMessage(language === "vi" ? "Hạn bình chọn từ 5 phút đến 7 ngày" : "Poll duration must be between 5 minutes and 7 days");
       return false;
     }
 
@@ -2125,7 +2125,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da tao cuoc binh chon" : "Poll created");
+      setBannerMessage(language === "vi" ? "Đã tạo cuộc bình chọn" : "Poll created");
       await fetchConversations({ silent: true });
       return true;
     } catch (error) {
@@ -2138,13 +2138,13 @@ export function ChatPage() {
     if (!activeConversationId || activeConversation?.type !== "private") return false;
     const title = input.title.trim();
     if (!title) {
-      setBannerMessage(language === "vi" ? "Tieu de nhac hen khong duoc de trong" : "Reminder title cannot be empty");
+      setBannerMessage(language === "vi" ? "Tiêu đề nhắc hẹn không được để trống" : "Reminder title cannot be empty");
       return false;
     }
     const payload = { kind: "REMINDER", title, when: input.when || null };
     try {
       await sendMessage(activeConversationId, JSON.stringify(payload), { type: "REMINDER" });
-      setBannerMessage(language === "vi" ? "Da tao nhac hen" : "Reminder created");
+      setBannerMessage(language === "vi" ? "Đã tạo nhắc hẹn" : "Reminder created");
       return true;
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -2166,7 +2166,7 @@ export function ChatPage() {
     if (!canCreateReminders) {
       setBannerMessage(
         language === "vi"
-          ? "Chi truong/pho nhom moi duoc tao nhac hen"
+          ? "Chỉ trưởng/phó nhóm mới được tạo nhắc hẹn"
           : "Only owner/admin can create reminders",
       );
       return false;
@@ -2174,7 +2174,7 @@ export function ChatPage() {
 
     const title = input.title.trim();
     if (!title) {
-      setBannerMessage(language === "vi" ? "Tieu de nhac hen khong duoc de trong" : "Reminder title cannot be empty");
+      setBannerMessage(language === "vi" ? "Tiêu đề nhắc hẹn không được để trống" : "Reminder title cannot be empty");
       return false;
     }
 
@@ -2197,7 +2197,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da tao nhac hen" : "Reminder created");
+      setBannerMessage(language === "vi" ? "Đã tạo nhắc hẹn" : "Reminder created");
       await fetchConversations({ silent: true });
       return true;
     } catch (error) {
@@ -2226,12 +2226,12 @@ export function ChatPage() {
     }
 
     if (poll.isClosed) {
-      setBannerMessage(language === "vi" ? "Cuoc binh chon da ket thuc" : "Poll is closed");
+      setBannerMessage(language === "vi" ? "Cuộc bình chọn đã kết thúc" : "Poll is closed");
       return;
     }
 
     if (poll.hasVotedByMe && !poll.allowChangeVote) {
-      setBannerMessage(language === "vi" ? "Cuoc binh chon khong cho phep doi dap an" : "This poll does not allow changing votes");
+      setBannerMessage(language === "vi" ? "Cuộc bình chọn không cho phép đổi đáp án" : "This poll does not allow changing votes");
       return;
     }
 
@@ -2252,7 +2252,7 @@ export function ChatPage() {
     }
 
     if (nextOptionIds.length === 0) {
-      setBannerMessage(language === "vi" ? "Can chon it nhat 1 lua chon" : "Select at least one option");
+      setBannerMessage(language === "vi" ? "Cần chọn ít nhất 1 lựa chọn" : "Select at least one option");
       return;
     }
 
@@ -2277,7 +2277,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da cap nhat binh chon" : "Vote updated");
+      setBannerMessage(language === "vi" ? "Đã cập nhật bình chọn" : "Vote updated");
       await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -2298,7 +2298,7 @@ export function ChatPage() {
     const isCurrentOwner = Boolean(activeSettings?.isOwner);
     const isCurrentAdmin = Boolean(activeSettings?.isAdmin);
     if (!isCurrentOwner && !isCurrentAdmin) {
-      setBannerMessage(language === "vi" ? "Chi truong/pho nhom moi duoc ket thuc binh chon" : "Only owner/admin can close polls");
+      setBannerMessage(language === "vi" ? "Chỉ trưởng/phó nhóm mới được kết thúc bình chọn" : "Only owner/admin can close polls");
       return;
     }
 
@@ -2322,7 +2322,7 @@ export function ChatPage() {
         return [...prev, result.data];
       });
 
-      setBannerMessage(language === "vi" ? "Da ket thuc binh chon" : "Poll closed");
+      setBannerMessage(language === "vi" ? "Đã kết thúc bình chọn" : "Poll closed");
       await fetchConversations({ silent: true });
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -2478,10 +2478,10 @@ export function ChatPage() {
         throw new Error(
           isInsecureIpAccess
             ? language === "vi"
-              ? "Trinh duyet chan camera/micro khi truy cap bang IP qua HTTP. Hay dung HTTPS hoac cap quyen insecure origin cho dia chi nay."
+              ? "Trình duyệt chặn camera/micro khi truy cập bằng IP qua HTTP. Hãy dùng HTTPS hoặc cấp quyền insecure origin cho địa chỉ này."
               : "The browser blocks camera/microphone on HTTP IP access. Use HTTPS or allow this insecure origin."
             : language === "vi"
-              ? "Trinh duyet khong ho tro cuoc goi"
+              ? "Trình duyệt không hỗ trợ cuộc gọi"
               : "This browser does not support in-app calling",
         );
       }
@@ -2717,7 +2717,7 @@ export function ChatPage() {
           closePeerConnection(peerUserId);
           setBannerMessage(
             language === "vi"
-              ? "Mat ket noi voi mot thanh vien trong cuoc goi"
+              ? "Mất kết nối với một thành viên trong cuộc gọi"
               : "Connection with one participant was lost",
           );
           return;
@@ -2779,7 +2779,7 @@ export function ChatPage() {
       if (!sent) {
         throw new Error(
           language === "vi"
-            ? "Khong gui duoc tin hieu tra loi cuoc goi"
+            ? "Không gửi được tín hiệu trả lời cuộc gọi"
             : "Cannot send call answer signal",
         );
       }
@@ -2822,7 +2822,7 @@ export function ChatPage() {
       if (!sent) {
         throw new Error(
           language === "vi"
-            ? "Khong the gui loi moi ket noi video"
+            ? "Không thể gửi lời mời kết nối video"
             : "Cannot send call negotiation offer",
         );
       }
@@ -2922,7 +2922,7 @@ export function ChatPage() {
 
       setBannerMessage(
         language === "vi"
-          ? "Khong con ai trong cuoc goi nhom, cuoc goi da duoc ket thuc"
+          ? "Không còn ai trong cuộc gọi nhóm, cuộc gọi đã được kết thúc"
           : "No one else is in the group call, call has been ended",
       );
       onEndDirectCall("group_single_participant_timeout", true, true);
@@ -3030,7 +3030,7 @@ export function ChatPage() {
       if (!acceptSent) {
         throw new Error(
           language === "vi"
-            ? "Khong the nhan cuoc goi khi realtime dang ngat"
+            ? "Không thể nhận cuộc gọi khi realtime đang ngắt"
             : "Cannot answer call while realtime is disconnected",
         );
       }
@@ -3179,7 +3179,7 @@ export function ChatPage() {
         resetCallRuntime();
         setBannerMessage(
           language === "vi"
-            ? "Khong co phan hoi cuoc goi"
+            ? "Không có phản hồi cuộc gọi"
             : "Call timed out without answer",
         );
       }, CALL_CONNECT_TIMEOUT_MS);
@@ -3316,10 +3316,10 @@ export function ChatPage() {
           setBannerMessage(
             conversationType === "group"
               ? language === "vi"
-                ? `${peerDisplayName} dang mo cuoc goi nhom`
+                ? `${peerDisplayName} đang mở cuộc gọi nhóm`
                 : `${peerDisplayName} started a group call`
               : language === "vi"
-                ? `${peerDisplayName} dang goi cho ban`
+                ? `${peerDisplayName} đang gọi cho bạn`
                 : `${peerDisplayName} is calling you`,
           );
         }
@@ -3364,10 +3364,10 @@ export function ChatPage() {
           setBannerMessage(
             reason === "busy"
               ? language === "vi"
-                ? `${peerDisplayName} dang ban`
+                ? `${peerDisplayName} đang bận`
                 : `${peerDisplayName} is busy`
               : language === "vi"
-                ? `${peerDisplayName} da tu choi cuoc goi`
+                ? `${peerDisplayName} đã từ chối cuộc gọi`
                 : `${peerDisplayName} declined the call`,
           );
         }
@@ -3417,7 +3417,7 @@ export function ChatPage() {
         }
         setBannerMessage(
           language === "vi"
-            ? `${peerDisplayName} da roi cuoc goi`
+            ? `${peerDisplayName} đã rời cuộc gọi`
             : `${peerDisplayName} left the call`,
         );
         return;
@@ -3435,7 +3435,7 @@ export function ChatPage() {
           resetCallRuntime();
           setBannerMessage(
             language === "vi"
-              ? `${peerDisplayName} da ket thuc cuoc goi`
+              ? `${peerDisplayName} đã kết thúc cuộc gọi`
               : `${peerDisplayName} ended the call`,
           );
         }
@@ -3501,7 +3501,7 @@ export function ChatPage() {
             resetCallRuntime();
             setBannerMessage(
               language === "vi"
-                ? "Khong the ket noi cuoc goi"
+                ? "Không thể kết nối cuộc gọi"
                 : "Cannot establish call connection",
             );
           }
@@ -3569,7 +3569,7 @@ export function ChatPage() {
     if (activeCallRef.current) {
       setBannerMessage(
         language === "vi"
-          ? "Hay ket thuc cuoc goi hien tai truoc"
+          ? "Hãy kết thúc cuộc gọi hiện tại trước"
           : "Please end the current call first",
       );
       return;
@@ -3578,7 +3578,7 @@ export function ChatPage() {
     if (!activeConversationId || !activeConversation) {
       setBannerMessage(
         language === "vi"
-          ? "Hay chon cuoc tro chuyen truoc khi goi"
+          ? "Hãy chọn cuộc trò chuyện trước khi gọi"
           : "Select a conversation before starting a call",
       );
       return;
@@ -3588,7 +3588,7 @@ export function ChatPage() {
     if (!currentUserId) {
       setBannerMessage(
         language === "vi"
-          ? "Thong tin tai khoan chua san sang, vui long thu lai"
+          ? "Thông tin tài khoản chưa sẵn sàng, vui lòng thử lại"
           : "Account context is not ready yet, please try again",
       );
       return;
@@ -3610,10 +3610,10 @@ export function ChatPage() {
       setBannerMessage(
         blockedUserIds.includes(peerUserId)
           ? language === "vi"
-            ? "Ban da chan nguoi nay. Hay bo chan truoc khi goi."
+            ? "Bạn đã chặn người này. Hãy bỏ chặn trước khi gọi."
             : "You blocked this user. Unblock them before calling."
           : language === "vi"
-            ? "Nguoi nay da chan ban. Ban khong the thuc hien cuoc goi."
+            ? "Người này đã chặn bạn. Bạn không thể thực hiện cuộc gọi."
             : "This user blocked you. You cannot start a call.",
       );
       appendCurrentDirectRestrictionNotice();
@@ -3623,7 +3623,7 @@ export function ChatPage() {
     if (conversationType === "private" && (!peerUserId || peerUserId === myUserIdRef.current)) {
       setBannerMessage(
         language === "vi"
-          ? "Khong xac dinh duoc nguoi nhan"
+          ? "Không xác định được người nhận"
           : "Cannot determine call recipient",
       );
       return;
@@ -3692,7 +3692,7 @@ export function ChatPage() {
       if (!inviteSent) {
         throw new Error(
           language === "vi"
-            ? "Realtime dang mat ket noi"
+            ? "Realtime đang mất kết nối"
             : "Realtime connection is unavailable",
         );
       }
@@ -3713,7 +3713,7 @@ export function ChatPage() {
         if (!joinedSent) {
           throw new Error(
             language === "vi"
-              ? "Khong the bat dau cuoc goi nhom"
+              ? "Không thể bắt đầu cuộc gọi nhóm"
               : "Cannot start group call",
           );
         }
@@ -3755,7 +3755,7 @@ export function ChatPage() {
       if (activeCallRef.current) {
         setBannerMessage(
           language === "vi"
-            ? "Hay ket thuc cuoc goi hien tai truoc khi tham gia"
+            ? "Hãy kết thúc cuộc gọi hiện tại trước khi tham gia"
             : "Please end current call before joining",
         );
         return;
@@ -3765,7 +3765,7 @@ export function ChatPage() {
       if (!currentUserId) {
         setBannerMessage(
           language === "vi"
-            ? "Thong tin tai khoan chua san sang, vui long thu lai"
+            ? "Thông tin tài khoản chưa sẵn sàng, vui lòng thử lại"
             : "Account context is not ready yet, please try again",
         );
         return;
@@ -3824,7 +3824,7 @@ export function ChatPage() {
         if (!acceptSent) {
           throw new Error(
             language === "vi"
-              ? "Khong the tham gia cuoc goi khi realtime dang ngat"
+              ? "Không thể tham gia cuộc gọi khi realtime đang ngắt"
               : "Cannot join call while realtime is disconnected",
           );
         }
@@ -3844,7 +3844,7 @@ export function ChatPage() {
         if (!joinedSent) {
           throw new Error(
             language === "vi"
-              ? "Khong the thong bao tham gia cuoc goi"
+              ? "Không thể thông báo tham gia cuộc gọi"
               : "Cannot announce joining the call",
           );
         }
@@ -3974,7 +3974,7 @@ export function ChatPage() {
     const peerUserId = !isGroupConversation ? resolvePeerUserId(conversation) : null;
     const peerProfile = peerUserId ? userProfileMap[peerUserId] : null;
     const presence = isGroupConversation ? undefined : getPresenceForUser(peerUserId);
-    const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thanh vien" : "members"}`;
+    const groupPresenceLabel = `${conversation.participants?.length ?? 0} ${language === "vi" ? "thành viên" : "members"}`;
     const timestampMs = conversation.lastMessageAt ? Date.parse(conversation.lastMessageAt) : 0;
     const pinnedAtMs = conversation.pinnedAt ? Date.parse(conversation.pinnedAt) : 0;
 
@@ -3998,7 +3998,7 @@ export function ChatPage() {
       tagLabel:
         variant === "stranger-inbox"
           ? language === "vi"
-            ? "Nguoi la"
+            ? "Người lạ"
             : "Stranger"
           : undefined,
       sortTimeMs: Number.isFinite(timestampMs) ? timestampMs : 0,
@@ -4058,7 +4058,7 @@ export function ChatPage() {
 
     return {
       id: STRANGER_INBOX_ID,
-      name: language === "vi" ? "Tin nhan tu nguoi la" : "Stranger messages",
+      name: language === "vi" ? "Tin nhắn từ người lạ" : "Stranger messages",
       avatar: "TL",
       avatarUrl: null,
       timestamp: formatSidebarTimestamp(latestStrangerConversation.lastMessageAt),
@@ -4071,10 +4071,10 @@ export function ChatPage() {
       isOnline: false,
       presenceLabel:
         language === "vi"
-          ? `${strangerConversations.length} hoi thoai chua co trong danh ba`
+          ? `${strangerConversations.length} hội thoại chưa có trong danh bạ`
           : `${strangerConversations.length} conversations outside your contacts`,
       variant: "stranger-inbox",
-      tagLabel: language === "vi" ? "Can luu y" : "Review",
+      tagLabel: language === "vi" ? "Cần lưu ý" : "Review",
       sortTimeMs: Number.isFinite(sortTimeMs) ? sortTimeMs : 0,
       pinnedAtMs: 0,
     };
@@ -4424,7 +4424,7 @@ export function ChatPage() {
 
         setBannerMessage(
           language === "vi"
-            ? "Da tham gia nhom tu link moi"
+            ? "Đã tham gia nhóm từ link mời"
             : "Joined group from invite link",
         );
       } catch (error) {
@@ -4575,7 +4575,7 @@ export function ChatPage() {
         ) {
           setBannerMessage(
             language === "vi"
-              ? "Khong the sua tin nhan vi qua 15p"
+              ? "Không thể sửa tin nhắn vì quá 15p"
               : "Cannot edit this message after 15 minutes",
           );
           return;
@@ -4588,7 +4588,7 @@ export function ChatPage() {
         ) {
           setBannerMessage(
             language === "vi"
-              ? "Khong the thu hoi tin nhan sau 5p"
+              ? "Không thể thu hồi tin nhắn sau 5p"
               : "Cannot recall this message after 5 minutes",
           );
           return;
@@ -4646,7 +4646,7 @@ export function ChatPage() {
                 id: event.conversationId,
                 type: isGroupCreatedEvent ? "group" : undefined,
                 name: isGroupCreatedEvent
-                  ? (language === "vi" ? "Nhom moi" : "New group")
+                  ? (language === "vi" ? "Nhóm mới" : "New group")
                   : undefined,
                 lastMessage: event.lastMessage ?? undefined,
                 lastMessageAt:
@@ -4943,17 +4943,17 @@ export function ChatPage() {
                         blockerId === myUserId
                           ? isBlockedEvent
                             ? language === "vi"
-                              ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+                              ? "Bạn đã chặn người dùng này. Cả hai hiện không thể nhắn tin cho nhau."
                               : "You blocked this user. Neither side can send messages right now."
                             : language === "vi"
-                              ? "Ban da bo chan nguoi dung nay."
+                              ? "Bạn đã bỏ chặn người dùng này."
                               : "You unblocked this user."
                           : isBlockedEvent
                             ? language === "vi"
-                              ? "Nguoi dung nay da chan ban. Ca hai hien khong the nhan tin cho nhau."
+                              ? "Người dùng này đã chặn bạn. Cả hai hiện không thể nhắn tin cho nhau."
                               : "This user blocked you. Neither side can send messages right now."
                             : language === "vi"
-                              ? "Nguoi dung nay da bo chan ban."
+                              ? "Người dùng này đã bỏ chặn bạn."
                               : "This user unblocked you.";
 
                       const nowIso = new Date().toISOString();
@@ -5061,7 +5061,7 @@ export function ChatPage() {
             ) {
               const forcedLogoutMessage =
                 language === "vi"
-                  ? "Tai khoan da dang nhap o thiet bi khac. Vui long dang nhap lai."
+                  ? "Tài khoản đã đăng nhập ở thiết bị khác. Vui lòng đăng nhập lại."
                   : "Your account signed in on another device. Please sign in again.";
               sessionStorage.setItem(
                 "zola_forced_logout_message",
@@ -5443,7 +5443,7 @@ export function ChatPage() {
 
     appendInlineSystemNotice(
       language === "vi"
-        ? "Nguoi dung hien khong muon nhan tin."
+        ? "Người dùng hiện không muốn nhắn tin."
         : "This user currently does not want to receive messages.",
     );
     return true;
@@ -5464,7 +5464,7 @@ export function ChatPage() {
 
     appendInlineSystemNotice(
       language === "vi"
-        ? "Tin nhan giua hai ben da bi chan. Ca hai hien khong the nhan tin cho nhau."
+        ? "Tin nhắn giữa hai bên đã bị chặn. Cả hai hiện không thể nhắn tin cho nhau."
         : "Messaging is blocked between both users right now.",
     );
     return true;
@@ -5474,7 +5474,7 @@ export function ChatPage() {
     if (activeDirectPeerIdForActions && blockedUserIds.includes(activeDirectPeerIdForActions)) {
       appendInlineSystemNotice(
         language === "vi"
-          ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+          ? "Bạn đã chặn người dùng này. Cả hai hiện không thể nhắn tin cho nhau."
           : "You blocked this user. Neither side can send messages right now.",
       );
       return;
@@ -5483,7 +5483,7 @@ export function ChatPage() {
     if (activeDirectPeerIdForActions && blockedByPeerUserIds.includes(activeDirectPeerIdForActions)) {
       appendInlineSystemNotice(
         language === "vi"
-          ? "Nguoi dung nay da chan ban. Ca hai hien khong the nhan tin cho nhau."
+          ? "Người dùng này đã chặn bạn. Cả hai hiện không thể nhắn tin cho nhau."
           : "This user blocked you. Neither side can send messages right now.",
       );
       return;
@@ -5492,7 +5492,7 @@ export function ChatPage() {
     if (activeDirectPeerIdForActions && !friendUserIdSet.has(activeDirectPeerIdForActions)) {
       appendInlineSystemNotice(
         language === "vi"
-          ? "Hai ban chua ket ban. Hay gui loi moi va doi xac nhan truoc khi nhan tin."
+          ? "Hai bạn chưa kết bạn. Hãy gửi lời mời và đợi xác nhận trước khi nhắn tin."
           : "You are not friends yet. Send a friend request and wait for approval before messaging.",
       );
       return;
@@ -5500,7 +5500,7 @@ export function ChatPage() {
 
     appendInlineSystemNotice(
       language === "vi"
-        ? "Nguoi dung hien khong muon nhan tin."
+        ? "Người dùng hiện không muốn nhắn tin."
         : "This user currently does not want to receive messages.",
     );
   }, [
@@ -5618,11 +5618,11 @@ export function ChatPage() {
     if (mediaKind === "image") {
       if (!imageExtensions.has(ext) && !mime.startsWith("image/")) {
         return language === "vi"
-          ? "Dinh dang anh khong ho tro"
+          ? "Định dạng ảnh không hỗ trợ"
           : "Unsupported image format";
       }
       if (file.size > MAX_IMAGE_BYTES) {
-        return language === "vi" ? "Anh vuot 10MB" : "Image exceeds 10MB";
+        return language === "vi" ? "Ảnh vượt quá 10MB" : "Image exceeds 10MB";
       }
       return null;
     }
@@ -5630,12 +5630,12 @@ export function ChatPage() {
     if (mediaKind === "video") {
       if (!videoExtensions.has(ext) && !mime.startsWith("video/")) {
         return language === "vi"
-          ? "Dinh dang video khong ho tro"
+          ? "Định dạng video không hỗ trợ"
           : "Unsupported video format";
       }
       if (file.size > MAX_VIDEO_BYTES) {
         return language === "vi"
-          ? "Video vuot 100MB"
+          ? "Video vượt quá 100MB"
           : "Video exceeds 100MB";
       }
       return null;
@@ -5643,11 +5643,11 @@ export function ChatPage() {
 
     if (!fileExtensions.has(ext)) {
       return language === "vi"
-        ? "Dinh dang tep khong ho tro"
+        ? "Định dạng tệp không hỗ trợ"
         : "Unsupported file format";
     }
     if (file.size > MAX_FILE_BYTES) {
-      return language === "vi" ? "Tep vuot 100MB" : "File exceeds 100MB";
+      return language === "vi" ? "Tệp vượt quá 100MB" : "File exceeds 100MB";
     }
     return null;
   };
@@ -5924,7 +5924,7 @@ export function ChatPage() {
     if (targets.length === 0) {
       setBannerMessage(
         language === "vi"
-          ? "Khong co hoi thoai de chuyen tiep"
+          ? "Không có hội thoại để chuyển tiếp"
           : "No target conversation to forward",
       );
       return;
@@ -5968,7 +5968,7 @@ export function ChatPage() {
       if (uniqueTargetIds.length === 0) {
         setBannerMessage(
           language === "vi"
-            ? "Khong co doi tuong hop le de chuyen tiep"
+            ? "Không có đối tượng hợp lệ để chuyển tiếp"
             : "No valid target to forward",
         );
         return;
@@ -6033,13 +6033,13 @@ export function ChatPage() {
       if (failedCount === 0 && restCount === 0) {
         setBannerMessage(
           language === "vi"
-            ? `Da chuyen tiep ${forwardedMessageCount} tin nhan den ${forwardedTargetCount} doi tuong`
+            ? `Đã chuyển tiếp ${forwardedMessageCount} tin nhắn đến ${forwardedTargetCount} đối tượng`
             : `Forwarded ${forwardedMessageCount} message(s) to ${forwardedTargetCount} target(s)`,
         );
       } else if (failedCount === 0 && restCount > 0) {
         setBannerMessage(
           language === "vi"
-            ? `Da chuyen tiep ${forwardedMessageCount} tin nhan den ${forwardedTargetCount} doi tuong (${restCount} qua API)`
+            ? `Đã chuyển tiếp ${forwardedMessageCount} tin nhắn đến ${forwardedTargetCount} đối tượng (${restCount} qua API)`
             : `Forwarded ${forwardedMessageCount} message(s) to ${forwardedTargetCount} target(s) (${restCount} via API)`,
         );
       } else {
@@ -6047,7 +6047,7 @@ export function ChatPage() {
         const firstErrorMessage = toApiErrorMessage(firstError);
         setBannerMessage(
           language === "vi"
-            ? `Chuyen tiep thanh cong ${successCount}, that bai ${failedCount}. Loi: ${firstErrorMessage}`
+            ? `Chuyển tiếp thành công ${successCount}, thất bại ${failedCount}. Lỗi: ${firstErrorMessage}`
             : `Forward success ${successCount}, failed ${failedCount}. Error: ${firstErrorMessage}`,
         );
       }
@@ -6135,10 +6135,10 @@ export function ChatPage() {
       setBannerMessage(
         nextStatus === "ACCEPTED"
           ? language === "vi"
-            ? "Da ket ban thanh cong"
+            ? "Đã kết bạn thành công"
             : "Friendship accepted"
           : language === "vi"
-            ? "Da gui loi moi ket ban"
+            ? "Đã gửi lời mời kết bạn"
             : "Friend request sent",
       );
       setIsAddFriendOpen(false);
@@ -6191,7 +6191,7 @@ export function ChatPage() {
       setActiveConversationId(createdConversationId);
       setActiveTab("messages");
       setBannerMessage(
-        language === "vi" ? "Da tao nhom thanh cong" : "Group created successfully",
+        language === "vi" ? "Đã tạo nhóm thành công" : "Group created successfully",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -6228,7 +6228,7 @@ export function ChatPage() {
 
       setBannerMessage(
         language === "vi"
-          ? "Da chap nhan loi moi ket ban"
+          ? "Đã chấp nhận lời mời kết bạn"
           : "Friend request accepted",
       );
     } catch (error) {
@@ -6244,7 +6244,7 @@ export function ChatPage() {
       await declineFriendRequest(friendshipId);
       await fetchFriendshipData();
       setBannerMessage(
-        language === "vi" ? "Da tu choi loi moi" : "Friend request declined",
+        language === "vi" ? "Đã từ chối lời mời" : "Friend request declined",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -6270,7 +6270,7 @@ export function ChatPage() {
       await cancelFriendRequest(friendshipId);
       await fetchFriendshipData();
       setBannerMessage(
-        language === "vi" ? "Da huy loi moi ket ban" : "Friend request cancelled",
+        language === "vi" ? "Đã hủy lời mời kết bạn" : "Friend request cancelled",
       );
     } catch (error) {
       // rollback
@@ -6294,7 +6294,7 @@ export function ChatPage() {
         setFriendshipStatus("NONE");
       }
       await fetchFriendshipData();
-      setBannerMessage(language === "vi" ? "Da xoa ban" : "Friend removed");
+      setBannerMessage(language === "vi" ? "Đã xóa bạn" : "Friend removed");
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     } finally {
@@ -6350,7 +6350,7 @@ export function ChatPage() {
       setActiveDirectFriendshipStatus("BLOCKED");
       appendInlineSystemNotice(
         language === "vi"
-          ? "Ban da chan nguoi dung nay. Ca hai hien khong the nhan tin cho nhau."
+          ? "Bạn đã chặn người dùng này. Cả hai hiện không thể nhắn tin cho nhau."
           : "You blocked this user. Neither side can send messages right now.",
       );
     }
@@ -6372,7 +6372,7 @@ export function ChatPage() {
       );
 
       await Promise.all([fetchFriendshipData(), fetchConversations({ silent: true })]);
-      setBannerMessage(language === "vi" ? "Da chan nguoi dung" : "User blocked");
+      setBannerMessage(language === "vi" ? "Đã chặn người dùng" : "User blocked");
     } catch (error) {
       // rollback optimistic changes
       setBlockedUserIds(prevBlockedUserIds);
@@ -6421,7 +6421,7 @@ export function ChatPage() {
       }
 
       await Promise.all([fetchFriendshipData(), fetchConversations({ silent: true })]);
-      setBannerMessage(language === "vi" ? "Da bo chan nguoi dung" : "User unblocked");
+      setBannerMessage(language === "vi" ? "Đã bỏ chặn người dùng" : "User unblocked");
     } catch (error) {
       // rollback
       setBlockedUserIds(prevBlockedUserIds);
@@ -6442,7 +6442,7 @@ export function ChatPage() {
     if (blockedUserIds.includes(targetUserId)) {
       setBannerMessage(
         language === "vi"
-          ? "Ban dang chan nguoi nay. Vui long bo chan truoc."
+          ? "Bạn đang chặn người này. Vui lòng bỏ chặn trước."
           : "You blocked this user. Please unblock first.",
       );
       return;
@@ -6451,7 +6451,7 @@ export function ChatPage() {
     if (blockedByPeerUserIds.includes(targetUserId)) {
       setBannerMessage(
         language === "vi"
-          ? "Nguoi nay da chan ban. Ban khong the gui loi moi ket ban."
+          ? "Người này đã chặn bạn. Bạn không thể gửi lời mời kết bạn."
           : "This user blocked you. You cannot send a friend request.",
       );
       return;
@@ -6474,10 +6474,10 @@ export function ChatPage() {
       setBannerMessage(
         nextStatus === "ACCEPTED"
           ? language === "vi"
-            ? "Da ket ban thanh cong"
+            ? "Đã kết bạn thành công"
             : "Friendship accepted"
           : language === "vi"
-            ? "Da gui loi moi ket ban"
+            ? "Đã gửi lời mời kết bạn"
             : "Friend request sent",
       );
     } catch (error) {
@@ -6619,7 +6619,7 @@ export function ChatPage() {
       setContactCandidateProfile(null);
       setContactCandidateStatusPayload(null);
       setContactCandidateError(
-        language === "vi" ? "Nhap email de tim nguoi dung." : "Enter an email to find a user.",
+        language === "vi" ? "Nhập email để tìm người dùng." : "Enter an email to find a user.",
       );
       return;
     }
@@ -6665,7 +6665,7 @@ export function ChatPage() {
     if (!profileFullName.trim()) {
       setBannerMessage(
         language === "vi"
-          ? "Ho ten khong duoc de trong"
+          ? "Họ tên không được để trống"
           : "Full name is required",
       );
       return;
@@ -6686,7 +6686,7 @@ export function ChatPage() {
       });
       setMyProfile(result.data);
       setBannerMessage(
-        language === "vi" ? "Da cap nhat thong tin" : "Profile updated",
+        language === "vi" ? "Đã cập nhật thông tin" : "Profile updated",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -6703,7 +6703,7 @@ export function ChatPage() {
     if (!file.type.startsWith("image/")) {
       setBannerMessage(
         language === "vi"
-          ? "Vui long chon file hinh anh"
+          ? "Vui lòng chọn file hình ảnh"
           : "Please choose an image file",
       );
       return;
@@ -6712,7 +6712,7 @@ export function ChatPage() {
     if (file.size > MAX_IMAGE_BYTES) {
       setBannerMessage(
         language === "vi"
-          ? "Anh dai dien vuot qua 5MB"
+          ? "Ảnh đại diện vượt quá 5MB"
           : "Avatar image exceeds 5MB",
       );
       return;
@@ -6738,7 +6738,7 @@ export function ChatPage() {
       });
       setMyProfile(updatedProfile.data);
       setBannerMessage(
-        language === "vi" ? "Da cap nhat anh dai dien" : "Avatar updated",
+        language === "vi" ? "Đã cập nhật ảnh đại diện" : "Avatar updated",
       );
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
@@ -6750,7 +6750,7 @@ export function ChatPage() {
   const onDeleteProfile = async () => {
     const confirmed = window.confirm(
       language === "vi"
-        ? "Ban chac chan muon xoa tai khoan?"
+        ? "Bạn chắc chắn muốn xóa tài khoản?"
         : "Are you sure you want to delete this account?",
     );
     if (!confirmed) {
@@ -6776,7 +6776,7 @@ export function ChatPage() {
     if (!isValidConversationPin(nextPin)) {
       setBannerMessage(
         language === "vi"
-          ? "PIN phai gom 4 den 8 chu so"
+          ? "PIN phải gồm 4 đến 8 chữ số"
           : "PIN must contain 4 to 8 digits",
       );
       return;
@@ -6784,7 +6784,7 @@ export function ChatPage() {
 
     if (nextPin !== confirmPin) {
       setBannerMessage(
-        language === "vi" ? "PIN xac nhan khong khop" : "PIN confirmation does not match",
+        language === "vi" ? "PIN xác nhận không khớp" : "PIN confirmation does not match",
       );
       return;
     }
@@ -6794,7 +6794,7 @@ export function ChatPage() {
     setSettingsPinDraft("");
     setSettingsPinConfirmDraft("");
     setBannerMessage(
-      language === "vi" ? "Da cap nhat ma PIN an chat" : "Hidden-chat PIN updated",
+      language === "vi" ? "Đã cập nhật mã PIN ẩn chat" : "Hidden-chat PIN updated",
     );
   };
 
@@ -6806,12 +6806,12 @@ export function ChatPage() {
     const enteredPin =
       window.prompt(
         language === "vi"
-          ? "Nhap ma PIN hien tai de xoa"
+          ? "Nhập mã PIN hiện tại để xóa"
           : "Enter current PIN to remove it",
       ) ?? "";
 
     if (enteredPin.trim() !== hiddenConversationPin) {
-      setBannerMessage(language === "vi" ? "Sai ma PIN" : "Incorrect PIN");
+      setBannerMessage(language === "vi" ? "Sai mã PIN" : "Incorrect PIN");
       return;
     }
 
@@ -6837,7 +6837,7 @@ export function ChatPage() {
     });
     setSettingsPinDraft("");
     setSettingsPinConfirmDraft("");
-    setBannerMessage(language === "vi" ? "Da xoa ma PIN an chat" : "Hidden-chat PIN removed");
+    setBannerMessage(language === "vi" ? "Đã xóa mã PIN ẩn chat" : "Hidden-chat PIN removed");
   };
 
   const reloadConversationMessagesWithRetry = async (
@@ -7279,22 +7279,22 @@ export function ChatPage() {
       ? null
       : isActiveDirectPeerBlockedByMe || isActiveDirectPeerBlockedByPeer
         ? language === "vi"
-          ? "Da chan"
+          ? "Đã chặn"
           : "Blocked"
         : isActiveDirectPeerFriend
           ? language === "vi"
-            ? "Ban be"
+            ? "Bạn bè"
             : "Friends"
           : directStrangerActionMode === "incoming-request"
             ? language === "vi"
-              ? "Cho ban xac nhan"
+              ? "Chờ bạn xác nhận"
               : "Awaiting your approval"
             : directStrangerActionMode === "outgoing-request"
               ? language === "vi"
-                ? "Da gui loi moi"
+                ? "Đã gửi lời mời"
                 : "Request sent"
               : language === "vi"
-                ? "Nguoi la"
+                ? "Người lạ"
                 : "Stranger";
   const isProcessingActivePeerFriendship = Boolean(
     (activeIncomingPendingFriendRequest &&
@@ -7382,36 +7382,36 @@ export function ChatPage() {
   const isStrangerWorkspaceActive = activeMessageWorkspaceView === "stranger-inbox";
   const strangerWorkspaceSubtitle =
     language === "vi"
-      ? "Cac cuoc tro chuyen ngoai danh ba se duoc tach rieng tai day."
+      ? "Các cuộc trò chuyện ngoài danh bạ sẽ được tách riêng tại đây."
       : "Conversations outside your contacts are separated here.";
   const contactMenuItems = [
     {
       key: "friends" as const,
-      label: language === "vi" ? "Danh sach ban be" : "Friend list",
+      label: language === "vi" ? "Danh sách bạn bè" : "Friend list",
       count: contactUsers.length,
       icon: Users,
     },
     {
       key: "people" as const,
-      label: language === "vi" ? "Tim nguoi dung" : "Find people",
+      label: language === "vi" ? "Tìm người dùng" : "Find people",
       count: contactCandidateRelationship?.kind === "stranger" ? 1 : 0,
       icon: UserSearch,
     },
     {
       key: "groups" as const,
-      label: language === "vi" ? "Danh sach nhom va cong dong" : "Groups and communities",
+      label: language === "vi" ? "Danh sách nhóm và cộng đồng" : "Groups and communities",
       count: joinedGroupContacts.length,
       icon: UsersRound,
     },
     {
       key: "requests" as const,
-      label: language === "vi" ? "Loi moi ket ban" : "Friend requests",
+      label: language === "vi" ? "Lời mời kết bạn" : "Friend requests",
       count: pendingFriendRequests.length + sentPendingFriendRequests.length,
       icon: UserRoundPlus,
     },
     {
       key: "group-invites" as const,
-      label: language === "vi" ? "Loi moi vao nhom va cong dong" : "Group invites",
+      label: language === "vi" ? "Lời mời vào nhóm và cộng đồng" : "Group invites",
       count: 0,
       icon: CircleAlert,
     },
@@ -7423,46 +7423,46 @@ export function ChatPage() {
       : isActiveDirectPeerBlockedByMe
         ? {
             tone: "danger" as const,
-            title: language === "vi" ? "Ban da chan nguoi nay" : "You blocked this user",
+            title: language === "vi" ? "Bạn đã chặn người này" : "You blocked this user",
             description:
               language === "vi"
-                ? "Ca hai hien khong the nhan tin cho nhau cho toi khi ban bo chan."
+                ? "Cả hai hiện không thể nhắn tin cho nhau cho tới khi bạn bỏ chặn."
                 : "Neither side can send messages until you unblock this user.",
           }
         : isActiveDirectPeerBlockedByPeer
           ? {
               tone: "danger" as const,
-              title: language === "vi" ? "Ban da bi chan" : "You were blocked",
+              title: language === "vi" ? "Bạn đã bị chặn" : "You were blocked",
               description:
                 language === "vi"
-                  ? "Nguoi dung nay da chan ban. Cuoc tro chuyen duoc giu lai de ban xem lich su."
+                  ? "Người dùng này đã chặn bạn. Cuộc trò chuyện được giữ lại để bạn xem lịch sử."
                   : "This user blocked you. The conversation stays visible for history only.",
             }
           : directStrangerActionMode === "incoming-request"
             ? {
                 tone: "info" as const,
-                title: language === "vi" ? "Loi moi ket ban moi" : "New friend request",
+                title: language === "vi" ? "Lời mời kết bạn mới" : "New friend request",
                 description:
                   language === "vi"
-                    ? "Nguoi nay da gui loi moi ket ban cho ban. Ban co the xac nhan, tu choi hoac chan."
+                    ? "Người này đã gửi lời mời kết bạn cho bạn. Bạn có thể xác nhận, từ chối hoặc chặn."
                     : "This person sent you a friend request. You can accept, decline, or block them.",
               }
             : directStrangerActionMode === "outgoing-request"
               ? {
                   tone: "info" as const,
-                  title: language === "vi" ? "Dang cho phan hoi" : "Waiting for reply",
+                  title: language === "vi" ? "Đang chờ phản hồi" : "Waiting for reply",
                   description:
                     language === "vi"
-                      ? "Ban da gui loi moi ket ban. Trong luc cho xac nhan, ban van co the huy loi moi hoac chan."
+                      ? "Bạn đã gửi lời mời kết bạn. Trong lúc chờ xác nhận, bạn vẫn có thể hủy lời mời hoặc chặn."
                       : "You already sent a friend request. While waiting, you can cancel it or block this user.",
                 }
               : isActiveDirectPeerStranger
                 ? {
                     tone: "warning" as const,
-                    title: language === "vi" ? "Nguoi la" : "Stranger",
+                    title: language === "vi" ? "Người lạ" : "Stranger",
                     description:
                       language === "vi"
-                        ? "Day la nguoi chua co trong danh ba. Hay ket ban neu ban muon tiep tuc tro chuyen an toan hon."
+                        ? "Đây là người chưa có trong danh bạ. Hãy kết bạn nếu bạn muốn tiếp tục trò chuyện an toàn hơn."
                         : "This person is outside your contacts. Add them first if you want a safer, more familiar chat flow.",
                   }
                 : null;
@@ -7577,21 +7577,21 @@ export function ChatPage() {
     }
     if (typingDisplayNames.length === 1) {
       return `${typingDisplayNames[0]} ${
-        language === "vi" ? "dang go..." : "is typing..."
+        language === "vi" ? "đang gõ..." : "is typing..."
       }`;
     }
     if (typingDisplayNames.length === 2) {
       return language === "vi"
-        ? `${typingDisplayNames[0]} va ${typingDisplayNames[1]} dang go...`
+        ? `${typingDisplayNames[0]} và ${typingDisplayNames[1]} đang gõ...`
         : `${typingDisplayNames[0]} and ${typingDisplayNames[1]} are typing...`;
     }
     return language === "vi"
-      ? `${typingDisplayNames[0]} va ${typingDisplayNames.length - 1} nguoi khac dang go...`
+      ? `${typingDisplayNames[0]} và ${typingDisplayNames.length - 1} người khác đang gõ...`
       : `${typingDisplayNames[0]} and ${typingDisplayNames.length - 1} others are typing...`;
   }, [language, typingDisplayNames]);
 
   const activeGroupMemberLabel = `${activeGroupMembers.length} ${
-    language === "vi" ? "thanh vien" : "members"
+    language === "vi" ? "thành viên" : "members"
   }`;
 
   const activeGroupCallNoticeDescription = activeGroupCallNotice
@@ -7621,7 +7621,7 @@ export function ChatPage() {
         chatListTitle={
           isStrangerWorkspaceActive
             ? language === "vi"
-              ? "Tin nhan tu nguoi la"
+              ? "Tin nhắn từ người lạ"
               : "Stranger messages"
             : undefined
         }
@@ -7673,7 +7673,7 @@ export function ChatPage() {
                         placeholder={
                           contactsView === "people"
                             ? "email@example.com"
-                            : language === "vi" ? "Tim danh ba" : "Search contacts"
+                            : language === "vi" ? "Tìm danh bạ" : "Search contacts"
                         }
                         className="h-10 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)] md:h-11"
                       />
@@ -7686,8 +7686,8 @@ export function ChatPage() {
                         className="h-10 rounded-xl bg-[var(--color-zola-accent)] px-3 text-xs font-semibold text-white hover:bg-[#4b9dff] disabled:cursor-not-allowed disabled:opacity-50 md:h-11 md:px-4"
                       >
                         {isSearchingContactCandidate
-                          ? language === "vi" ? "Dang tim" : "Finding"
-                          : language === "vi" ? "Tim" : "Find"}
+                          ? language === "vi" ? "Đang tìm" : "Finding"
+                          : language === "vi" ? "Tìm" : "Find"}
                       </button>
                     )}
                   </div>
@@ -7720,22 +7720,22 @@ export function ChatPage() {
                           <span className="mt-0.5 hidden text-[11px] text-slate-500 md:block">
                             {item.key === "friends"
                               ? language === "vi"
-                                ? "Quan ly ban be va mo ho so nhanh."
+                                ? "Quản lý bạn bè và mở hồ sơ nhanh."
                                 : "Manage friends and open profiles quickly."
                               : item.key === "people"
                                 ? language === "vi"
-                                  ? "Tim theo email va gui loi moi dung trang thai."
+                                  ? "Tìm theo email và gửi lời mời đúng trạng thái."
                                   : "Find by email and send the right request action."
                               : item.key === "groups"
                                 ? language === "vi"
-                                  ? "Nhom va cong dong ban dang tham gia."
+                                  ? "Nhóm và cộng đồng bạn đang tham gia."
                                   : "Groups and communities you joined."
                                 : item.key === "requests"
                                   ? language === "vi"
-                                    ? "Loi moi den va loi moi ban da gui."
+                                    ? "Lời mời đến và lời mời bạn đã gửi."
                                     : "Incoming and sent friendship requests."
                                   : language === "vi"
-                                    ? "Danh muc cho loi moi nhom sau nay."
+                                    ? "Danh mục cho lời mời nhóm sau này."
                                     : "Reserved for future group invites."}
                           </span>
                         </span>
@@ -7753,7 +7753,7 @@ export function ChatPage() {
 
                 <div className="mt-auto hidden border-t border-white/6 px-4 py-4 text-xs text-slate-500 md:block">
                   {language === "vi"
-                    ? "Danh ba duoc dong bo theo du lieu ban be, nhom va loi moi hien tai."
+                    ? "Danh bạ được đồng bộ theo dữ liệu bạn bè, nhóm và lời mời hiện tại."
                     : "Contacts are synced from your current friends, groups, and request data."}
                 </div>
               </aside>
@@ -7779,44 +7779,44 @@ export function ChatPage() {
                         <h2 className="text-lg font-semibold text-slate-100 md:text-2xl">
                           {contactsView === "friends"
                             ? language === "vi"
-                              ? "Danh sach ban be"
+                              ? "Danh sách bạn bè"
                               : "Friend list"
                             : contactsView === "people"
                               ? language === "vi"
-                                ? "Tim nguoi dung"
+                                ? "Tìm người dùng"
                                 : "Find people"
                             : contactsView === "groups"
                               ? language === "vi"
-                                ? "Danh sach nhom va cong dong"
+                                ? "Danh sách nhóm và cộng đồng"
                                 : "Groups and communities"
                               : contactsView === "requests"
                                 ? language === "vi"
-                                  ? "Loi moi ket ban"
+                                  ? "Lời mời kết bạn"
                                   : "Friend requests"
                                 : language === "vi"
-                                  ? "Loi moi vao nhom va cong dong"
+                                  ? "Lời mời vào nhóm và cộng đồng"
                                   : "Group invites"}
                         </h2>
                       </div>
                       <p className="mt-1 text-xs text-slate-400 md:mt-2 md:text-sm">
                         {contactsView === "friends"
                           ? language === "vi"
-                            ? `Ban be (${filteredContactUsers.length})`
+                            ? `Bạn bè (${filteredContactUsers.length})`
                             : `Friends (${filteredContactUsers.length})`
                           : contactsView === "people"
                             ? language === "vi"
-                              ? "Tim dung theo email de lay du lieu that tu backend"
+                              ? "Tìm đúng theo email để lấy dữ liệu thật từ backend"
                               : "Search by exact email to load real backend data"
                           : contactsView === "groups"
                             ? language === "vi"
-                              ? `Nhom va cong dong (${filteredJoinedGroupContacts.length})`
+                              ? `Nhóm và cộng đồng (${filteredJoinedGroupContacts.length})`
                               : `Groups and communities (${filteredJoinedGroupContacts.length})`
                             : contactsView === "requests"
                               ? language === "vi"
-                                ? `${filteredPendingFriendRequests.length} loi moi den, ${filteredSentPendingFriendRequests.length} loi moi da gui`
+                                ? `${filteredPendingFriendRequests.length} lời mời đến, ${filteredSentPendingFriendRequests.length} lời mời đã gửi`
                                 : `${filteredPendingFriendRequests.length} incoming, ${filteredSentPendingFriendRequests.length} sent`
                               : language === "vi"
-                                ? "Danh muc nay da san sang cho realtime."
+                                ? "Danh mục này đã sẵn sàng cho realtime."
                                 : "This area is ready for realtime invite data."}
                       </p>
                     </div>
@@ -7849,7 +7849,7 @@ export function ChatPage() {
                             ? `Dang loc: "${contactsSearchQuery}"`
                             : `Filtered: "${contactsSearchQuery}"`
                           : language === "vi"
-                            ? "Tat ca"
+                            ? "Tất cả"
                             : "All"}
                       </span>
                     </div>
@@ -7865,13 +7865,13 @@ export function ChatPage() {
                         onClick={() => void fetchFriendshipData()}
                         className="rounded-lg border border-rose-200/30 px-3 py-1.5 text-xs font-semibold hover:bg-rose-500/15"
                       >
-                        {language === "vi" ? "Thu lai" : "Retry"}
+                        {language === "vi" ? "Thử lại" : "Retry"}
                       </button>
                     </div>
                   )}
                   {isLoadingFriendshipData && (
                     <div className="mb-4 rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                      {language === "vi" ? "Dang dong bo trang thai ban be..." : "Syncing friendship state..."}
+                      {language === "vi" ? "Đang đồng bộ trạng thái bạn bè..." : "Syncing friendship state..."}
                     </div>
                   )}
 
@@ -7880,11 +7880,11 @@ export function ChatPage() {
                       {groupedContactUsers.length === 0 ? (
                         <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
                           <p className="text-sm font-semibold text-slate-200">
-                            {language === "vi" ? "Chua co ban be phu hop." : "No matching friends yet."}
+                            {language === "vi" ? "Chưa có bạn bè phù hợp." : "No matching friends yet."}
                           </p>
                           <p className="mt-2 text-xs text-slate-500">
                             {language === "vi"
-                              ? "Thu doi tu khoa tim kiem hoac gui them loi moi ket ban."
+                              ? "Thử đổi từ khóa tìm kiếm hoặc gửi thêm lời mời kết bạn."
                               : "Try another search keyword or send more friend requests."}
                           </p>
                         </div>
@@ -7931,7 +7931,7 @@ export function ChatPage() {
                                         onClick={() => void onOpenFriendConversation(user.id)}
                                         className="rounded-full bg-[var(--color-zola-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[#4b9dff]"
                                       >
-                                        {language === "vi" ? "Nhan tin" : "Message"}
+                                        {language === "vi" ? "Nhắn tin" : "Message"}
                                       </button>
                                       <button
                                         type="button"
@@ -7939,7 +7939,7 @@ export function ChatPage() {
                                           void onOpenUserPreview(user.id);
                                         }}
                                         className="grid h-10 w-10 place-items-center rounded-full border border-white/8 text-slate-400 hover:bg-white/5 hover:text-white"
-                                        title={language === "vi" ? "Them thao tac" : "More actions"}
+                                        title={language === "vi" ? "Thêm thao tác" : "More actions"}
                                       >
                                         <MoreHorizontal size={16} />
                                       </button>
@@ -7959,11 +7959,11 @@ export function ChatPage() {
                       {!contactsSearchQuery.trim() && !contactCandidateProfile && (
                         <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
                           <p className="text-sm font-semibold text-slate-200">
-                            {language === "vi" ? "Nhap email de tim nguoi dung." : "Enter an email to find a user."}
+                            {language === "vi" ? "Nhập email để tìm người dùng." : "Enter an email to find a user."}
                           </p>
                           <p className="mt-2 text-xs text-slate-500">
                             {language === "vi"
-                              ? "Ket qua duoc lay tu API that va se khong chen vao danh sach ban be/loi moi neu da co trang thai khac."
+                              ? "Kết quả được lấy từ API thật và sẽ không chèn vào danh sách bạn bè/lời mời nếu đã có trạng thái khác."
                               : "Results come from the real API and keep friends, requests, and blocked users in their own states."}
                           </p>
                         </div>
@@ -7977,7 +7977,7 @@ export function ChatPage() {
 
                       {isSearchingContactCandidate && (
                         <div className="rounded-[24px] border border-white/8 bg-[#1b2027] px-5 py-4 text-sm text-slate-300">
-                          {language === "vi" ? "Dang tim nguoi dung..." : "Finding user..."}
+                          {language === "vi" ? "Đang tìm người dùng..." : "Finding user..."}
                         </div>
                       )}
 
@@ -8014,16 +8014,16 @@ export function ChatPage() {
 
                             <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
                               {contactCandidateRelationship.kind === "self"
-                                ? language === "vi" ? "Tai khoan cua ban" : "Your account"
+                                ? language === "vi" ? "Tài khoản của bạn" : "Your account"
                                 : contactCandidateRelationship.kind === "friend"
-                                  ? language === "vi" ? "Ban be" : "Friend"
+                                  ? language === "vi" ? "Bạn bè" : "Friend"
                                   : contactCandidateRelationship.kind === "pending_received"
-                                    ? language === "vi" ? "Da nhan loi moi" : "Request received"
+                                    ? language === "vi" ? "Đã nhận lời mời" : "Request received"
                                     : contactCandidateRelationship.kind === "pending_sent"
-                                      ? language === "vi" ? "Da gui loi moi" : "Request sent"
+                                      ? language === "vi" ? "Đã gửi lời mời" : "Request sent"
                                       : contactCandidateRelationship.status === "BLOCKED"
-                                        ? language === "vi" ? "Da chan" : "Blocked"
-                                        : language === "vi" ? "Co the ket ban" : "Can add friend"}
+                                        ? language === "vi" ? "Đã chặn" : "Blocked"
+                                        : language === "vi" ? "Có thể kết bạn" : "Can add friend"}
                             </span>
                           </div>
 
@@ -8036,7 +8036,7 @@ export function ChatPage() {
                                     onClick={() => void onOpenFriendConversation(contactCandidateProfile.id)}
                                     className="rounded-xl bg-[var(--color-zola-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[#4b9dff]"
                                   >
-                                    {language === "vi" ? "Nhan tin" : "Message"}
+                                    {language === "vi" ? "Nhắn tin" : "Message"}
                                   </button>
                                   {contactCandidateRelationship.friendshipId && (
                                     <button
@@ -8045,7 +8045,7 @@ export function ChatPage() {
                                       onClick={() => void onRemoveFriend(contactCandidateRelationship.friendshipId!)}
                                       className="rounded-xl border border-orange-300/35 bg-orange-500/10 px-4 py-2 text-xs font-semibold text-orange-100 hover:bg-orange-500/15 disabled:opacity-50"
                                     >
-                                      {language === "vi" ? "Huy ket ban" : "Unfriend"}
+                                      {language === "vi" ? "Hủy kết bạn" : "Unfriend"}
                                     </button>
                                   )}
                                 </>
@@ -8059,7 +8059,7 @@ export function ChatPage() {
                                     onClick={() => void onAcceptFriendRequest(contactCandidateRelationship.friendshipId!)}
                                     className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                                   >
-                                    {language === "vi" ? "Chap nhan" : "Accept"}
+                                    {language === "vi" ? "Chấp nhận" : "Accept"}
                                   </button>
                                   <button
                                     type="button"
@@ -8067,7 +8067,7 @@ export function ChatPage() {
                                     onClick={() => void onDeclineFriendRequest(contactCandidateRelationship.friendshipId!)}
                                     className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
                                   >
-                                    {language === "vi" ? "Tu choi" : "Decline"}
+                                    {language === "vi" ? "Từ chối" : "Decline"}
                                   </button>
                                 </>
                               )}
@@ -8079,7 +8079,7 @@ export function ChatPage() {
                                   onClick={() => void onCancelFriendRequest(contactCandidateRelationship.friendshipId!)}
                                   className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                 >
-                                  {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                                  {language === "vi" ? "Hủy lời mời" : "Cancel request"}
                                 </button>
                               )}
 
@@ -8093,7 +8093,7 @@ export function ChatPage() {
                                   onClick={() => void onAddFriendToUser(contactCandidateProfile.id)}
                                   className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                                 >
-                                  {language === "vi" ? "Ket ban" : "Add friend"}
+                                  {language === "vi" ? "Kết bạn" : "Add friend"}
                                 </button>
                               )}
 
@@ -8105,7 +8105,7 @@ export function ChatPage() {
                                   onClick={() => onUnblockUser(contactCandidateProfile.id)}
                                   className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-50"
                                 >
-                                  {language === "vi" ? "Bo chan" : "Unblock"}
+                                  {language === "vi" ? "Bỏ chặn" : "Unblock"}
                                 </button>
                               ) : (
                                 contactCandidateRelationship.kind !== "blocked_by_peer" && (
@@ -8115,7 +8115,7 @@ export function ChatPage() {
                                     onClick={() => void onBlockUser(contactCandidateProfile.id)}
                                     className="rounded-xl border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
                                   >
-                                    {language === "vi" ? "Chan" : "Block"}
+                                    {language === "vi" ? "Chặn" : "Block"}
                                   </button>
                                 )
                               )}
@@ -8131,7 +8131,7 @@ export function ChatPage() {
                       {filteredJoinedGroupContacts.length === 0 ? (
                         <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
                           <p className="text-sm font-semibold text-slate-200">
-                            {language === "vi" ? "Chua co nhom phu hop." : "No matching groups yet."}
+                            {language === "vi" ? "Chưa có nhóm phù hợp." : "No matching groups yet."}
                           </p>
                         </div>
                       ) : (
@@ -8166,7 +8166,7 @@ export function ChatPage() {
                                 </div>
                                 <p className="mt-1 text-xs text-slate-400">
                                   {language === "vi"
-                                    ? `${group.memberCount} thanh vien`
+                                    ? `${group.memberCount} thành viên`
                                     : `${group.memberCount} members`}
                                 </p>
                               </div>
@@ -8185,14 +8185,14 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi" ? "Loi moi ket ban den" : "Incoming requests"}
+                            {language === "vi" ? "Lời mời kết bạn đến" : "Incoming requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
                           {filteredPendingFriendRequests.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
                               {language === "vi"
-                                ? "Khong co loi moi ket ban nao phu hop."
+                                ? "Không có lời mời kết bạn nào phù hợp."
                                 : "No incoming friend requests match the current filter."}
                             </div>
                           ) : (
@@ -8237,7 +8237,7 @@ export function ChatPage() {
                                       onClick={() => void onAcceptFriendRequest(request.friendshipId)}
                                       className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                                     >
-                                      {language === "vi" ? "Chap nhan" : "Accept"}
+                                      {language === "vi" ? "Chấp nhận" : "Accept"}
                                     </button>
                                     <button
                                       type="button"
@@ -8245,7 +8245,7 @@ export function ChatPage() {
                                       onClick={() => void onDeclineFriendRequest(request.friendshipId)}
                                       className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
                                     >
-                                      {language === "vi" ? "Tu choi" : "Decline"}
+                                      {language === "vi" ? "Từ chối" : "Decline"}
                                     </button>
                                   </div>
                                 </div>
@@ -8258,14 +8258,14 @@ export function ChatPage() {
                       <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
                         <div className="border-b border-white/6 px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
-                            {language === "vi" ? "Loi moi da gui" : "Sent requests"}
+                            {language === "vi" ? "Lời mời đã gửi" : "Sent requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
                           {filteredSentPendingFriendRequests.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
                               {language === "vi"
-                                ? "Khong co loi moi da gui nao phu hop."
+                                ? "Không có lời mời đã gửi nào phù hợp."
                                 : "No sent friend requests match the current filter."}
                             </div>
                           ) : (
@@ -8310,14 +8310,14 @@ export function ChatPage() {
                                       onClick={() => void onCancelFriendRequest(request.friendshipId)}
                                       className="flex-1 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
                                     >
-                                      {language === "vi" ? "Huy loi moi" : "Cancel request"}
+                                      {language === "vi" ? "Hủy lời mời" : "Cancel request"}
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => void onOpenFriendConversation(request.addresseeId)}
                                       className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5"
                                     >
-                                      {language === "vi" ? "Nhan tin" : "Message"}
+                                      {language === "vi" ? "Nhắn tin" : "Message"}
                                     </button>
                                   </div>
                                 </div>
@@ -8333,12 +8333,12 @@ export function ChatPage() {
                     <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
                       <p className="text-sm font-semibold text-slate-200">
                         {language === "vi"
-                          ? "Hien tai chua co loi moi vao nhom va cong dong."
+                          ? "Hiện tại chưa có lời mời vào nhóm và cộng đồng."
                           : "There are no group or community invites right now."}
                       </p>
                       <p className="mt-2 text-xs text-slate-500">
                         {language === "vi"
-                          ? "Phan nay da san sang de noi voi du lieu realtime khi backend ho tro."
+                          ? "Phần này đã sẵn sàng để nối với dữ liệu realtime khi backend hỗ trợ."
                           : "This section is ready to connect to realtime invite data when the backend exposes it."}
                       </p>
                     </div>
@@ -8386,7 +8386,7 @@ export function ChatPage() {
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="grid grid-cols-1 gap-3">
                   <label className="block text-xs font-semibold text-slate-500">
-                    {language === "vi" ? "Ho ten day du" : "Full name"}
+                    {language === "vi" ? "Họ tên đầy đủ" : "Full name"}
                     <input
                       type="text"
                       value={profileFullName}
@@ -8406,7 +8406,7 @@ export function ChatPage() {
                   </label>
 
                   <label className="block text-xs font-semibold text-slate-500">
-                    {language === "vi" ? "So dien thoai" : "Phone"}
+                    {language === "vi" ? "Số điện thoại" : "Phone"}
                     <input
                       type="text"
                       value={profilePhone}
@@ -8416,7 +8416,7 @@ export function ChatPage() {
                   </label>
 
                   <label className="block text-xs font-semibold text-slate-500">
-                    {language === "vi" ? "Anh dai dien" : "Avatar"}
+                    {language === "vi" ? "Ảnh đại diện" : "Avatar"}
                     <input
                       type="file"
                       accept="image/*"
@@ -8431,29 +8431,29 @@ export function ChatPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block text-xs font-semibold text-slate-500">
-                      {language === "vi" ? "Gioi tinh" : "Gender"}
+                      {language === "vi" ? "Giới tính" : "Gender"}
                       <select
                         value={profileGender}
                         onChange={(event) => setProfileGender(event.target.value)}
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
                       >
                         <option value="">
-                          {language === "vi" ? "Khong chon" : "Not set"}
+                          {language === "vi" ? "Không chọn" : "Not set"}
                         </option>
                         <option value="MALE">
                           {language === "vi" ? "Nam" : "Male"}
                         </option>
                         <option value="FEMALE">
-                          {language === "vi" ? "Nu" : "Female"}
+                          {language === "vi" ? "Nữ" : "Female"}
                         </option>
                         <option value="OTHER">
-                          {language === "vi" ? "Khac" : "Other"}
+                          {language === "vi" ? "Khác" : "Other"}
                         </option>
                       </select>
                     </label>
 
                     <label className="block text-xs font-semibold text-slate-500">
-                      {language === "vi" ? "Ngay sinh" : "Birthdate"}
+                      {language === "vi" ? "Ngày sinh" : "Birthdate"}
                       <input
                         type="date"
                         value={profileBirthdate}
@@ -8473,14 +8473,14 @@ export function ChatPage() {
                   >
                     {isUploadingAvatar
                       ? language === "vi"
-                        ? "Dang tai anh..."
+                        ? "Đang tải ảnh..."
                         : "Uploading avatar..."
                       : isSavingProfile
                         ? language === "vi"
-                          ? "Dang luu..."
+                          ? "Đang lưu..."
                           : "Saving..."
                         : language === "vi"
-                          ? "Luu thong tin"
+                          ? "Lưu thông tin"
                           : "Save profile"}
                   </button>
 
@@ -8492,10 +8492,10 @@ export function ChatPage() {
                   >
                     {isDeletingProfile
                       ? language === "vi"
-                        ? "Dang xoa..."
+                        ? "Đang xóa..."
                         : "Deleting..."
                       : language === "vi"
-                        ? "Xoa tai khoan"
+                        ? "Xóa tài khoản"
                         : "Delete account"}
                   </button>
                 </div>
@@ -8507,11 +8507,11 @@ export function ChatPage() {
             <div className="mx-auto h-full max-w-5xl overflow-y-auto p-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-base font-semibold text-slate-800">
-                  {language === "vi" ? "Cuoc goi" : "Calls"}
+                  {language === "vi" ? "Cuộc gọi" : "Calls"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   {language === "vi"
-                    ? "Bat dau cuoc goi thoai/video truc tiep ngay trong ung dung."
+                    ? "Bắt đầu cuộc gọi thoại/video trực tiếp ngay trong ứng dụng."
                     : "Start voice/video calls directly inside the app."}
                 </p>
 
@@ -8524,7 +8524,7 @@ export function ChatPage() {
                     }}
                     className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {language === "vi" ? "Goi thoai" : "Voice call"}
+                    {language === "vi" ? "Gọi thoại" : "Voice call"}
                   </button>
                   <button
                     type="button"
@@ -8534,20 +8534,20 @@ export function ChatPage() {
                     }}
                     className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {language === "vi" ? "Goi video" : "Video call"}
+                    {language === "vi" ? "Gọi video" : "Video call"}
                   </button>
                 </div>
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  {language === "vi" ? "Lich su cuoc goi" : "Recent calls"}
+                  {language === "vi" ? "Lịch sử cuộc gọi" : "Recent calls"}
                 </h3>
 
                 {callHistory.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
                     {language === "vi"
-                      ? "Chua co cuoc goi nao trong phien nay."
+                      ? "Chưa có cuộc gọi nào trong phiên này."
                       : "No calls in this session yet."}
                   </p>
                 ) : (
@@ -8561,10 +8561,10 @@ export function ChatPage() {
                           <p className="truncate text-xs font-semibold text-slate-700">
                             {item.mode === "video"
                               ? language === "vi"
-                                ? "Goi video"
+                                ? "Gọi video"
                                 : "Video call"
                               : language === "vi"
-                                ? "Goi thoai"
+                                ? "Gọi thoại"
                                 : "Voice call"}{" "}
                             · {item.conversationName}
                           </p>
@@ -8575,22 +8575,22 @@ export function ChatPage() {
                         <span className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600">
                           {item.status === "connected"
                             ? language === "vi"
-                              ? "Da ket noi"
+                              ? "Đã kết nối"
                               : "Connected"
                             : item.status === "rejected"
                               ? language === "vi"
-                                ? "Bi tu choi"
+                                ? "Bị từ chối"
                                 : "Declined"
                               : item.status === "missed"
                                 ? language === "vi"
-                                  ? "Nho"
+                                  ? "Nhỡ"
                                   : "Missed"
                                 : item.status === "ended"
                                   ? language === "vi"
-                                    ? "Da ket thuc"
+                                    ? "Đã kết thúc"
                                     : "Ended"
                                   : language === "vi"
-                                    ? "Dang goi"
+                                    ? "Đang gọi"
                                     : "Calling"}
                         </span>
                       </div>
@@ -8605,28 +8605,28 @@ export function ChatPage() {
             <div className="mx-auto max-w-4xl p-6">
               <div className="rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h2 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Cai dat" : "Settings"}
+                  {language === "vi" ? "Cài đặt" : "Settings"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-300">
                   {language === "vi"
-                    ? "Tuy chinh quyen rieng tu, tin nhan va bao ve tai khoan"
+                    ? "Tùy chỉnh quyền riêng tư, tin nhắn và bảo vệ tài khoản"
                     : "Customize privacy, messaging, and account protection"}
                 </p>
               </div>
 
               <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h3 className="text-sm font-semibold text-slate-100">
-                  {language === "vi" ? "Quyen rieng tu thong tin" : "Profile privacy"}
+                  {language === "vi" ? "Quyền riêng tư thông tin" : "Profile privacy"}
                 </h3>
                 <div className="mt-3 space-y-3">
                   <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
-                        {language === "vi" ? "An ngay thang nam sinh" : "Hide birthdate"}
+                        {language === "vi" ? "Ẩn ngày tháng năm sinh" : "Hide birthdate"}
                       </p>
                       <p className="text-[11px] text-slate-300">
                         {language === "vi"
-                          ? "Nguoi khac se khong xem duoc ngay sinh cua ban."
+                          ? "Người khác sẽ không xem được ngày sinh của bạn."
                           : "Other users will not be able to see your birthdate."}
                       </p>
                     </div>
@@ -8641,11 +8641,11 @@ export function ChatPage() {
                   <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
-                        {language === "vi" ? "An email" : "Hide email"}
+                        {language === "vi" ? "Ẩn email" : "Hide email"}
                       </p>
                       <p className="text-[11px] text-slate-300">
                         {language === "vi"
-                          ? "Chi hien email cho chinh ban."
+                          ? "Chỉ hiện email cho chính bạn."
                           : "Only you will be able to see your email."}
                       </p>
                     </div>
@@ -8660,11 +8660,11 @@ export function ChatPage() {
                   <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
-                        {language === "vi" ? "An so dien thoai" : "Hide phone"}
+                        {language === "vi" ? "Ẩn số điện thoại" : "Hide phone"}
                       </p>
                       <p className="text-[11px] text-slate-300">
                         {language === "vi"
-                          ? "Nguoi khac se khong xem duoc so dien thoai cua ban."
+                          ? "Người khác sẽ không xem được số điện thoại của bạn."
                           : "Other users will not be able to see your phone number."}
                       </p>
                     </div>
@@ -8679,11 +8679,11 @@ export function ChatPage() {
                   <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
-                        {language === "vi" ? "Cho phep nhan tin tu nguoi la" : "Allow stranger messages"}
+                        {language === "vi" ? "Cho phép nhắn tin từ người lạ" : "Allow stranger messages"}
                       </p>
                       <p className="text-[11px] text-slate-300">
                         {language === "vi"
-                          ? "Tat di neu ban chi muon nguoi da ket ban moi duoc nhan tin."
+                          ? "Tắt đi nếu bạn chỉ muốn người đã kết bạn mới được nhắn tin."
                           : "Turn this off if only friends should be allowed to message you."}
                       </p>
                     </div>
@@ -8699,17 +8699,17 @@ export function ChatPage() {
                 <p className="mt-4 text-[11px] text-slate-300">
                   {isSavingProfile
                     ? language === "vi"
-                      ? "Dang luu cai dat..."
+                      ? "Đang lưu cài đặt..."
                       : "Saving settings..."
                     : language === "vi"
-                      ? "Cai dat rieng tu se duoc luu tu dong sau khi ban bat/tat."
+                      ? "Cài đặt riêng tư sẽ được lưu tự động sau khi bạn bật/tắt."
                       : "Privacy settings are saved automatically after each toggle."}
                 </p>
               </div>
 
               <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h3 className="text-sm font-semibold text-slate-100">
-                  {language === "vi" ? "Ma PIN an cuoc tro chuyen" : "Hidden conversation PIN"}
+                  {language === "vi" ? "Mã PIN ẩn cuộc trò chuyện" : "Hidden conversation PIN"}
                 </h3>
                 <p className="mt-1 text-xs text-slate-300">
                   {language === "vi"
@@ -8727,7 +8727,7 @@ export function ChatPage() {
                     inputMode="numeric"
                     value={settingsPinDraft}
                     onChange={(event) => setSettingsPinDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
-                    placeholder={language === "vi" ? "PIN moi (4-8 so)" : "New PIN (4-8 digits)"}
+                    placeholder={language === "vi" ? "PIN mới (4-8 số)" : "New PIN (4-8 digits)"}
                     className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
                   />
                   <input
@@ -8735,7 +8735,7 @@ export function ChatPage() {
                     inputMode="numeric"
                     value={settingsPinConfirmDraft}
                     onChange={(event) => setSettingsPinConfirmDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
-                    placeholder={language === "vi" ? "Nhap lai PIN" : "Confirm PIN"}
+                    placeholder={language === "vi" ? "Nhập lại PIN" : "Confirm PIN"}
                     className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
                   />
                 </div>
@@ -8748,10 +8748,10 @@ export function ChatPage() {
                   >
                     {hiddenConversationPin
                       ? language === "vi"
-                        ? "Doi PIN"
+                        ? "Đổi PIN"
                         : "Change PIN"
                       : language === "vi"
-                        ? "Tao PIN"
+                        ? "Tạo PIN"
                         : "Create PIN"}
                   </button>
 
@@ -8761,7 +8761,7 @@ export function ChatPage() {
                       onClick={onRemoveHiddenConversationPin}
                       className="rounded-lg border border-rose-300/60 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-500/15"
                     >
-                      {language === "vi" ? "Xoa PIN" : "Remove PIN"}
+                      {language === "vi" ? "Xóa PIN" : "Remove PIN"}
                     </button>
                   )}
                 </div>
@@ -8777,7 +8777,7 @@ export function ChatPage() {
                   className="inline-flex items-center gap-2 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 py-2 text-sm text-slate-100 transition-all duration-200 hover:bg-[#12355b]"
                 >
                   <LogOut size={16} />
-                  <span>{language === "vi" ? "Dang xuat" : "Logout"}</span>
+                  <span>{language === "vi" ? "Đăng xuất" : "Logout"}</span>
                 </Link>
               </div>
             </div>
@@ -8796,7 +8796,7 @@ export function ChatPage() {
                   setMessages([]);
                 }}
                 className="absolute left-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/75 text-lg font-semibold text-slate-100 shadow-lg backdrop-blur md:hidden"
-                aria-label={language === "vi" ? "Quay lai danh sach" : "Back to chats"}
+                aria-label={language === "vi" ? "Quay lại danh sách" : "Back to chats"}
               >
                 ‹
               </button>
@@ -8971,7 +8971,7 @@ export function ChatPage() {
                   allowComposer={canComposeGroupMessage}
                   composerDisabledMessage={
                     language === "vi"
-                      ? "Quan tri vien da tat quyen nhan tin cua thanh vien trong nhom nay."
+                      ? "Quản trị viên đã tắt quyền nhắn tin của thành viên trong nhóm này."
                       : "Admins disabled messaging for members in this group."
                   }
                   hasMoreMessages={Boolean(nextCursor)}
@@ -8996,15 +8996,15 @@ export function ChatPage() {
                     <CircleAlert size={34} />
                   </div>
                   <h2 className="mb-3 text-3xl font-bold tracking-tight text-slate-100">
-                    {language === "vi" ? "Tin nhan tu nguoi la" : "Stranger messages"}
+                    {language === "vi" ? "Tin nhắn từ người lạ" : "Stranger messages"}
                   </h2>
                   <p className="text-sm leading-relaxed text-slate-300">
                     {strangerSidebarChats.length > 0
                       ? language === "vi"
-                        ? "Nhung nguoi chua co trong danh ba se duoc tach rieng tai day. Chon mot cuoc tro chuyen de xem, ket ban hoac chan ngay."
+                        ? "Những người chưa có trong danh bạ sẽ được tách riêng tại đây. Chọn một cuộc trò chuyện để xem, kết bạn hoặc chặn ngay."
                         : "People outside your contacts are separated here. Select a conversation to review, add them, or block them."
                       : language === "vi"
-                        ? "Hien tai khong co tin nhan nao tu nguoi la."
+                        ? "Hiện tại không có tin nhắn nào từ người lạ."
                         : "There are no stranger messages right now."}
                   </p>
                 </div>
@@ -9114,10 +9114,10 @@ export function ChatPage() {
                         : "This user blocked you."
                       : isActiveDirectPeerStranger
                         ? language === "vi"
-                          ? "Hai ban chua ket ban. Hay ket ban truoc khi nhan tin."
+                          ? "Hai bạn chưa kết bạn. Hãy kết bạn trước khi nhắn tin."
                           : "You are not friends yet. Add this person before messaging."
                     : language === "vi"
-                      ? "Nguoi dung hien khong muon nhan tin."
+                      ? "Người dùng hiện không muốn nhắn tin."
                       : "This user currently does not want to receive messages."
                 }
                 showStrangerActionPrompt={directStrangerActionMode === "add-or-block"}
@@ -9173,12 +9173,12 @@ export function ChatPage() {
             <div>
               <h2 className="text-2xl font-semibold text-slate-800">
                 {language === "vi"
-                  ? "Chon tab Messages"
+                  ? "Chọn tab Messages"
                   : "Select Messages tab"}
               </h2>
               <p className="mt-2 text-sm text-slate-500">
                 {language === "vi"
-                  ? "Chuyen ve tab Messages de bat dau nhan tin real-time."
+                  ? "Chuyển về tab Messages để bắt đầu nhắn tin real-time."
                   : "Switch back to Messages tab to start real-time chat."}
               </p>
             </div>

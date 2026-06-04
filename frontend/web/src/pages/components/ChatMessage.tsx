@@ -184,7 +184,7 @@ export function ChatMessageRow({
               onClick={() => onSenderClick?.(message.senderId)}
               className="mb-1 px-1 text-[11px] font-semibold text-slate-300 transition hover:text-sky-300"
             >
-              {senderName ?? (language === "vi" ? "Thanh vien" : "Member")}
+              {senderName ?? (language === "vi" ? "Thành viên" : "Member")}
             </button>
           )}
 
@@ -217,7 +217,7 @@ export function ChatMessageRow({
               <div
                 className={`pointer-events-none absolute -top-2 z-10 inline-flex items-center rounded-full border border-sky-300/45 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-100 ${isMine ? "right-2" : "left-2"}`}
               >
-                {language === "vi" ? "Da chon" : "Selected"}
+                {language === "vi" ? "Đã chọn" : "Selected"}
               </div>
             )}
             {message.isPinned && !message.isRecalled && (

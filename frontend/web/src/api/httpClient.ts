@@ -98,7 +98,7 @@ httpClient.interceptors.response.use(
         | string
         | undefined;
       const fallbackMessage =
-        "Tai khoan da dang nhap o thiet bi khac. Vui long dang nhap lai.";
+        "Tài khoản đã đăng nhập ở thiết bị khác. Vui lòng đăng nhập lại.";
       sessionStorage.setItem(
         "zola_forced_logout_message",
         serverMessage && serverMessage.trim() ? serverMessage : fallbackMessage,

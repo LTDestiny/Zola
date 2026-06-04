@@ -44,13 +44,13 @@ export function AddFriendModal({
   const normalized = normalizeFriendshipStatus(friendshipStatus);
   const statusText = (() => {
     if (language === "vi") {
-      if (normalized === "NONE") return "Nguoi la";
-      if (normalized === "PENDING") return "Dang cho xac nhan";
-      if (normalized === "ACCEPTED") return "Ban be";
-      if (normalized === "BLOCKED") return "Da chan";
-      if (normalized === "REJECTED" || normalized === "DECLINED") return "Da tu choi";
-      if (normalized === "CANCELLED") return "Da thu hoi loi moi";
-      return "Nguoi la";
+      if (normalized === "NONE") return "Người lạ";
+      if (normalized === "PENDING") return "Đang chờ xác nhận";
+      if (normalized === "ACCEPTED") return "Bạn bè";
+      if (normalized === "BLOCKED") return "Đã chặn";
+      if (normalized === "REJECTED" || normalized === "DECLINED") return "Đã từ chối";
+      if (normalized === "CANCELLED") return "Đã thu hồi lời mời";
+      return "Người lạ";
     }
 
     if (normalized === "NONE") return "Stranger";
@@ -66,7 +66,7 @@ export function AddFriendModal({
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5">
         <h3 className="text-xl font-semibold text-slate-900">
-          {language === "vi" ? "Them ban bang email" : "Add friend by email"}
+          {language === "vi" ? "Thêm bạn bằng email" : "Add friend by email"}
         </h3>
 
         <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
@@ -85,10 +85,10 @@ export function AddFriendModal({
           >
             {isSearchingFriend
               ? language === "vi"
-                ? "Dang tim"
+                ? "Đang tìm"
                 : "Searching"
               : language === "vi"
-                ? "Tim"
+                ? "Tìm"
                 : "Search"}
           </button>
         </div>
@@ -116,7 +116,7 @@ export function AddFriendModal({
             className="h-10 rounded-lg border border-slate-300 px-4 text-slate-600"
             onClick={onClose}
           >
-            {language === "vi" ? "Dong" : "Close"}
+            {language === "vi" ? "Đóng" : "Close"}
           </button>
           <button
             type="button"
@@ -124,7 +124,7 @@ export function AddFriendModal({
             onClick={() => void onAddFriend()}
             disabled={isSubmittingFriend || !canAddFriend}
           >
-            {language === "vi" ? "Ket ban" : "Add friend"}
+            {language === "vi" ? "Kết bạn" : "Add friend"}
           </button>
         </div>
       </div>

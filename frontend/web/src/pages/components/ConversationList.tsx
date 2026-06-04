@@ -23,9 +23,9 @@ function initials(name: string) {
 }
 
 function formatTime(value: string | null, language: "vi" | "en") {
-  if (!value) return language === "vi" ? "Khong ro" : "N/A";
+  if (!value) return language === "vi" ? "Không rõ" : "N/A";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return language === "vi" ? "Khong ro" : "N/A";
+  if (Number.isNaN(date.getTime())) return language === "vi" ? "Không rõ" : "N/A";
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -54,7 +54,7 @@ export function ConversationList({
           onClick={onOpenAddFriend}
         >
           <MessageSquarePlus size={16} />
-          <span>{language === "vi" ? "Them ban" : "New Message"}</span>
+          <span>{language === "vi" ? "Thêm bạn" : "New Message"}</span>
         </button>
       </div>
 
@@ -63,7 +63,7 @@ export function ConversationList({
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-4 text-sm outline-none focus:border-indigo-300"
-            placeholder={language === "vi" ? "Tim kiem hoi thoai..." : "Search conversations..."}
+            placeholder={language === "vi" ? "Tìm kiếm hội thoại..." : "Search conversations..."}
             type="text"
             value={searchText}
             onChange={(event) => onSearchTextChange(event.target.value)}
@@ -74,13 +74,13 @@ export function ConversationList({
       <div className="max-h-[42vh] space-y-2 overflow-y-auto px-3 pb-4 lg:max-h-none lg:flex-1 lg:pb-6">
         {isLoadingConversations && (
           <div className="rounded-xl bg-white p-3 text-sm text-slate-500">
-            {language === "vi" ? "Dang tai hoi thoai..." : "Loading conversations..."}
+            {language === "vi" ? "Đang tải hội thoại..." : "Loading conversations..."}
           </div>
         )}
 
         {!isLoadingConversations && conversations.length === 0 && (
           <div className="rounded-xl bg-white p-3 text-sm text-slate-500">
-            {language === "vi" ? "Chua co hoi thoai. Bam New Message de tao chat 1-1." : "No conversations. Click New Message to create direct chat."}
+            {language === "vi" ? "Chưa có hội thoại. Bấm New Message để tạo chat 1-1." : "No conversations. Click New Message to create direct chat."}
           </div>
         )}
 
@@ -120,7 +120,7 @@ export function ConversationList({
           onClick={() => void onRefresh()}
         >
           <RefreshCcw size={14} />
-          {language === "vi" ? "Lam moi" : "Refresh"}
+          {language === "vi" ? "Làm mới" : "Refresh"}
         </button>
       </div>
     </section>

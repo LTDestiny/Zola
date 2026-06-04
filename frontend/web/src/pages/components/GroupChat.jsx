@@ -392,7 +392,7 @@ export function GroupChat({
         const eventTime = String(item.json?.when ?? item.json?.eventTime ?? item.createdAt ?? "");
         return {
           id: item.id,
-          title: title || (language === "vi" ? "Nhac hen" : "Reminder"),
+          title: title || (language === "vi" ? "Nhắc hẹn" : "Reminder"),
           eventTime,
           createdAtMs: item.createdAtMs,
         };
@@ -423,7 +423,7 @@ export function GroupChat({
         sourceId: item.id,
         createdAtMs: item.createdAtMs,
         createdAt: item.createdAt,
-        title: String(item.json?.title ?? (language === "vi" ? "Ghi chu nhom" : "Group note")),
+        title: String(item.json?.title ?? (language === "vi" ? "Ghi chú nhóm" : "Group note")),
         preview: String(item.json?.note ?? item.json?.preview ?? item.content ?? ""),
         itemType: "note",
         senderId: item.senderId ?? null,
@@ -437,9 +437,9 @@ export function GroupChat({
         sourceId: item.id,
         createdAtMs: item.createdAtMs,
         createdAt: item.createdAt,
-        title: String(item.json?.question ?? item.json?.title ?? (language === "vi" ? "Binh chon" : "Poll")),
+        title: String(item.json?.question ?? item.json?.title ?? (language === "vi" ? "Bình chọn" : "Poll")),
         preview: Array.isArray(item.json?.options)
-          ? `${item.json.options.length} ${language === "vi" ? "lua chon" : "options"}`
+          ? `${item.json.options.length} ${language === "vi" ? "lựa chọn" : "options"}`
           : "",
         itemType: "poll",
         senderId: item.senderId ?? null,
@@ -697,12 +697,12 @@ export function GroupChat({
 
   const renderMemberTag = (memberId) => {
     if (memberId === ownerId) {
-      return language === "vi" ? "Truong nhom" : "Owner";
+      return language === "vi" ? "Trưởng nhóm" : "Owner";
     }
     if (adminIds.includes(memberId)) {
-      return language === "vi" ? "Pho nhom" : "Admin";
+      return language === "vi" ? "Phó nhóm" : "Admin";
     }
-    return language === "vi" ? "Thanh vien" : "Member";
+    return language === "vi" ? "Thành viên" : "Member";
   };
 
   const iconActionBase =
@@ -727,7 +727,7 @@ export function GroupChat({
         <div className="shrink-0 border-b border-[#1f4673] px-3 py-3 lg:px-4">
           <div className="flex items-center justify-between">
             <p className="text-xl font-bold text-slate-100 lg:text-2xl lg:text-center">
-              {language === "vi" ? "Thong tin nhom" : "Group details"}
+              {language === "vi" ? "Thông tin nhóm" : "Group details"}
             </p>
             <button
               type="button"
@@ -757,7 +757,7 @@ export function GroupChat({
               title={
                 canEditGroupProfile
                   ? language === "vi"
-                    ? "Doi anh nhom"
+                    ? "Đổi ảnh nhóm"
                     : "Change group avatar"
                   : undefined
               }
@@ -784,7 +784,7 @@ export function GroupChat({
                   type="text"
                   value={nameDraft}
                   onChange={(event) => setNameDraft(event.target.value)}
-                  placeholder={language === "vi" ? "Ten nhom" : "Group name"}
+                  placeholder={language === "vi" ? "Tên nhóm" : "Group name"}
                   className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
                 />
                 <div className="flex items-center justify-center gap-2">
@@ -796,7 +796,7 @@ export function GroupChat({
                     }}
                     className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
                   >
-                    {language === "vi" ? "Huy" : "Cancel"}
+                    {language === "vi" ? "Hủy" : "Cancel"}
                   </button>
                   <button
                     type="button"
@@ -806,7 +806,7 @@ export function GroupChat({
                     disabled={isUpdatingGroupProfile || !nameDraft.trim()}
                     className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {language === "vi" ? "Luu ten" : "Save name"}
+                    {language === "vi" ? "Lưu tên" : "Save name"}
                   </button>
                 </div>
               </div>
@@ -821,12 +821,12 @@ export function GroupChat({
                 }}
                 className={`mt-3 max-w-full break-words px-2 text-center text-xl font-semibold leading-tight text-slate-100 lg:text-2xl ${canEditGroupProfile ? "cursor-pointer hover:text-sky-200" : "cursor-default"}`}
               >
-                {conversation?.name ?? (language === "vi" ? "Nhom" : "Group")}
+                {conversation?.name ?? (language === "vi" ? "Nhóm" : "Group")}
               </button>
             )}
 
             <p className="mt-1 text-xs text-slate-400">
-              {language === "vi" ? "Cong dong" : "Community"}
+              {language === "vi" ? "Cộng đồng" : "Community"}
             </p>
             {canEditGroupProfile && (
               <div className="mt-2 flex items-center gap-2">
@@ -838,10 +838,10 @@ export function GroupChat({
                 >
                   {isUpdatingGroupProfile
                     ? language === "vi"
-                      ? "Dang cap nhat..."
+                      ? "Đang cập nhật..."
                       : "Updating..."
                     : language === "vi"
-                      ? "Doi anh"
+                      ? "Đổi ảnh"
                       : "Change avatar"}
                 </button>
               </div>
@@ -857,7 +857,7 @@ export function GroupChat({
               <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
                 <BellOff size={12} className="lg:size-[14px]" />
               </span>
-              <span>{language === "vi" ? "Bat thong bao" : "Notify"}</span>
+              <span>{language === "vi" ? "Bật thông báo" : "Notify"}</span>
             </button>
 
             <button
@@ -868,7 +868,7 @@ export function GroupChat({
               <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
                 <Pin size={12} className="lg:size-[14px]" />
               </span>
-              <span>{language === "vi" ? "Ghim hoi thoai" : "Pin"}</span>
+              <span>{language === "vi" ? "Ghim hội thoại" : "Pin"}</span>
             </button>
 
             <button
@@ -880,7 +880,7 @@ export function GroupChat({
               <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
                 <UserPlus size={12} className="lg:size-[14px]" />
               </span>
-              <span>{language === "vi" ? "Them thanh vien" : "Add member"}</span>
+              <span>{language === "vi" ? "Thêm thành viên" : "Add member"}</span>
             </button>
 
             <button
@@ -892,14 +892,14 @@ export function GroupChat({
               <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-700/80 lg:h-8 lg:w-8">
                 <Settings size={12} className="lg:size-[14px]" />
               </span>
-              <span>{language === "vi" ? "Quan ly nhom" : "Manage"}</span>
+              <span>{language === "vi" ? "Quản lý nhóm" : "Manage"}</span>
             </button>
           </div>
 
           {!canOpenManage && (
             <p className="mt-2 text-center text-[11px] text-amber-300">
               {language === "vi"
-                ? "Chi Truong/Pho nhom moi vao duoc phan Quan ly nhom"
+                ? "Chỉ Trưởng/Phó nhóm mới vào được phần Quản lý nhóm"
                 : "Only owner/admin can access group management"}
             </p>
           )}
@@ -909,7 +909,7 @@ export function GroupChat({
           {!manageMode && panelView === "default" && (
             <>
               <Section
-                title={language === "vi" ? "Thanh vien nhom" : "Members"}
+                title={language === "vi" ? "Thành viên nhóm" : "Members"}
                 open={openSections.members}
                 onToggle={() => toggleSection("members")}
               >
@@ -921,7 +921,7 @@ export function GroupChat({
                   >
                     <Users size={16} className="text-slate-300" />
                     <span>
-                      {safeMembers.length} {language === "vi" ? "thanh vien" : "members"}
+                      {safeMembers.length} {language === "vi" ? "thành viên" : "members"}
                     </span>
                   </button>
 
@@ -929,7 +929,7 @@ export function GroupChat({
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-xs text-slate-300">
-                          {language === "vi" ? "Link tham gia nhom" : "Join link"}
+                          {language === "vi" ? "Link tham gia nhóm" : "Join link"}
                         </p>
                         {joinLink ? (
                           <a
@@ -942,7 +942,7 @@ export function GroupChat({
                           </a>
                         ) : (
                           <p className="truncate text-sm font-semibold text-sky-300">
-                            {language === "vi" ? "Dang tao link..." : "Generating link..."}
+                            {language === "vi" ? "Đang tạo link..." : "Generating link..."}
                           </p>
                         )}
                       </div>
@@ -971,7 +971,7 @@ export function GroupChat({
               </Section>
 
               <Section
-                title={language === "vi" ? "Bang tin nhom" : "Board"}
+                title={language === "vi" ? "Bảng tin nhóm" : "Board"}
                 open={openSections.board}
                 onToggle={() => toggleSection("board")}
               >
@@ -979,14 +979,14 @@ export function GroupChat({
                   <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2">
                     <div className="mb-1 flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">
-                        {language === "vi" ? "Danh sach ghim va ghi chu" : "Pinned & notes"}
+                        {language === "vi" ? "Danh sách ghim và ghi chú" : "Pinned & notes"}
                       </p>
                       <span className="text-[11px] text-amber-100">{safePinnedMessages.length}</span>
                     </div>
 
                     {safePinnedMessages.length === 0 ? (
                       <p className="text-xs text-amber-100/80">
-                        {language === "vi" ? "Chua co tin nhan nao duoc ghim" : "No pinned messages yet"}
+                        {language === "vi" ? "Chưa có tin nhắn nào được ghim" : "No pinned messages yet"}
                       </p>
                     ) : (
                       <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
@@ -1027,7 +1027,7 @@ export function GroupChat({
                                 }}
                                 className={`rounded-md border border-rose-300/40 px-2 py-1 text-[10px] font-semibold ${canPinBoardItems ? "bg-rose-500/10 text-rose-100 hover:bg-rose-500/20" : "bg-slate-800/60 text-slate-500"}`}
                               >
-                                {language === "vi" ? "Bo ghim" : "Unpin"}
+                                {language === "vi" ? "Bỏ ghim" : "Unpin"}
                               </button>
                             </span>
                           </div>
@@ -1042,7 +1042,7 @@ export function GroupChat({
                     className="flex w-full items-center gap-2 rounded-xl bg-slate-900/45 px-3 py-2 text-left hover:bg-slate-800"
                   >
                     <Newspaper size={16} className="text-slate-300" />
-                    <span>{language === "vi" ? "Danh sach nhac hen" : "Reminder list"}</span>
+                    <span>{language === "vi" ? "Danh sách nhắc hẹn" : "Reminder list"}</span>
                   </button>
                   <button
                     type="button"
@@ -1050,7 +1050,7 @@ export function GroupChat({
                     className="flex w-full items-center gap-2 rounded-xl bg-slate-900/45 px-3 py-2 text-left hover:bg-slate-800"
                   >
                     <FileText size={16} className="text-slate-300" />
-                    <span>{language === "vi" ? "Ghi chu, ghim, binh chon" : "Notes, pins, polls"}</span>
+                    <span>{language === "vi" ? "Ghi chú, ghim, bình chọn" : "Notes, pins, polls"}</span>
                   </button>
 
                   <button
@@ -1060,13 +1060,13 @@ export function GroupChat({
                     className={`flex w-full items-center gap-2 rounded-xl border border-sky-400/30 px-3 py-2 text-left ${canCreatePolls ? "bg-sky-500/10 hover:bg-sky-500/15" : "bg-slate-800/60 text-slate-500"}`}
                   >
                     <Newspaper size={16} className="text-sky-200" />
-                    <span>{language === "vi" ? "Tao binh chon" : "Create poll"}</span>
+                    <span>{language === "vi" ? "Tạo bình chọn" : "Create poll"}</span>
                   </button>
 
                   {!canCreatePolls && (
                     <p className="text-[11px] text-amber-300">
                       {language === "vi"
-                        ? "Ban khong duoc phep tao binh chon"
+                        ? "Bạn không được phép tạo bình chọn"
                         : "You are not allowed to create polls"}
                     </p>
                   )}
@@ -1078,7 +1078,7 @@ export function GroupChat({
                         value={pollQuestionDraft}
                         onChange={(event) => setPollQuestionDraft(event.target.value)}
                         maxLength={200}
-                        placeholder={language === "vi" ? "Nhap cau hoi binh chon" : "Enter poll question"}
+                        placeholder={language === "vi" ? "Nhập câu hỏi bình chọn" : "Enter poll question"}
                         className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
                       />
 
@@ -1090,7 +1090,7 @@ export function GroupChat({
                               value={option}
                               onChange={(event) => updatePollOption(index, event.target.value)}
                               maxLength={80}
-                              placeholder={language === "vi" ? `Lua chon ${index + 1}` : `Option ${index + 1}`}
+                              placeholder={language === "vi" ? `Lựa chọn ${index + 1}` : `Option ${index + 1}`}
                               className="h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2.5 text-xs text-slate-100"
                             />
                             <button
@@ -1099,7 +1099,7 @@ export function GroupChat({
                               onClick={() => removePollOption(index)}
                               className="rounded-md border border-rose-400/40 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {language === "vi" ? "Xoa" : "Remove"}
+                              {language === "vi" ? "Xóa" : "Remove"}
                             </button>
                           </div>
                         ))}
@@ -1111,24 +1111,24 @@ export function GroupChat({
                         onClick={addPollOption}
                         className="mt-2 rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {language === "vi" ? "Them lua chon" : "Add option"}
+                        {language === "vi" ? "Thêm lựa chọn" : "Add option"}
                       </button>
 
                       <div className="mt-2 space-y-1">
                         <label className="block text-xs text-slate-200">
-                          <span>{language === "vi" ? "Han binh chon" : "Poll deadline"}</span>
+                          <span>{language === "vi" ? "Hạn bình chọn" : "Poll deadline"}</span>
                           <select
                             value={pollDeadlineMinutes}
                             onChange={(event) => setPollDeadlineMinutes(Number(event.target.value))}
                             className="mt-1 h-8 w-full rounded-md border border-slate-600 bg-slate-900 px-2 text-xs text-slate-100"
                           >
-                            <option value={30}>{language === "vi" ? "30 phut" : "30 minutes"}</option>
-                            <option value={60}>{language === "vi" ? "1 gio" : "1 hour"}</option>
-                            <option value={180}>{language === "vi" ? "3 gio" : "3 hours"}</option>
-                            <option value={720}>{language === "vi" ? "12 gio" : "12 hours"}</option>
-                            <option value={1440}>{language === "vi" ? "1 ngay" : "1 day"}</option>
-                            <option value={4320}>{language === "vi" ? "3 ngay" : "3 days"}</option>
-                            <option value={10080}>{language === "vi" ? "7 ngay" : "7 days"}</option>
+                            <option value={30}>{language === "vi" ? "30 phút" : "30 minutes"}</option>
+                            <option value={60}>{language === "vi" ? "1 giờ" : "1 hour"}</option>
+                            <option value={180}>{language === "vi" ? "3 giờ" : "3 hours"}</option>
+                            <option value={720}>{language === "vi" ? "12 giờ" : "12 hours"}</option>
+                            <option value={1440}>{language === "vi" ? "1 ngày" : "1 day"}</option>
+                            <option value={4320}>{language === "vi" ? "3 ngày" : "3 days"}</option>
+                            <option value={10080}>{language === "vi" ? "7 ngày" : "7 days"}</option>
                           </select>
                         </label>
                         <label className="inline-flex items-center gap-2 text-xs text-slate-200">
@@ -1138,7 +1138,7 @@ export function GroupChat({
                             onChange={(event) => setIsPollMultiChoice(event.target.checked)}
                             className="h-4 w-4 accent-sky-500"
                           />
-                          <span>{language === "vi" ? "Cho phep chon nhieu dap an" : "Allow multiple choices"}</span>
+                          <span>{language === "vi" ? "Cho phép chọn nhiều đáp án" : "Allow multiple choices"}</span>
                         </label>
                         <label className="inline-flex items-center gap-2 text-xs text-slate-200">
                           <input
@@ -1147,7 +1147,7 @@ export function GroupChat({
                             onChange={(event) => setIsPollAllowChangeVote(event.target.checked)}
                             className="h-4 w-4 accent-sky-500"
                           />
-                          <span>{language === "vi" ? "Cho phep doi lua chon" : "Allow changing vote"}</span>
+                          <span>{language === "vi" ? "Cho phép đổi lựa chọn" : "Allow changing vote"}</span>
                         </label>
                         <label className="inline-flex items-center gap-2 text-xs text-slate-200">
                           <input
@@ -1156,7 +1156,7 @@ export function GroupChat({
                             onChange={(event) => setIsPollHideResultsBeforeVote(event.target.checked)}
                             className="h-4 w-4 accent-sky-500"
                           />
-                          <span>{language === "vi" ? "An ket qua truoc khi bo phieu" : "Hide results before voting"}</span>
+                          <span>{language === "vi" ? "Ẩn kết quả trước khi bỏ phiếu" : "Hide results before voting"}</span>
                         </label>
                       </div>
 
@@ -1166,7 +1166,7 @@ export function GroupChat({
                           onClick={resetPollDraft}
                           className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
                         >
-                          {language === "vi" ? "Huy" : "Cancel"}
+                          {language === "vi" ? "Hủy" : "Cancel"}
                         </button>
                         <button
                           type="button"
@@ -1176,7 +1176,7 @@ export function GroupChat({
                           disabled={!pollQuestionDraft.trim()}
                           className="rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {language === "vi" ? "Tao binh chon" : "Create poll"}
+                          {language === "vi" ? "Tạo bình chọn" : "Create poll"}
                         </button>
                       </div>
                     </div>
@@ -1189,7 +1189,7 @@ export function GroupChat({
                     className={`flex w-full items-center gap-2 rounded-xl border border-lime-400/30 px-3 py-2 text-left ${canCreateNotes ? "bg-lime-500/10 hover:bg-lime-500/15" : "bg-slate-800/60 text-slate-500"}`}
                   >
                     <FileText size={16} className="text-lime-200" />
-                    <span>{language === "vi" ? "Tao ghi chu nhom" : "Create group note"}</span>
+                    <span>{language === "vi" ? "Tạo ghi chú nhóm" : "Create group note"}</span>
                   </button>
 
                   {false && isCreateNoteOpen && (
@@ -1197,7 +1197,7 @@ export function GroupChat({
                       <textarea
                         value={noteDraft}
                         onChange={(event) => setNoteDraft(event.target.value)}
-                        placeholder={language === "vi" ? "Nhap noi dung ghi chu..." : "Enter note content..."}
+                        placeholder={language === "vi" ? "Nhập nội dung ghi chú..." : "Enter note content..."}
                         rows={3}
                         className="w-full resize-none rounded-lg border border-slate-600 bg-slate-900 px-2.5 py-2 text-sm text-slate-100"
                       />
@@ -1210,7 +1210,7 @@ export function GroupChat({
                         />
                         <span>
                           {language === "vi"
-                            ? "Ghim len dau tro chuyen"
+                            ? "Ghim lên đầu trò chuyện"
                             : "Pin to top of conversation"}
                         </span>
                       </label>
@@ -1224,7 +1224,7 @@ export function GroupChat({
                           }}
                           className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
                         >
-                          {language === "vi" ? "Huy" : "Cancel"}
+                          {language === "vi" ? "Hủy" : "Cancel"}
                         </button>
                         <button
                           type="button"
@@ -1234,7 +1234,7 @@ export function GroupChat({
                           disabled={!noteDraft.trim()}
                           className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {language === "vi" ? "Tao ghi chu" : "Create note"}
+                          {language === "vi" ? "Tạo ghi chú" : "Create note"}
                         </button>
                       </div>
                     </div>
@@ -1243,13 +1243,13 @@ export function GroupChat({
               </Section>
 
               <Section
-                title={language === "vi" ? "Anh/Video" : "Media"}
+                title={language === "vi" ? "Ảnh/Video" : "Media"}
                 open={openSections.media}
                 onToggle={() => toggleSection("media")}
               >
                 {mediaItems.length === 0 ? (
                   <p className="text-xs text-slate-400">
-                    {language === "vi" ? "Chua co media duoc chia se" : "No media shared yet"}
+                    {language === "vi" ? "Chưa có media được chia sẻ" : "No media shared yet"}
                   </p>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
@@ -1281,7 +1281,7 @@ export function GroupChat({
                   onClick={() => openArchiveView("media")}
                   className="mt-3 w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-600"
                 >
-                  {language === "vi" ? "Xem tat ca" : "View all"}
+                  {language === "vi" ? "Xem tất cả" : "View all"}
                 </button>
               </Section>
 
@@ -1293,7 +1293,7 @@ export function GroupChat({
                 {fileItems.length === 0 ? (
                   <p className="text-xs text-slate-400">
                     {language === "vi"
-                      ? "Chua co File duoc chia se trong hoi thoai nay"
+                      ? "Chưa có File được chia sẻ trong hội thoại này"
                       : "No files shared in this conversation"}
                   </p>
                 ) : (
@@ -1322,7 +1322,7 @@ export function GroupChat({
                   onClick={() => openArchiveView("files")}
                   className="mt-3 w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-600"
                 >
-                  {language === "vi" ? "Xem tat ca" : "View all"}
+                  {language === "vi" ? "Xem tất cả" : "View all"}
                 </button>
               </Section>
 
@@ -1333,7 +1333,7 @@ export function GroupChat({
               >
                 {linkItems.length === 0 ? (
                   <p className="text-xs text-slate-400">
-                    {language === "vi" ? "Chua co link duoc chia se" : "No links shared yet"}
+                    {language === "vi" ? "Chưa có link được chia sẻ" : "No links shared yet"}
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -1359,12 +1359,12 @@ export function GroupChat({
                   onClick={() => openArchiveView("links")}
                   className="mt-3 w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-600"
                 >
-                  {language === "vi" ? "Xem tat ca" : "View all"}
+                  {language === "vi" ? "Xem tất cả" : "View all"}
                 </button>
               </Section>
 
               <Section
-                title={language === "vi" ? "Thiet lap bao mat" : "Security settings"}
+                title={language === "vi" ? "Thiết lập bảo mật" : "Security settings"}
                 open={openSections.security}
                 onToggle={() => toggleSection("security")}
               >
@@ -1372,17 +1372,17 @@ export function GroupChat({
                   <div className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
                     <div className="flex items-center gap-2">
                       <Shield size={15} className="text-slate-300" />
-                      <span>{language === "vi" ? "Tin nhan tu xoa" : "Self-destruct"}</span>
+                      <span>{language === "vi" ? "Tin nhắn tự xóa" : "Self-destruct"}</span>
                     </div>
                     <span className="text-xs text-slate-400">
-                      {language === "vi" ? "Khong bao gio" : "Never"}
+                      {language === "vi" ? "Không bao giờ" : "Never"}
                     </span>
                   </div>
 
                   <label className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
                     <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className="text-slate-300" />
-                      <span>{language === "vi" ? "An tro chuyen" : "Hide conversation"}</span>
+                      <span>{language === "vi" ? "Ẩn trò chuyện" : "Hide conversation"}</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1404,10 +1404,10 @@ export function GroupChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-[#14365f]"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? `Thanh vien (${safeMembers.length})` : `Members (${safeMembers.length})`}
+                  {language === "vi" ? `Thành viên (${safeMembers.length})` : `Members (${safeMembers.length})`}
                 </h3>
                 <span className="w-8" />
               </div>
@@ -1417,21 +1417,21 @@ export function GroupChat({
                   type="text"
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
-                  placeholder={language === "vi" ? "Tim kiem thanh vien" : "Search members"}
+                  placeholder={language === "vi" ? "Tìm kiếm thành viên" : "Search members"}
                   className="h-10 w-full rounded-xl border border-[#335b89] bg-[#0a1b34] px-3 text-sm text-slate-100 placeholder:text-slate-500"
                 />
 
                 {canInviteMembers && (
                   <div className="flex items-center justify-between gap-2 rounded-xl border border-[#2a4b73] bg-[#0a1f3d] px-3 py-2.5">
                     <p className="text-xs font-medium text-slate-300">
-                      {language === "vi" ? "Them tu danh sach ban be" : "Add from friend list"}
+                      {language === "vi" ? "Thêm từ danh sách bạn bè" : "Add from friend list"}
                     </p>
                     <button
                       type="button"
                       onClick={openMemberPicker}
                       className="rounded-xl bg-[#1f8cff] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1578e2]"
                     >
-                      {language === "vi" ? "Chon" : "Select"}
+                      {language === "vi" ? "Chọn" : "Select"}
                     </button>
                   </div>
                 )}
@@ -1441,7 +1441,7 @@ export function GroupChat({
                     <div className="space-y-2">
                       <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300/90">
                         {language === "vi"
-                          ? `Dang cho duyet (${filteredPendingMembers.length})`
+                          ? `Đang chờ duyệt (${filteredPendingMembers.length})`
                           : `Pending approval (${filteredPendingMembers.length})`}
                       </div>
 
@@ -1468,7 +1468,7 @@ export function GroupChat({
                                   </div>
                                 )}
                                 <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-amber-400 px-1.5 py-[2px] text-[9px] font-bold uppercase text-slate-900">
-                                  {language === "vi" ? "Cho duyet" : "Pending"}
+                                  {language === "vi" ? "Chờ duyệt" : "Pending"}
                                 </span>
                               </div>
 
@@ -1476,13 +1476,13 @@ export function GroupChat({
                                 <p className="truncate text-[15px] font-semibold leading-5 text-slate-100">{memberName}</p>
                                 <p className="truncate pt-0.5 text-xs text-amber-100/90">
                                   {language === "vi"
-                                    ? `${memberName} dang cho truong, pho nhom duyet vao nhom`
+                                    ? `${memberName} đang chờ trưởng, phó nhóm duyệt vào nhóm`
                                     : `${memberName} is waiting for admin approval to join`}
                                 </p>
                                 {requestedByName && (
                                   <p className="truncate pt-1 text-[11px] text-slate-300/90">
                                     {language === "vi"
-                                      ? `Nguoi them: ${requestedByName}`
+                                      ? `Người thêm: ${requestedByName}`
                                       : `Requested by: ${requestedByName}`}
                                   </p>
                                 )}
@@ -1496,14 +1496,14 @@ export function GroupChat({
                                   onClick={() => onRejectPendingMember?.(memberId)}
                                   className="rounded-lg border border-slate-500/70 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
                                 >
-                                  {language === "vi" ? "Tu choi" : "Reject"}
+                                  {language === "vi" ? "Từ chối" : "Reject"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => onApprovePendingMember?.(memberId)}
                                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
                                 >
-                                  {language === "vi" ? "Dong y" : "Approve"}
+                                  {language === "vi" ? "Đồng ý" : "Approve"}
                                 </button>
                               </div>
                             )}
@@ -1600,10 +1600,10 @@ export function GroupChat({
                               >
                                 {memberIsAdmin
                                   ? language === "vi"
-                                    ? "Go quyen pho nhom"
+                                    ? "Gỡ quyền phó nhóm"
                                     : "Remove admin role"
                                   : language === "vi"
-                                    ? "Them quyen pho nhom"
+                                    ? "Thêm quyền phó nhóm"
                                     : "Grant admin role"}
                               </button>
                             )}
@@ -1620,7 +1620,7 @@ export function GroupChat({
                                 }}
                                 className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-indigo-200 hover:bg-slate-700"
                               >
-                                {language === "vi" ? "Chuyen truong nhom" : "Transfer owner"}
+                                {language === "vi" ? "Chuyển trưởng nhóm" : "Transfer owner"}
                               </button>
                             )}
                             {canRemoveMember && (
@@ -1632,7 +1632,7 @@ export function GroupChat({
                                 }}
                                 className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-rose-200 hover:bg-rose-500/10"
                               >
-                                {language === "vi" ? "Xoa khoi nhom" : "Remove member"}
+                                {language === "vi" ? "Xóa khỏi nhóm" : "Remove member"}
                               </button>
                             )}
                           </div>
@@ -1654,10 +1654,10 @@ export function GroupChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Bang tin nhom" : "Group board"}
+                  {language === "vi" ? "Bảng tin nhóm" : "Group board"}
                 </h3>
                 <button
                   type="button"
@@ -1671,10 +1671,10 @@ export function GroupChat({
 
               <div className="mb-3 grid grid-cols-4 gap-1 rounded-xl bg-slate-900/45 p-1">
                 {[
-                  { id: "all", labelVi: "Tat ca", labelEn: "All" },
+                  { id: "all", labelVi: "Tất cả", labelEn: "All" },
                   { id: "pins", labelVi: "Tin ghim", labelEn: "Pins" },
-                  { id: "notes", labelVi: "Ghi chu", labelEn: "Notes" },
-                  { id: "polls", labelVi: "Binh chon", labelEn: "Polls" },
+                  { id: "notes", labelVi: "Ghi chú", labelEn: "Notes" },
+                  { id: "polls", labelVi: "Bình chọn", labelEn: "Polls" },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -1690,7 +1690,7 @@ export function GroupChat({
               <div className="max-h-[44vh] space-y-2 overflow-y-auto pr-1">
                 {boardItemsForView.length === 0 ? (
                   <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                    {language === "vi" ? "Chua co du lieu trong muc nay" : "No items in this tab yet"}
+                    {language === "vi" ? "Chưa có dữ liệu trong mục này" : "No items in this tab yet"}
                   </p>
                 ) : (
                   boardItemsForView.map((item) => (
@@ -1720,7 +1720,7 @@ export function GroupChat({
                               }}
                               className={`rounded-md border border-rose-400/40 px-2 py-1 text-[11px] ${canPinBoardItems ? "text-rose-200 hover:bg-rose-500/10" : "text-slate-500"}`}
                             >
-                              {language === "vi" ? "Bo ghim" : "Unpin"}
+                              {language === "vi" ? "Bỏ ghim" : "Unpin"}
                             </button>
                           </>
                         )}
@@ -1737,7 +1737,7 @@ export function GroupChat({
                   disabled={!canCreateNotes}
                   className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreateNotes ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
                 >
-                  {language === "vi" ? "Tao ghi chu" : "Create note"}
+                  {language === "vi" ? "Tạo ghi chú" : "Create note"}
                 </button>
                 <button
                   type="button"
@@ -1745,7 +1745,7 @@ export function GroupChat({
                   onClick={() => setIsCreatePollOpen(true)}
                   className={`rounded-lg px-3 py-2 text-sm font-semibold ${canCreatePolls ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
                 >
-                  {language === "vi" ? "Tao binh chon" : "Create poll"}
+                  {language === "vi" ? "Tạo bình chọn" : "Create poll"}
                 </button>
               </div>
             </section>
@@ -1760,10 +1760,10 @@ export function GroupChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Danh sach nhac hen" : "Reminder list"}
+                  {language === "vi" ? "Danh sách nhắc hẹn" : "Reminder list"}
                 </h3>
                 <button
                   type="button"
@@ -1777,7 +1777,7 @@ export function GroupChat({
               <div className="space-y-2">
                 {reminderItems.length === 0 ? (
                   <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                    {language === "vi" ? "Chua co nhac hen" : "No reminders yet"}
+                    {language === "vi" ? "Chưa có nhắc hẹn" : "No reminders yet"}
                   </p>
                 ) : (
                   reminderItems.map((item) => (
@@ -1796,7 +1796,7 @@ export function GroupChat({
                 onClick={() => setIsCreateReminderOpen(true)}
                 className={`mt-3 w-full rounded-lg px-3 py-2 text-sm font-semibold ${canCreateReminders ? "bg-sky-700 text-white hover:bg-sky-600" : "bg-slate-700 text-slate-500"}`}
               >
-                {language === "vi" ? "Tao nhac hen" : "Create reminder"}
+                {language === "vi" ? "Tạo nhắc hẹn" : "Create reminder"}
               </button>
             </section>
           )}
@@ -1810,17 +1810,17 @@ export function GroupChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Kho luu tru" : "Archive"}
+                  {language === "vi" ? "Kho lưu trữ" : "Archive"}
                 </h3>
                 <span />
               </div>
 
               <div className="mb-2 grid grid-cols-3 gap-1 rounded-xl bg-slate-900/45 p-1">
                 {[
-                  { id: "media", icon: <ImageIcon size={13} />, label: "Anh/Video" },
+                  { id: "media", icon: <ImageIcon size={13} />, label: "Ảnh/Video" },
                   { id: "files", icon: <FileText size={13} />, label: "Files" },
                   { id: "links", icon: <LinkIcon size={13} />, label: "Links" },
                 ].map((tab) => (
@@ -1842,7 +1842,7 @@ export function GroupChat({
                   onChange={(event) => setArchiveSenderFilter(event.target.value)}
                   className="h-8 rounded-lg border border-slate-600 bg-slate-900 px-2 text-xs text-slate-100"
                 >
-                  <option value="all">{language === "vi" ? "Nguoi gui" : "Sender"}</option>
+                  <option value="all">{language === "vi" ? "Người gửi" : "Sender"}</option>
                   {archiveSenderOptions.map((senderId) => (
                     <option key={senderId} value={senderId}>
                       {userProfileMap?.[senderId]?.fullName ?? senderId}
@@ -1854,7 +1854,7 @@ export function GroupChat({
                   onChange={(event) => setArchiveDateFilter(event.target.value)}
                   className="h-8 rounded-lg border border-slate-600 bg-slate-900 px-2 text-xs text-slate-100"
                 >
-                  <option value="all">{language === "vi" ? "Ngay gui" : "Date"}</option>
+                  <option value="all">{language === "vi" ? "Ngày gửi" : "Date"}</option>
                   {archiveDateOptions.map((dateKey) => (
                     <option key={dateKey} value={dateKey}>
                       {dateKey}
@@ -1867,7 +1867,7 @@ export function GroupChat({
                 {archiveTab === "media" &&
                   (archiveMediaItems.length === 0 ? (
                     <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                      {language === "vi" ? "Khong co du lieu" : "No items"}
+                      {language === "vi" ? "Không có dữ liệu" : "No items"}
                     </p>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
@@ -1888,7 +1888,7 @@ export function GroupChat({
                 {archiveTab === "files" &&
                   (archiveFileItems.length === 0 ? (
                     <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                      {language === "vi" ? "Khong co du lieu" : "No items"}
+                      {language === "vi" ? "Không có dữ liệu" : "No items"}
                     </p>
                   ) : (
                     archiveFileItems.map((item) => (
@@ -1905,7 +1905,7 @@ export function GroupChat({
                 {archiveTab === "links" &&
                   (archiveLinkItems.length === 0 ? (
                     <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                      {language === "vi" ? "Khong co du lieu" : "No items"}
+                      {language === "vi" ? "Không có dữ liệu" : "No items"}
                     </p>
                   ) : (
                     archiveLinkItems.map((item) => (
@@ -1924,18 +1924,18 @@ export function GroupChat({
 
           {manageMode && canOpenManage && panelView === "default" && (
             <Section
-              title={language === "vi" ? "Quan ly nhom" : "Group management"}
+              title={language === "vi" ? "Quản lý nhóm" : "Group management"}
               open={openSections.manage}
               onToggle={() => toggleSection("manage")}
             >
               <div className="space-y-3">
                 <div className="rounded-xl bg-slate-900/45 p-3">
                   <p className="text-sm font-semibold text-slate-100">
-                    {language === "vi" ? "Cho phep cac thanh vien trong nhom:" : "Allow members to:"}
+                    {language === "vi" ? "Cho phép các thành viên trong nhóm:" : "Allow members to:"}
                   </p>
                   <div className="mt-2 space-y-2 text-sm text-slate-200">
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Thay doi ten va anh dai dien" : "Edit group name and avatar"}</span>
+                      <span>{language === "vi" ? "Thay đổi tên và ảnh đại diện" : "Edit group name and avatar"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.renameGroup}
@@ -1951,7 +1951,7 @@ export function GroupChat({
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Ghim tin nhan, ghi chu, binh chon" : "Pin messages, notes, polls"}</span>
+                      <span>{language === "vi" ? "Ghim tin nhắn, ghi chú, bình chọn" : "Pin messages, notes, polls"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.pinBoardItems}
@@ -1967,7 +1967,7 @@ export function GroupChat({
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Tao moi ghi chu" : "Create notes"}</span>
+                      <span>{language === "vi" ? "Tạo mới ghi chú" : "Create notes"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createNote}
@@ -1983,7 +1983,7 @@ export function GroupChat({
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Tao moi nhac hen" : "Create reminders"}</span>
+                      <span>{language === "vi" ? "Tạo mới nhắc hẹn" : "Create reminders"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createReminder}
@@ -1999,7 +1999,7 @@ export function GroupChat({
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Tao moi binh chon" : "Create polls"}</span>
+                      <span>{language === "vi" ? "Tạo mới bình chọn" : "Create polls"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.createPoll}
@@ -2015,7 +2015,7 @@ export function GroupChat({
                       />
                     </label>
                     <label className="flex items-center justify-between gap-2">
-                      <span>{language === "vi" ? "Gui tin nhan" : "Send message"}</span>
+                      <span>{language === "vi" ? "Gửi tin nhắn" : "Send message"}</span>
                       <input
                         type="checkbox"
                         checked={memberPermissionMap.sendMessage}
@@ -2035,7 +2035,7 @@ export function GroupChat({
 
                 <div className="rounded-xl bg-slate-900/45 p-3 text-sm text-slate-200">
                   <div className="flex items-center justify-between gap-2">
-                    <span>{language === "vi" ? "Che do phe duyet thanh vien moi" : "Require join approval"}</span>
+                    <span>{language === "vi" ? "Chế độ phê duyệt thành viên mới" : "Require join approval"}</span>
                     <input
                       type="checkbox"
                       checked={Boolean(settings?.requireApprovalToJoin)}
@@ -2047,7 +2047,7 @@ export function GroupChat({
                   </div>
 
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span>{language === "vi" ? "Danh dau tin nhan tu truong/pho nhom" : "Highlight owner/admin messages"}</span>
+                    <span>{language === "vi" ? "Đánh dấu tin nhắn từ trưởng/phó nhóm" : "Highlight owner/admin messages"}</span>
                     <input
                       type="checkbox"
                       checked={Boolean(settings?.highlightAdminMessages)}
@@ -2059,7 +2059,7 @@ export function GroupChat({
                   </div>
 
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span>{language === "vi" ? "Cho phep dung link tham gia nhom" : "Allow invite by link"}</span>
+                    <span>{language === "vi" ? "Cho phép dùng link tham gia nhóm" : "Allow invite by link"}</span>
                     <input
                       type="checkbox"
                       checked={Boolean(settings?.allowMemberInvite)}
@@ -2083,7 +2083,7 @@ export function GroupChat({
                         </a>
                       ) : (
                         <p className="truncate text-sm font-semibold text-sky-200">
-                          {language === "vi" ? "Dang tao link..." : "Generating link..."}
+                          {language === "vi" ? "Đang tạo link..." : "Generating link..."}
                         </p>
                       )}
                       <div className="flex items-center gap-1">
@@ -2111,7 +2111,7 @@ export function GroupChat({
                   {!canEditSecuritySettings && (
                     <p className="mt-2 text-[11px] text-amber-300">
                       {language === "vi"
-                        ? "Chi truong nhom hoac pho nhom moi doi duoc cac cai dat bao mat va link moi"
+                        ? "Chỉ trưởng nhóm hoặc phó nhóm mới đổi được các cài đặt bảo mật và link mời"
                         : "Only the owner or admins can change security and invite-link settings"}
                     </p>
                   )}
@@ -2126,7 +2126,7 @@ export function GroupChat({
               <div className="flex items-center gap-2 text-rose-200">
                 <AlertTriangle size={15} />
                 <p className="text-sm font-semibold">
-                  {language === "vi" ? "Bao cao va roi nhom" : "Report and leave"}
+                  {language === "vi" ? "Báo cáo và rời nhóm" : "Report and leave"}
                 </p>
               </div>
               <div className="mt-2 flex gap-2">
@@ -2134,14 +2134,14 @@ export function GroupChat({
                   type="button"
                   className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
                 >
-                  {language === "vi" ? "Bao xau" : "Report"}
+                  {language === "vi" ? "Báo xấu" : "Report"}
                 </button>
                 <button
                   type="button"
                   onClick={() => onLeaveGroup?.()}
                   className="flex-1 rounded-lg border border-rose-400/50 px-2 py-2 text-sm font-semibold text-rose-200"
                 >
-                  {language === "vi" ? "Roi nhom" : "Leave"}
+                  {language === "vi" ? "Rời nhóm" : "Leave"}
                 </button>
               </div>
               {isOwner && (
@@ -2151,7 +2151,7 @@ export function GroupChat({
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white"
                 >
                   <Trash2 size={14} />
-                  <span>{language === "vi" ? "Giai tan nhom" : "Delete group"}</span>
+                  <span>{language === "vi" ? "Giải tán nhóm" : "Delete group"}</span>
                 </button>
               )}
             </section>
@@ -2164,7 +2164,7 @@ export function GroupChat({
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-[#111b2a] p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold text-slate-100">
-                {language === "vi" ? "Tao ghi chu nhom" : "Create group note"}
+                {language === "vi" ? "Tạo ghi chú nhóm" : "Create group note"}
               </h3>
               <button
                 type="button"
@@ -2175,13 +2175,13 @@ export function GroupChat({
                 }}
                 className="rounded-md border border-slate-600 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
               >
-                {language === "vi" ? "Dong" : "Close"}
+                {language === "vi" ? "Đóng" : "Close"}
               </button>
             </div>
             <textarea
               value={noteDraft}
               onChange={(event) => setNoteDraft(event.target.value)}
-              placeholder={language === "vi" ? "Nhap noi dung ghi chu..." : "Enter note content..."}
+              placeholder={language === "vi" ? "Nhập nội dung ghi chú..." : "Enter note content..."}
               rows={4}
               className="mt-3 w-full resize-none rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
             />
@@ -2192,7 +2192,7 @@ export function GroupChat({
                 onChange={(event) => setIsNotePinnedToTop(event.target.checked)}
                 className="h-4 w-4 accent-lime-500"
               />
-              <span>{language === "vi" ? "Ghim len dau tro chuyen" : "Pin to top of conversation"}</span>
+              <span>{language === "vi" ? "Ghim lên đầu trò chuyện" : "Pin to top of conversation"}</span>
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -2204,7 +2204,7 @@ export function GroupChat({
                 }}
                 className="rounded-md border border-slate-500 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
               >
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -2214,7 +2214,7 @@ export function GroupChat({
                 disabled={!noteDraft.trim()}
                 className="rounded-md bg-lime-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {language === "vi" ? "Tao ghi chu" : "Create note"}
+                {language === "vi" ? "Tạo ghi chú" : "Create note"}
               </button>
             </div>
           </div>
@@ -2226,14 +2226,14 @@ export function GroupChat({
           <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-[#111b2a] p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold text-slate-100">
-                {language === "vi" ? "Tao binh chon" : "Create poll"}
+                {language === "vi" ? "Tạo bình chọn" : "Create poll"}
               </h3>
               <button
                 type="button"
                 onClick={resetPollDraft}
                 className="rounded-md border border-slate-600 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
               >
-                {language === "vi" ? "Dong" : "Close"}
+                {language === "vi" ? "Đóng" : "Close"}
               </button>
             </div>
             <input
@@ -2241,7 +2241,7 @@ export function GroupChat({
               value={pollQuestionDraft}
               onChange={(event) => setPollQuestionDraft(event.target.value)}
               maxLength={200}
-              placeholder={language === "vi" ? "Nhap cau hoi binh chon" : "Enter poll question"}
+              placeholder={language === "vi" ? "Nhập câu hỏi bình chọn" : "Enter poll question"}
               className="mt-3 h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
             />
             <div className="mt-2 space-y-1.5">
@@ -2252,7 +2252,7 @@ export function GroupChat({
                     value={option}
                     onChange={(event) => updatePollOption(index, event.target.value)}
                     maxLength={80}
-                    placeholder={language === "vi" ? `Lua chon ${index + 1}` : `Option ${index + 1}`}
+                    placeholder={language === "vi" ? `Lựa chọn ${index + 1}` : `Option ${index + 1}`}
                     className="h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2.5 text-xs text-slate-100"
                   />
                   <button
@@ -2261,7 +2261,7 @@ export function GroupChat({
                     onClick={() => removePollOption(index)}
                     className="rounded-md border border-rose-400/40 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {language === "vi" ? "Xoa" : "Remove"}
+                    {language === "vi" ? "Xóa" : "Remove"}
                   </button>
                 </div>
               ))}
@@ -2273,39 +2273,39 @@ export function GroupChat({
                 onClick={addPollOption}
                 className="rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {language === "vi" ? "Them lua chon" : "Add option"}
+                {language === "vi" ? "Thêm lựa chọn" : "Add option"}
               </button>
               <select
                 value={pollDeadlineMinutes}
                 onChange={(event) => setPollDeadlineMinutes(Number(event.target.value))}
                 className="h-8 rounded-md border border-slate-600 bg-slate-900 px-2 text-xs text-slate-100"
               >
-                <option value={30}>{language === "vi" ? "30 phut" : "30 minutes"}</option>
-                <option value={60}>{language === "vi" ? "1 gio" : "1 hour"}</option>
-                <option value={180}>{language === "vi" ? "3 gio" : "3 hours"}</option>
-                <option value={720}>{language === "vi" ? "12 gio" : "12 hours"}</option>
-                <option value={1440}>{language === "vi" ? "1 ngay" : "1 day"}</option>
-                <option value={4320}>{language === "vi" ? "3 ngay" : "3 days"}</option>
-                <option value={10080}>{language === "vi" ? "7 ngay" : "7 days"}</option>
+                <option value={30}>{language === "vi" ? "30 phút" : "30 minutes"}</option>
+                <option value={60}>{language === "vi" ? "1 giờ" : "1 hour"}</option>
+                <option value={180}>{language === "vi" ? "3 giờ" : "3 hours"}</option>
+                <option value={720}>{language === "vi" ? "12 giờ" : "12 hours"}</option>
+                <option value={1440}>{language === "vi" ? "1 ngày" : "1 day"}</option>
+                <option value={4320}>{language === "vi" ? "3 ngày" : "3 days"}</option>
+                <option value={10080}>{language === "vi" ? "7 ngày" : "7 days"}</option>
               </select>
             </div>
             <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs text-slate-200">
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={isPollMultiChoice} onChange={(event) => setIsPollMultiChoice(event.target.checked)} className="h-4 w-4 accent-sky-500" />
-                <span>{language === "vi" ? "Cho phep chon nhieu dap an" : "Allow multiple choices"}</span>
+                <span>{language === "vi" ? "Cho phép chọn nhiều đáp án" : "Allow multiple choices"}</span>
               </label>
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={isPollAllowChangeVote} onChange={(event) => setIsPollAllowChangeVote(event.target.checked)} className="h-4 w-4 accent-sky-500" />
-                <span>{language === "vi" ? "Cho phep doi lua chon" : "Allow changing vote"}</span>
+                <span>{language === "vi" ? "Cho phép đổi lựa chọn" : "Allow changing vote"}</span>
               </label>
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={isPollHideResultsBeforeVote} onChange={(event) => setIsPollHideResultsBeforeVote(event.target.checked)} className="h-4 w-4 accent-sky-500" />
-                <span>{language === "vi" ? "An ket qua truoc khi bo phieu" : "Hide results before voting"}</span>
+                <span>{language === "vi" ? "Ẩn kết quả trước khi bỏ phiếu" : "Hide results before voting"}</span>
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={resetPollDraft} className="rounded-md border border-slate-500 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -2315,7 +2315,7 @@ export function GroupChat({
                 disabled={!pollQuestionDraft.trim()}
                 className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {language === "vi" ? "Tao binh chon" : "Create poll"}
+                {language === "vi" ? "Tạo bình chọn" : "Create poll"}
               </button>
             </div>
           </div>
@@ -2327,7 +2327,7 @@ export function GroupChat({
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-[#111b2a] p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold text-slate-100">
-                {language === "vi" ? "Tao nhac hen" : "Create reminder"}
+                {language === "vi" ? "Tạo nhắc hẹn" : "Create reminder"}
               </h3>
               <button
                 type="button"
@@ -2338,18 +2338,18 @@ export function GroupChat({
                 }}
                 className="rounded-md border border-slate-600 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
               >
-                {language === "vi" ? "Dong" : "Close"}
+                {language === "vi" ? "Đóng" : "Close"}
               </button>
             </div>
             <input
               type="text"
               value={reminderTitleDraft}
               onChange={(event) => setReminderTitleDraft(event.target.value)}
-              placeholder={language === "vi" ? "Tieu de nhac hen" : "Reminder title"}
+              placeholder={language === "vi" ? "Tiêu đề nhắc hẹn" : "Reminder title"}
               className="mt-3 h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
             />
             <label className="mt-2 block text-xs text-slate-300">
-              <span className="mb-1 inline-block">{language === "vi" ? "Thoi gian (tuy chon)" : "Time (optional)"}</span>
+              <span className="mb-1 inline-block">{language === "vi" ? "Thời gian (tùy chọn)" : "Time (optional)"}</span>
               <input
                 type="datetime-local"
                 value={reminderTimeDraft}
@@ -2367,7 +2367,7 @@ export function GroupChat({
                 }}
                 className="rounded-md border border-slate-500 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
               >
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -2377,7 +2377,7 @@ export function GroupChat({
                 disabled={!reminderTitleDraft.trim()}
                 className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {language === "vi" ? "Tao" : "Create"}
+                {language === "vi" ? "Tạo" : "Create"}
               </button>
             </div>
           </div>
@@ -2390,11 +2390,11 @@ export function GroupChat({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-slate-100">
-                  {language === "vi" ? "Them thanh vien" : "Add members"}
+                  {language === "vi" ? "Thêm thành viên" : "Add members"}
                 </h3>
                 <p className="mt-1 text-xs text-slate-400">
                   {language === "vi"
-                    ? "Chon mot hoac nhieu ban be de them vao nhom"
+                    ? "Chọn một hoặc nhiều bạn bè để thêm vào nhóm"
                     : "Select one or multiple friends to add into this group"}
                 </p>
               </div>
@@ -2404,7 +2404,7 @@ export function GroupChat({
                 disabled={isAddingMembers}
                 className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {language === "vi" ? "Dong" : "Close"}
+                {language === "vi" ? "Đóng" : "Close"}
               </button>
             </div>
 
@@ -2412,7 +2412,7 @@ export function GroupChat({
               type="text"
               value={memberPickerSearch}
               onChange={(event) => setMemberPickerSearch(event.target.value)}
-              placeholder={language === "vi" ? "Tim theo ten, email, userId" : "Search by name, email, userId"}
+              placeholder={language === "vi" ? "Tìm theo tên, email, userId" : "Search by name, email, userId"}
               className="mt-3 h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500"
             />
 
@@ -2420,7 +2420,7 @@ export function GroupChat({
               {addableFriendCandidates.length === 0 ? (
                 <div className="rounded-lg border border-slate-700 bg-slate-900/45 px-3 py-4 text-sm text-slate-300">
                   {language === "vi"
-                    ? "Khong co ban be phu hop de them vao nhom"
+                    ? "Không có bạn bè phù hợp để thêm vào nhóm"
                     : "No matching friends available to add"}
                 </div>
               ) : (
@@ -2466,7 +2466,7 @@ export function GroupChat({
             <div className="mt-4 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-300">
                 {language === "vi"
-                  ? `Da chon ${selectedMemberIds.length} nguoi`
+                  ? `Đã chọn ${selectedMemberIds.length} người`
                   : `${selectedMemberIds.length} selected`}
               </p>
               <button
@@ -2479,10 +2479,10 @@ export function GroupChat({
               >
                 {isAddingMembers
                   ? language === "vi"
-                    ? "Dang them..."
+                    ? "Đang thêm..."
                     : "Adding..."
                   : language === "vi"
-                    ? "Them thanh vien"
+                    ? "Thêm thành viên"
                     : "Add members"}
               </button>
             </div>

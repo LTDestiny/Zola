@@ -460,7 +460,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                                         }}
                                         className="rounded-md border border-sky-300 px-2 py-1 text-[10px] font-semibold text-sky-800 hover:bg-sky-100"
                                     >
-                                        Xem chi tiet
+                                        Xem chi tiết
                                     </button>
                                     {pollData.canManagePoll && !pollData.isClosed && (
                                         <button
@@ -470,7 +470,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                                             }}
                                             className="rounded-md border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
                                         >
-                                            Ket thuc som
+                                            Kết thúc sớm
                                         </button>
                                     )}
                                 </div>
@@ -479,7 +479,7 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                                     <div className="fixed inset-0 z-70 grid place-items-center bg-slate-950/75 p-4">
                                         <div className="w-full max-w-xl rounded-2xl border border-slate-600 bg-[#0f1724] p-3 text-slate-100">
                                             <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="truncate text-sm font-semibold">Chi tiet binh chon</p>
+                                                <p className="truncate text-sm font-semibold">Chi tiết bình chọn</p>
                                                 <button
                                                     type="button"
                                                     onClick={() => setIsPollDetailOpen(false)}
@@ -506,14 +506,14 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                                                 type="text"
                                                 value={pollVoterSearch}
                                                 onChange={(event) => setPollVoterSearch(event.target.value)}
-                                                placeholder="Tim nguoi da vote"
+                                                placeholder="Tìm người đã vote"
                                                 className="mb-2 h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-xs text-slate-100"
                                             />
 
                                             {!pollData.canViewResults ? (
-                                                <p className="text-xs text-slate-300">Can bo phieu de xem danh sach nguoi vote</p>
+                                                <p className="text-xs text-slate-300">Cần bỏ phiếu để xem danh sách người vote</p>
                                             ) : filteredVoterNames.length === 0 ? (
-                                                <p className="text-xs text-slate-300">Chua co nguoi vote cho lua chon nay</p>
+                                                <p className="text-xs text-slate-300">Chưa có người vote cho lựa chọn này</p>
                                             ) : (
                                                 <div className="max-h-56 space-y-1 overflow-y-auto">
                                                     {filteredVoterNames.map((name, index) => (

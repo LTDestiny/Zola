@@ -296,18 +296,18 @@ function getBoardSystemNotice(
 ) {
   const payload = parseJsonObject(item.content);
   const actorName = item.senderId === myId
-    ? (language === "vi" ? "Ban" : "You")
+    ? (language === "vi" ? "Bạn" : "You")
     : (userProfileMap[item.senderId]?.fullName ?? `User ${item.senderId.slice(0, 8)}`);
 
   if ((item.type ?? "").toUpperCase() === "REMINDER") {
     return language === "vi"
-      ? `${actorName} da tao nhac hen`
+      ? `${actorName} đã tạo nhắc hẹn`
       : `${actorName} created a reminder`;
   }
 
   if ((item.type ?? "").toUpperCase() === "NOTE" && String(payload?.kind ?? "").toUpperCase() === "BOARD_NOTE") {
     return language === "vi"
-      ? `${actorName} da tao ghi chu nhom`
+      ? `${actorName} đã tạo ghi chú nhóm`
       : `${actorName} created a group note`;
   }
 
@@ -460,10 +460,10 @@ function buildReactionSummary(reactions: string[] | undefined) {
 }
 
 function formatTime(value: string | null, language: "vi" | "en") {
-  if (!value) return language === "vi" ? "Khong ro" : "N/A";
+  if (!value) return language === "vi" ? "Không rõ" : "N/A";
   const date = new Date(value);
   if (Number.isNaN(date.getTime()))
-    return language === "vi" ? "Khong ro" : "N/A";
+    return language === "vi" ? "Không rõ" : "N/A";
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -525,7 +525,7 @@ function formatSystemMessageContent(
 ) {
   const content = String(rawContent ?? "").trim();
   if (!content) {
-    return language === "vi" ? "Thong bao he thong" : "System notification";
+    return language === "vi" ? "Thông báo hệ thống" : "System notification";
   }
 
   const prefixed = content.replace(/^\[System\]\s*/i, "").trim();
@@ -535,7 +535,7 @@ function formatSystemMessageContent(
     const actor = toDisplayNameFromId(addedMatch[1], language, myId, userProfileMap);
     const target = toDisplayNameFromId(addedMatch[2], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da them ${target} vao nhom`
+      ? `${actor} đã thêm ${target} vào nhóm`
       : `${actor} added ${target} to the group`;
   }
 
@@ -544,7 +544,7 @@ function formatSystemMessageContent(
     const actor = toDisplayNameFromId(removedMatch[1], language, myId, userProfileMap);
     const target = toDisplayNameFromId(removedMatch[2], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da xoa ${target} khoi nhom`
+      ? `${actor} đã xóa ${target} khỏi nhóm`
       : `${actor} removed ${target} from the group`;
   }
 
@@ -552,7 +552,7 @@ function formatSystemMessageContent(
   if (joinedMatch) {
     const actor = toDisplayNameFromId(joinedMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da tham gia nhom bang link moi`
+      ? `${actor} đã tham gia nhóm bằng link mời`
       : `${actor} joined via invite link`;
   }
 
@@ -560,7 +560,7 @@ function formatSystemMessageContent(
   if (joinedGroupMatch) {
     const actor = toDisplayNameFromId(joinedGroupMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da tham gia nhom`
+      ? `${actor} đã tham gia nhóm`
       : `${actor} joined the group`;
   }
 
@@ -568,7 +568,7 @@ function formatSystemMessageContent(
   if (pendingApprovalMatch) {
     const actor = toDisplayNameFromId(pendingApprovalMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} dang cho truong, pho nhom duyet vao nhom`
+      ? `${actor} đang chờ trưởng, phó nhóm duyệt vào nhóm`
       : `${actor} is waiting for admin approval to join`;
   }
 
@@ -576,7 +576,7 @@ function formatSystemMessageContent(
   if (joinModeApprovalMatch) {
     const actor = toDisplayNameFromId(joinModeApprovalMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da thay doi hinh thuc tham gia nhom thanh can xet duyet`
+      ? `${actor} đã thay đổi hình thức tham gia nhóm thành cần xét duyệt`
       : `${actor} changed group join mode to require approval`;
   }
 
@@ -584,7 +584,7 @@ function formatSystemMessageContent(
   if (joinModeOpenMatch) {
     const actor = toDisplayNameFromId(joinModeOpenMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da tat che do xet duyet thanh vien moi`
+      ? `${actor} đã tắt chế độ xét duyệt thành viên mới`
       : `${actor} turned off join approval`;
   }
 
@@ -592,7 +592,7 @@ function formatSystemMessageContent(
   if (leftMatch) {
     const actor = toDisplayNameFromId(leftMatch[1], language, myId, userProfileMap);
     return language === "vi"
-      ? `${actor} da roi nhom`
+      ? `${actor} đã rời nhóm`
       : `${actor} left the group`;
   }
 
@@ -610,8 +610,8 @@ function mapToUiMessage(
   const recalledText =
     language === "vi"
       ? isMine
-        ? "Ban da thu hoi mot tin nhan"
-        : "Tin nhan da duoc thu hoi"
+        ? "Bạn đã thu hồi một tin nhắn"
+        : "Tin nhắn đã được thu hồi"
       : isMine
         ? "You recalled a message"
         : "This message was recalled";
@@ -1120,7 +1120,7 @@ export function GroupConversationPane({
     if (!normalizedMessageSearchQuery) {
       setMessageSearchFeedback(
         language === "vi"
-          ? "Nhap tu khoa can tim trong tin nhan."
+          ? "Nhập từ khóa cần tìm trong tin nhắn."
           : "Enter the words you want to find in messages.",
       );
       return;
@@ -1130,10 +1130,10 @@ export function GroupConversationPane({
       setMessageSearchFeedback(
         hasMoreMessages
           ? language === "vi"
-            ? "Chua tim thay trong cac tin nhan da tai. Hay tai them tin nhan cu hon roi thu lai."
+            ? "Chưa tìm thấy trong các tin nhắn đã tải. Hãy tải thêm tin nhắn cũ hơn rồi thử lại."
             : "No keyword match in loaded messages yet. Load older messages and try again."
           : language === "vi"
-            ? "Khong tim thay tin nhan chua cum tu nay."
+            ? "Không tìm thấy tin nhắn chứa cụm từ này."
             : "No matching messages found.",
       );
       return;
@@ -1251,7 +1251,7 @@ export function GroupConversationPane({
       if (isMessageActionExpired(editingMessage.id, EDIT_WINDOW_MS)) {
         setPolicyModalMessage(
           language === "vi"
-            ? "Khong the sua tin nhan vi qua 15p"
+            ? "Không thể sửa tin nhắn vì quá 15p"
             : "Cannot edit this message after 15 minutes",
         );
         setEditingMessage(null);
@@ -1306,7 +1306,7 @@ export function GroupConversationPane({
         error instanceof Error && error.message
           ? error.message
           : language === "vi"
-            ? "Khong the gui tin nhan. Vui long thu lai."
+            ? "Không thể gửi tin nhắn. Vui lòng thử lại."
             : "Could not send this message. Please try again.",
       );
     }
@@ -1364,11 +1364,11 @@ export function GroupConversationPane({
             <Sparkles size={32} />
           </div>
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-slate-100">
-            {language === "vi" ? "Chon cuoc tro chuyen" : "Pick a conversation"}
+            {language === "vi" ? "Chọn cuộc trò chuyện" : "Pick a conversation"}
           </h2>
           <p className="text-sm leading-relaxed text-slate-300">
             {language === "vi"
-              ? "Danh sach ben trai theo phong cach Zalo. Chon mot doan chat de bat dau, khung nhap tin se luon nam o day man hinh."
+              ? "Danh sách bên trái theo phong cách Zalo. Chọn một đoạn chat để bắt đầu, khung nhập tin sẽ luôn nằm ở đáy màn hình."
               : "Use the Zalo-style list on the left. Select a chat to start, the composer stays pinned at the bottom."}
           </p>
         </div>
@@ -1433,8 +1433,8 @@ export function GroupConversationPane({
             type="button"
             onClick={() => setIsMessageSearchOpen((prev) => !prev)}
             className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isMessageSearchOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-transparent hover:border-[#335b89] hover:bg-[#14365f] hover:text-white"}`}
-            title={language === "vi" ? "Tim tin nhan" : "Search messages"}
-            aria-label={language === "vi" ? "Tim tin nhan" : "Search messages"}
+            title={language === "vi" ? "Tìm tin nhắn" : "Search messages"}
+            aria-label={language === "vi" ? "Tìm tin nhắn" : "Search messages"}
           >
             <Search size={18} />
           </button>
@@ -1452,12 +1452,12 @@ export function GroupConversationPane({
               className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-200 sm:h-9 sm:w-9 ${isGroupPanelOpen ? "border-[#5cb1ff] bg-[#1b4f86] text-sky-100" : "border-[#335b89] text-slate-200 hover:bg-[#14365f] hover:text-white"}`}
               title={
                 language === "vi"
-                  ? "Bat/tat bang dieu khien nhom"
+                  ? "Bật/tắt bảng điều khiển nhóm"
                   : "Toggle group control panel"
               }
               aria-label={
                 language === "vi"
-                  ? "Bat/tat bang dieu khien nhom"
+                  ? "Bật/tắt bảng điều khiển nhóm"
                   : "Toggle group control panel"
               }
             >
@@ -1495,7 +1495,7 @@ export function GroupConversationPane({
                 }}
                 placeholder={
                   language === "vi"
-                    ? "Nhap tu hoac cum tu trong tin nhan nhom"
+                    ? "Nhập từ hoặc cụm từ trong tin nhắn nhóm"
                     : "Enter a word or phrase from group messages"
                 }
                 className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-400"
@@ -1508,15 +1508,15 @@ export function GroupConversationPane({
                 onClick={() => runMessageSearch()}
                 className="rounded-lg bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400"
               >
-                {language === "vi" ? "Tim" : "Search"}
+                {language === "vi" ? "Tìm" : "Search"}
               </button>
               <button
                 type="button"
                 onClick={() => moveBetweenSearchMatches(-1)}
                 disabled={matchedMessages.length === 0 || messageSearchMatchIndex === 0}
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
-                title={language === "vi" ? "Ket qua truoc" : "Previous match"}
-                aria-label={language === "vi" ? "Ket qua truoc" : "Previous match"}
+                title={language === "vi" ? "Kết quả trước" : "Previous match"}
+                aria-label={language === "vi" ? "Kết quả trước" : "Previous match"}
               >
                 <ChevronUp size={16} />
               </button>
@@ -1528,8 +1528,8 @@ export function GroupConversationPane({
                   messageSearchMatchIndex >= matchedMessages.length - 1
                 }
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-40"
-                title={language === "vi" ? "Ket qua tiep theo" : "Next match"}
-                aria-label={language === "vi" ? "Ket qua tiep theo" : "Next match"}
+                title={language === "vi" ? "Kết quả tiếp theo" : "Next match"}
+                aria-label={language === "vi" ? "Kết quả tiếp theo" : "Next match"}
               >
                 <ChevronDown size={16} />
               </button>
@@ -1540,8 +1540,8 @@ export function GroupConversationPane({
                   setMessageSearchFeedback(null);
                 }}
                 className="grid h-9 w-9 place-items-center rounded-lg border border-[#335b89] text-slate-200 transition hover:bg-[#14365f]"
-                title={language === "vi" ? "Dong tim kiem" : "Close search"}
-                aria-label={language === "vi" ? "Dong tim kiem" : "Close search"}
+                title={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
+                aria-label={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
               >
                 <X size={16} />
               </button>
@@ -1550,12 +1550,12 @@ export function GroupConversationPane({
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-1 font-semibold text-sky-100">
-              {language === "vi" ? "Tim trong tin nhan da tai" : "Search loaded messages"}
+              {language === "vi" ? "Tìm trong tin nhắn đã tải" : "Search loaded messages"}
             </span>
             {normalizedMessageSearchQuery && matchedMessages.length > 0 && (
               <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-emerald-100">
                 {language === "vi"
-                  ? `Ket qua ${messageSearchMatchIndex + 1}/${matchedMessages.length}`
+                  ? `Kết quả ${messageSearchMatchIndex + 1}/${matchedMessages.length}`
                   : `Match ${messageSearchMatchIndex + 1}/${matchedMessages.length}`}
               </span>
             )}
@@ -1576,7 +1576,7 @@ export function GroupConversationPane({
           >
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-200">
-                {language === "vi" ? "Ghim/ghi chu gan nhat" : "Latest pinned/note"}
+                {language === "vi" ? "Ghim/ghi chú gần nhất" : "Latest pinned/note"}
               </p>
               <p className="truncate text-sm font-semibold text-amber-100">
                 <span className="mr-1 inline-flex align-middle">
@@ -1597,7 +1597,7 @@ export function GroupConversationPane({
             <div ref={pinnedListRef} className="mt-2 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-amber-400/30 bg-[#1a2433] p-2">
               {(pinnedMessages ?? []).length === 0 ? (
                 <p className="px-1 py-1 text-xs text-amber-100/80">
-                  {language === "vi" ? "Chua co tin nhan ghim" : "No pinned messages"}
+                  {language === "vi" ? "Chưa có tin nhắn ghim" : "No pinned messages"}
                 </p>
               ) : (
                 (pinnedMessages ?? []).map((item) => (
@@ -1640,7 +1640,7 @@ export function GroupConversationPane({
                         }}
                         className="mt-1 rounded border border-rose-300/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-500/15"
                       >
-                        {language === "vi" ? "Bo ghim" : "Unpin"}
+                        {language === "vi" ? "Bỏ ghim" : "Unpin"}
                       </button>
                     )}
                   </div>
@@ -1678,7 +1678,7 @@ export function GroupConversationPane({
         {isDragOverComposer && (
           <div className="pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-900/60">
             <p className="text-sm font-semibold text-sky-100">
-              {language === "vi" ? "Tha file de gui" : "Drop files to upload"}
+              {language === "vi" ? "Thả file để gửi" : "Drop files to upload"}
             </p>
           </div>
         )}
@@ -1701,10 +1701,10 @@ export function GroupConversationPane({
                   >
                     {isLoadingMoreMessages
                       ? language === "vi"
-                        ? "Dang tai..."
+                        ? "Đang tải..."
                         : "Loading..."
                       : language === "vi"
-                        ? "Tai tin nhan cu hon"
+                        ? "Tải tin nhắn cũ hơn"
                         : "Load older messages"}
                   </button>
                 </div>
@@ -1756,7 +1756,7 @@ export function GroupConversationPane({
                   senderProfile?.fullName ??
                   (message.senderId === currentUserId
                     ? language === "vi"
-                      ? "Ban"
+                      ? "Bạn"
                       : "You"
                     : `User ${message.senderId.slice(0, 8)}`);
                 const senderInitial = initials(senderDisplayName);
@@ -1777,7 +1777,7 @@ export function GroupConversationPane({
                   >
                     {highlightedMessageId === message.id && (
                       <div className="mb-1 rounded-lg border border-amber-300/60 bg-amber-500/15 px-2 py-1 text-[11px] font-semibold text-amber-100">
-                        {language === "vi" ? "Tin nhan dang duoc nhay den" : "Jumped to this message"}
+                        {language === "vi" ? "Tin nhắn đang được nhảy đến" : "Jumped to this message"}
                       </div>
                     )}
                     <MessageRenderer
@@ -1813,7 +1813,7 @@ export function GroupConversationPane({
                         if (isMessageActionExpired(messageId, EDIT_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Khong the sua tin nhan vi qua 15p"
+                              ? "Không thể sửa tin nhắn vì quá 15p"
                               : "Cannot edit this message after 15 minutes",
                           );
                           return;
@@ -1830,7 +1830,7 @@ export function GroupConversationPane({
                         if (isMessageActionExpired(messageId, RECALL_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Khong the thu hoi tin nhan sau 24h"
+                              ? "Không thể thu hồi tin nhắn sau 24h"
                               : "Cannot recall this message after 24 hours",
                           );
                           return;
@@ -1862,7 +1862,7 @@ export function GroupConversationPane({
       <footer className="relative mt-auto border-t border-[#1f4673] bg-[#102d52] px-2 py-2 shadow-[0_-6px_20px_rgba(3,7,18,0.45)] sm:px-3">
         {isTyping && (
           <div className="mb-2 text-xs text-slate-300">
-            {typingText ?? (language === "vi" ? "Dang go..." : "Typing...")}
+            {typingText ?? (language === "vi" ? "Đang gõ..." : "Typing...")}
           </div>
         )}
 
@@ -1884,7 +1884,7 @@ export function GroupConversationPane({
                         }}
                         className="rounded-md border border-sky-300/40 px-2 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10"
                       >
-                        {language === "vi" ? "Gui lai" : "Retry"}
+                        {language === "vi" ? "Gửi lại" : "Retry"}
                       </button>
                     )}
                     <button
@@ -1892,7 +1892,7 @@ export function GroupConversationPane({
                       onClick={() => onCancelUpload(item.localId)}
                       className="rounded-md border border-slate-500 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700"
                     >
-                      {language === "vi" ? "Huy" : "Cancel"}
+                      {language === "vi" ? "Hủy" : "Cancel"}
                     </button>
                   </div>
                 </div>
@@ -1912,7 +1912,7 @@ export function GroupConversationPane({
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-sky-200">
-                {language === "vi" ? "Dang tra loi" : "Replying"}
+                {language === "vi" ? "Đang trả lời" : "Replying"}
               </p>
               <p className="truncate text-xs text-sky-100">
                 {replyingTo.text}
@@ -1923,7 +1923,7 @@ export function GroupConversationPane({
               onClick={() => setReplyingTo(null)}
               className="shrink-0 rounded-md border border-sky-300/40 px-2 py-1 text-[11px] text-sky-200 hover:bg-sky-500/15"
             >
-              {language === "vi" ? "Huy" : "Cancel"}
+              {language === "vi" ? "Hủy" : "Cancel"}
             </button>
           </div>
         )}
@@ -1932,7 +1932,7 @@ export function GroupConversationPane({
           <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-amber-200">
-                {language === "vi" ? "Dang chinh sua" : "Editing message"}
+                {language === "vi" ? "Đang chỉnh sửa" : "Editing message"}
               </p>
               <p className="truncate text-xs text-amber-100">
                 {editingMessage.originalText}
@@ -1946,7 +1946,7 @@ export function GroupConversationPane({
               }}
               className="shrink-0 rounded-md border border-amber-300/45 px-2 py-1 text-[11px] text-amber-200 hover:bg-amber-500/15"
             >
-              {language === "vi" ? "Huy" : "Cancel"}
+              {language === "vi" ? "Hủy" : "Cancel"}
             </button>
           </div>
         )}
@@ -1985,8 +1985,8 @@ export function GroupConversationPane({
               disabled={!canCompose}
               onClick={() => setShowAttachMenu((prev) => !prev)}
               className="grid h-9 w-9 place-items-center rounded-xl border border-[#335b89] text-slate-200 hover:bg-[#14365f] disabled:cursor-not-allowed disabled:opacity-45"
-              title={language === "vi" ? "Dinh kem" : "Attachment"}
-              aria-label={language === "vi" ? "Dinh kem" : "Attachment"}
+              title={language === "vi" ? "Đính kèm" : "Attachment"}
+              aria-label={language === "vi" ? "Đính kèm" : "Attachment"}
             >
               <Paperclip size={18} />
             </button>
@@ -2074,8 +2074,8 @@ export function GroupConversationPane({
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder={
               canCompose
-                ? language === "vi" ? "Nhap tin nhan..." : "Type a message..."
-                : composeBlockedMessage ?? (language === "vi" ? "Chi truong/pho nhom duoc gui tin nhan" : "Only owner/admin can send messages")
+                ? language === "vi" ? "Nhập tin nhắn..." : "Type a message..."
+                : composeBlockedMessage ?? (language === "vi" ? "Chỉ trưởng/phó nhóm được gửi tin nhắn" : "Only owner/admin can send messages")
             }
             onKeyDown={(event) => {
               void handleKeyDown(event);
@@ -2088,7 +2088,7 @@ export function GroupConversationPane({
             onClick={() => {
               void onQuickSendText?.("❤️");
             }}
-            title={language === "vi" ? "Tim" : "Heart"}
+            title={language === "vi" ? "Tìm" : "Heart"}
             disabled={isSending || !canCompose}
           >
             <Heart size={16} />
@@ -2105,10 +2105,10 @@ export function GroupConversationPane({
             <SendHorizontal size={16} />
             {editingMessage
               ? language === "vi"
-                ? "Luu"
+                ? "Lưu"
                 : "Save"
               : language === "vi"
-                ? "Gui"
+                ? "Gửi"
                 : "Send"}
           </button>
         </div>
@@ -2121,7 +2121,7 @@ export function GroupConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
-              <span>{language === "vi" ? "Gui hinh anh" : "Send image"}</span>
+              <span>{language === "vi" ? "Gửi hình ảnh" : "Send image"}</span>
             </button>
             <button
               type="button"
@@ -2129,7 +2129,7 @@ export function GroupConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <Video size={16} />
-              <span>{language === "vi" ? "Gui video" : "Send video"}</span>
+              <span>{language === "vi" ? "Gửi video" : "Send video"}</span>
             </button>
             <button
               type="button"
@@ -2137,7 +2137,7 @@ export function GroupConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <FileText size={16} />
-              <span>{language === "vi" ? "Gui tep tin" : "Send file"}</span>
+              <span>{language === "vi" ? "Gửi tệp tin" : "Send file"}</span>
             </button>
             <button
               type="button"
@@ -2145,7 +2145,7 @@ export function GroupConversationPane({
               className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-700"
             >
               <ImagePlus size={16} />
-              <span>{language === "vi" ? "Chup anh/Quay nhanh" : "Capture photo/video"}</span>
+              <span>{language === "vi" ? "Chụp ảnh/Quay nhanh" : "Capture photo/video"}</span>
             </button>
           </div>
         )}
@@ -2156,7 +2156,7 @@ export function GroupConversationPane({
           <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <h3 className="text-sm font-semibold text-slate-800">
-                {language === "vi" ? "Xem truoc truoc khi gui" : "Preview before send"}
+                {language === "vi" ? "Xem trước trước khi gửi" : "Preview before send"}
               </h3>
               <button
                 type="button"
@@ -2199,7 +2199,7 @@ export function GroupConversationPane({
                 value={mediaCaption}
                 onChange={(event) => setMediaCaption(event.target.value)}
                 className="mt-3 min-h-20 w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300"
-                placeholder={language === "vi" ? "Them chu thich (caption)..." : "Add a caption..."}
+                placeholder={language === "vi" ? "Thêm chú thích (caption)..." : "Add a caption..."}
               />
             </div>
 
@@ -2209,7 +2209,7 @@ export function GroupConversationPane({
                 onClick={clearPreviewFiles}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
               >
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -2219,7 +2219,7 @@ export function GroupConversationPane({
                 disabled={!canCompose}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
               >
-                {language === "vi" ? "Gui" : "Send"}
+                {language === "vi" ? "Gửi" : "Send"}
               </button>
             </div>
           </div>
@@ -2230,7 +2230,7 @@ export function GroupConversationPane({
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
             <h3 className="text-base font-semibold text-slate-900">
-              {language === "vi" ? "Thong bao" : "Notice"}
+              {language === "vi" ? "Thông báo" : "Notice"}
             </h3>
             <p className="mt-2 text-sm text-slate-600">{policyModalMessage}</p>
             <div className="mt-4 flex justify-end">

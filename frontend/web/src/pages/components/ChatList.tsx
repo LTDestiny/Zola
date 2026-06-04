@@ -70,7 +70,7 @@ interface ChatItemProps {
 
 const ChatItem = memo(function ChatItem({ chat, isActive, onSelect }: ChatItemProps) {
     const hasUnread = chat.unreadCount > 0;
-    const isGroupChat = (chat.presenceLabel ?? "").toLowerCase().includes("thanh vien")
+    const isGroupChat = (chat.presenceLabel ?? "").toLowerCase().includes("thành viên")
         || (chat.presenceLabel ?? "").toLowerCase().includes("members");
     const isStrangerInbox = chat.variant === "stranger-inbox";
 
@@ -187,15 +187,15 @@ export function ChatList({
                                 type="button"
                                 onClick={onBack}
                                 className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
-                                title={language === "vi" ? "Quay lai" : "Back"}
-                                aria-label={language === "vi" ? "Quay lai" : "Back"}
+                                title={language === "vi" ? "Quay lại" : "Back"}
+                                aria-label={language === "vi" ? "Quay lại" : "Back"}
                             >
                                 <ChevronLeft size={18} />
                             </button>
                         )}
                         <div className="min-w-0">
                             <h2 className="truncate text-[1.9rem] font-bold tracking-tight text-white">
-                                {title ?? (language === "vi" ? "Tin nhan" : "Chats")}
+                                {title ?? (language === "vi" ? "Tin nhắn" : "Chats")}
                             </h2>
                             {subtitle && (
                                 <p className="mt-0.5 truncate text-xs text-slate-400">
@@ -211,8 +211,8 @@ export function ChatList({
                             type="button"
                             onClick={onAddFriend}
                             className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
-                            title={language === "vi" ? "Them ban" : "Add friend"}
-                            aria-label={language === "vi" ? "Them ban" : "Add friend"}
+                            title={language === "vi" ? "Thêm bạn" : "Add friend"}
+                            aria-label={language === "vi" ? "Thêm bạn" : "Add friend"}
                         >
                             <UserPlus size={18} />
                         </button>
@@ -220,8 +220,8 @@ export function ChatList({
                             type="button"
                             onClick={onCreateGroup}
                             className="grid h-9 w-9 place-items-center rounded-full text-slate-300 transition-all duration-200 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
-                            title={language === "vi" ? "Tao nhom" : "Create group"}
-                            aria-label={language === "vi" ? "Tao nhom" : "Create group"}
+                            title={language === "vi" ? "Tạo nhóm" : "Create group"}
+                            aria-label={language === "vi" ? "Tạo nhóm" : "Create group"}
                         >
                             <UsersRound size={18} />
                         </button>
@@ -239,7 +239,7 @@ export function ChatList({
                         type="text"
                         value={searchText}
                         onChange={(event) => onSearchTextChange(event.target.value)}
-                        placeholder={language === "vi" ? "Tim kiem" : "Search"}
+                        placeholder={language === "vi" ? "Tìm kiếm" : "Search"}
                         className="h-10 w-full rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] pl-9 pr-3 text-sm text-slate-100 outline-none transition-all duration-200 placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)]"
                     />
                 </div>
@@ -250,14 +250,14 @@ export function ChatList({
                         onClick={() => setViewMode("all")}
                         className={`rounded-full px-3 py-1 ${viewMode === "all" ? "bg-[var(--color-zola-accent)] text-white" : "bg-[var(--color-zola-panel-hover)] text-slate-300 hover:bg-[var(--color-zola-panel-strong)]"}`}
                     >
-                        {language === "vi" ? "Tat ca" : "All"}
+                        {language === "vi" ? "Tất cả" : "All"}
                     </button>
                     <button
                         type="button"
                         onClick={() => setViewMode("unread")}
                         className={`rounded-full px-3 py-1 ${viewMode === "unread" ? "bg-[var(--color-zola-accent)] text-white" : "bg-[var(--color-zola-panel-hover)] text-slate-300 hover:bg-[var(--color-zola-panel-strong)]"}`}
                     >
-                        {language === "vi" ? "Chua doc" : "Unread"}
+                        {language === "vi" ? "Chưa đọc" : "Unread"}
                     </button>
                 </div>
             </div>
@@ -266,7 +266,7 @@ export function ChatList({
                 {displayChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                         <p className="text-sm">
-                            {language === "vi" ? "Chua co hoi thoai nao" : "No conversations yet"}
+                            {language === "vi" ? "Chưa có hội thoại nào" : "No conversations yet"}
                         </p>
                     </div>
                 ) : (

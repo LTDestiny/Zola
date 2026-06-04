@@ -118,7 +118,7 @@ export function ForwardMessageModal({
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-4">
       <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
         <h3 className="text-lg font-semibold text-slate-900">
-          {language === "vi" ? "Chuyen tiep tin nhan" : "Forward message"}
+          {language === "vi" ? "Chuyển tiếp tin nhắn" : "Forward message"}
         </h3>
 
         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -127,28 +127,28 @@ export function ForwardMessageModal({
             onClick={() => setActiveTab("all")}
             className={`rounded-lg px-3 py-2 text-sm ${activeTab === "all" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-700"}`}
           >
-            {language === "vi" ? "Tat ca" : "All"}
+            {language === "vi" ? "Tất cả" : "All"}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("friends")}
             className={`rounded-lg px-3 py-2 text-sm ${activeTab === "friends" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-700"}`}
           >
-            {language === "vi" ? "Ban be" : "Friends"}
+            {language === "vi" ? "Bạn bè" : "Friends"}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("groups")}
             className={`rounded-lg px-3 py-2 text-sm ${activeTab === "groups" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-700"}`}
           >
-            {language === "vi" ? "Nhom" : "Groups"}
+            {language === "vi" ? "Nhóm" : "Groups"}
           </button>
         </div>
 
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder={language === "vi" ? "Tim ban be hoac nhom..." : "Search friends or groups..."}
+          placeholder={language === "vi" ? "Tìm bạn bè hoặc nhóm..." : "Search friends or groups..."}
           className="mt-3 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
         />
 
@@ -169,8 +169,8 @@ export function ForwardMessageModal({
                   <p className="truncate text-sm font-semibold text-slate-800">{item.name}</p>
                   <p className="truncate text-xs text-slate-500">
                     {isGroupConversation(item)
-                      ? (language === "vi" ? "Nhom" : "Group")
-                      : (language === "vi" ? "Ban be" : "Friend")}
+                      ? (language === "vi" ? "Nhóm" : "Group")
+                      : (language === "vi" ? "Bạn bè" : "Friend")}
                   </p>
                 </div>
                 <input
@@ -185,14 +185,14 @@ export function ForwardMessageModal({
 
           {targets.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-              {language === "vi" ? "Khong tim thay doi tuong de chuyen tiep" : "No available target to forward"}
+              {language === "vi" ? "Không tìm thấy đối tượng để chuyển tiếp" : "No available target to forward"}
             </div>
           )}
         </div>
 
         <div className="mt-4 rounded-xl border border-slate-200 p-3">
           <p className="mb-2 text-xs font-semibold text-slate-700">
-            {language === "vi" ? "Them nguoi nhan bang email" : "Add recipient by email"}
+            {language === "vi" ? "Thêm người nhận bằng email" : "Add recipient by email"}
           </p>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <input
@@ -210,8 +210,8 @@ export function ForwardMessageModal({
               className="rounded-lg border border-indigo-300 px-3 text-sm text-indigo-700 disabled:opacity-50"
             >
               {isSearchingUser
-                ? (language === "vi" ? "Dang tim" : "Searching")
-                : (language === "vi" ? "Them" : "Add")}
+                ? (language === "vi" ? "Đang tìm" : "Searching")
+                : (language === "vi" ? "Thêm" : "Add")}
             </button>
           </div>
 
@@ -236,7 +236,7 @@ export function ForwardMessageModal({
         <div className="mt-4 flex items-center justify-between">
           <span className="text-xs text-slate-500">
             {language === "vi"
-              ? `Da chon ${selectedConversationIds.length + selectedUsers.length} doi tuong`
+              ? `Đã chọn ${selectedConversationIds.length + selectedUsers.length} đối tượng`
               : `${selectedConversationIds.length + selectedUsers.length} target(s) selected`}
           </span>
 
@@ -253,7 +253,7 @@ export function ForwardMessageModal({
               }}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700"
             >
-              {language === "vi" ? "Huy" : "Cancel"}
+              {language === "vi" ? "Hủy" : "Cancel"}
             </button>
             <button
               type="button"
@@ -264,8 +264,8 @@ export function ForwardMessageModal({
               className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {isSubmitting
-                ? (language === "vi" ? "Dang chuyen..." : "Forwarding...")
-                : (language === "vi" ? "Chuyen tiep" : "Forward")}
+                ? (language === "vi" ? "Đang chuyển..." : "Forwarding...")
+                : (language === "vi" ? "Chuyển tiếp" : "Forward")}
             </button>
           </div>
         </div>

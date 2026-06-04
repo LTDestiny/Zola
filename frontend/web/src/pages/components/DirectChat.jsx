@@ -195,7 +195,7 @@ export function DirectChat({
         const eventTime = String(item.json?.when ?? item.json?.eventTime ?? item.createdAt ?? "");
         return {
           id: item.id,
-          title: title || (language === "vi" ? "Nhac hen" : "Reminder"),
+          title: title || (language === "vi" ? "Nhắc hẹn" : "Reminder"),
           eventTime,
           createdAtMs: item.createdAtMs,
         };
@@ -226,7 +226,7 @@ export function DirectChat({
         sourceId: item.id,
         createdAtMs: item.createdAtMs,
         createdAt: item.createdAt,
-        title: String(item.json?.title ?? (language === "vi" ? "Ghi chu" : "Note")),
+        title: String(item.json?.title ?? (language === "vi" ? "Ghi chú" : "Note")),
         preview: String(item.json?.note ?? item.json?.preview ?? item.content ?? ""),
         itemType: "note",
         senderId: item.senderId ?? null,
@@ -322,7 +322,7 @@ export function DirectChat({
         <div className="shrink-0 border-b border-[#1f4673] px-3 py-3 lg:px-4">
           <div className="flex items-center justify-between">
             <p className="text-xl font-bold text-slate-100 lg:text-2xl lg:text-center">
-              {language === "vi" ? "Thong tin hoi thoai" : "Chat details"}
+              {language === "vi" ? "Thông tin hội thoại" : "Chat details"}
             </p>
             <button
               type="button"
@@ -358,7 +358,7 @@ export function DirectChat({
             <>
               {boardFeedItems.length > 0 && (
                 <Section
-                  title={language === "vi" ? "Bang tin" : "Board"}
+                  title={language === "vi" ? "Bảng tin" : "Board"}
                   open={openSections.board}
                   onToggle={() => toggleSection("board")}
                 >
@@ -381,7 +381,7 @@ export function DirectChat({
                                 onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
                                 className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
                               >
-                                {language === "vi" ? "Bo ghim" : "Unpin"}
+                                {language === "vi" ? "Bỏ ghim" : "Unpin"}
                               </button>
                             </>
                           )}
@@ -394,13 +394,13 @@ export function DirectChat({
                     onClick={() => setPanelView("board")}
                     className="mt-3 w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                   >
-                    {language === "vi" ? "Xem tat ca" : "View all"}
+                    {language === "vi" ? "Xem tất cả" : "View all"}
                   </button>
                 </Section>
               )}
 
               <Section
-                title={language === "vi" ? "Anh/Video" : "Media"}
+                title={language === "vi" ? "Ảnh/Video" : "Media"}
                 open={openSections.media}
                 onToggle={() => toggleSection("media")}
               >
@@ -424,7 +424,7 @@ export function DirectChat({
                   </div>
                 ) : (
                   <p className="text-center text-xs text-slate-500">
-                    {language === "vi" ? "Chua co anh/video" : "No media"}
+                    {language === "vi" ? "Chưa có ảnh/video" : "No media"}
                   </p>
                 )}
                 {mediaItems.length > 8 && (
@@ -433,13 +433,13 @@ export function DirectChat({
                     onClick={() => openArchiveView("media")}
                     className="mt-3 block w-full rounded-lg bg-slate-800 py-2 text-center text-xs font-semibold text-slate-300 hover:bg-slate-700"
                   >
-                    {language === "vi" ? "Xem tat ca" : "View all"}
+                    {language === "vi" ? "Xem tất cả" : "View all"}
                   </button>
                 )}
               </Section>
 
               <Section
-                title={language === "vi" ? "Tai lieu" : "Files"}
+                title={language === "vi" ? "Tài liệu" : "Files"}
                 open={openSections.files}
                 onToggle={() => toggleSection("files")}
               >
@@ -464,7 +464,7 @@ export function DirectChat({
                   </div>
                 ) : (
                   <p className="text-center text-xs text-slate-500">
-                    {language === "vi" ? "Chua co tai lieu" : "No files"}
+                    {language === "vi" ? "Chưa có tài liệu" : "No files"}
                   </p>
                 )}
                 {fileItems.length > 3 && (
@@ -473,7 +473,7 @@ export function DirectChat({
                     onClick={() => openArchiveView("files")}
                     className="mt-3 block w-full rounded-lg bg-slate-800 py-2 text-center text-xs font-semibold text-slate-300 hover:bg-slate-700"
                   >
-                    {language === "vi" ? "Xem tat ca" : "View all"}
+                    {language === "vi" ? "Xem tất cả" : "View all"}
                   </button>
                 )}
               </Section>
@@ -505,7 +505,7 @@ export function DirectChat({
                   </div>
                 ) : (
                   <p className="text-center text-xs text-slate-500">
-                    {language === "vi" ? "Chua co link" : "No links"}
+                    {language === "vi" ? "Chưa có link" : "No links"}
                   </p>
                 )}
                 {linkItems.length > 3 && (
@@ -514,13 +514,13 @@ export function DirectChat({
                     onClick={() => openArchiveView("links")}
                     className="mt-3 block w-full rounded-lg bg-slate-800 py-2 text-center text-xs font-semibold text-slate-300 hover:bg-slate-700"
                   >
-                    {language === "vi" ? "Xem tat ca" : "View all"}
+                    {language === "vi" ? "Xem tất cả" : "View all"}
                   </button>
                 )}
               </Section>
 
               <Section
-                title={language === "vi" ? "Thiet lap bao mat" : "Security settings"}
+                title={language === "vi" ? "Thiết lập bảo mật" : "Security settings"}
                 open={openSections.security}
                 onToggle={() => toggleSection("security")}
               >
@@ -528,7 +528,7 @@ export function DirectChat({
                   <div className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
                     <div className="flex items-center gap-2">
                       <BellOff size={15} className="text-slate-300" />
-                      <span>{language === "vi" ? "Tat thong bao" : "Mute notifications"}</span>
+                      <span>{language === "vi" ? "Tắt thông báo" : "Mute notifications"}</span>
                     </div>
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
@@ -544,17 +544,17 @@ export function DirectChat({
                   <div className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
                     <div className="flex items-center gap-2">
                       <Shield size={15} className="text-slate-300" />
-                      <span>{language === "vi" ? "Tin nhan tu xoa" : "Self-destruct"}</span>
+                      <span>{language === "vi" ? "Tin nhắn tự xóa" : "Self-destruct"}</span>
                     </div>
                     <span className="text-xs text-slate-400">
-                      {language === "vi" ? "Khong bao gio" : "Never"}
+                      {language === "vi" ? "Không bao giờ" : "Never"}
                     </span>
                   </div>
 
                   <label className="flex items-center justify-between rounded-lg bg-slate-900/45 px-2 py-2">
                     <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className="text-slate-300" />
-                      <span>{language === "vi" ? "An tro chuyen" : "Hide conversation"}</span>
+                      <span>{language === "vi" ? "Ẩn trò chuyện" : "Hide conversation"}</span>
                     </div>
                     <input
                       type="checkbox"
@@ -572,10 +572,10 @@ export function DirectChat({
                     <span>
                       {isBlockedByMe
                         ? language === "vi"
-                          ? "Bo chan nguoi nay"
+                          ? "Bỏ chặn người này"
                           : "Unblock this user"
                         : language === "vi"
-                          ? "Chan nguoi nay"
+                          ? "Chặn người này"
                           : "Block this user"}
                     </span>
                   </button>
@@ -595,7 +595,7 @@ export function DirectChat({
                   <ArrowLeft size={18} />
                 </button>
                 <p className="text-sm font-semibold text-slate-200">
-                  {language === "vi" ? "Luu tru" : "Archive"}
+                  {language === "vi" ? "Lưu trữ" : "Archive"}
                 </p>
               </div>
 
@@ -605,14 +605,14 @@ export function DirectChat({
                   onClick={() => setArchiveTab("media")}
                   className={`border-b-2 px-3 py-2 text-sm font-semibold ${archiveTab === "media" ? "border-sky-400 text-sky-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
                 >
-                  {language === "vi" ? "Anh/Video" : "Media"}
+                  {language === "vi" ? "Ảnh/Video" : "Media"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setArchiveTab("files")}
                   className={`border-b-2 px-3 py-2 text-sm font-semibold ${archiveTab === "files" ? "border-sky-400 text-sky-300" : "border-transparent text-slate-400 hover:text-slate-200"}`}
                 >
-                  {language === "vi" ? "Tai lieu" : "Files"}
+                  {language === "vi" ? "Tài liệu" : "Files"}
                 </button>
                 <button
                   type="button"
@@ -679,10 +679,10 @@ export function DirectChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Bang tin" : "Board"}
+                  {language === "vi" ? "Bảng tin" : "Board"}
                 </h3>
                 <button
                   type="button"
@@ -695,9 +695,9 @@ export function DirectChat({
 
               <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-900/45 p-1">
                 {[
-                  { id: "all", labelVi: "Tat ca", labelEn: "All" },
+                  { id: "all", labelVi: "Tất cả", labelEn: "All" },
                   { id: "pins", labelVi: "Tin ghim", labelEn: "Pins" },
-                  { id: "notes", labelVi: "Ghi chu", labelEn: "Notes" },
+                  { id: "notes", labelVi: "Ghi chú", labelEn: "Notes" },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -713,7 +713,7 @@ export function DirectChat({
               <div className="max-h-[44vh] space-y-2 overflow-y-auto pr-1">
                 {boardItemsForView.length === 0 ? (
                   <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                    {language === "vi" ? "Chua co du lieu trong muc nay" : "No items in this tab yet"}
+                    {language === "vi" ? "Chưa có dữ liệu trong mục này" : "No items in this tab yet"}
                   </p>
                 ) : (
                   boardItemsForView.map((item) => (
@@ -738,7 +738,7 @@ export function DirectChat({
                               onClick={() => onUnpinPinnedMessage?.(item.sourceId)}
                               className="rounded-md border border-rose-400/40 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10"
                             >
-                              {language === "vi" ? "Bo ghim" : "Unpin"}
+                              {language === "vi" ? "Bỏ ghim" : "Unpin"}
                             </button>
                           </>
                         )}
@@ -751,12 +751,12 @@ export function DirectChat({
               {isCreateNoteOpen && (
                 <div className="mt-4 rounded-xl border border-slate-600 bg-slate-800 p-3">
                   <p className="mb-2 text-sm font-semibold text-slate-100">
-                    {language === "vi" ? "Tao ghi chu moi" : "Create new note"}
+                    {language === "vi" ? "Tạo ghi chú mới" : "Create new note"}
                   </p>
                   <textarea
                     value={noteDraft}
                     onChange={(e) => setNoteDraft(e.target.value)}
-                    placeholder={language === "vi" ? "Nhap noi dung ghi chu..." : "Enter note content..."}
+                    placeholder={language === "vi" ? "Nhập nội dung ghi chú..." : "Enter note content..."}
                     rows={3}
                     className="w-full resize-none rounded-lg border border-slate-600 bg-slate-900 px-2.5 py-2 text-sm text-slate-100"
                   />
@@ -769,7 +769,7 @@ export function DirectChat({
                     />
                     <span>
                       {language === "vi"
-                        ? "Ghim len dau tro chuyen"
+                        ? "Ghim lên đầu trò chuyện"
                         : "Pin to top of conversation"}
                     </span>
                   </label>
@@ -779,7 +779,7 @@ export function DirectChat({
                       onClick={() => setIsCreateNoteOpen(false)}
                       className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
                     >
-                      {language === "vi" ? "Huy" : "Cancel"}
+                      {language === "vi" ? "Hủy" : "Cancel"}
                     </button>
                     <button
                       type="button"
@@ -787,7 +787,7 @@ export function DirectChat({
                       disabled={!noteDraft.trim()}
                       className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {language === "vi" ? "Tao ghi chu" : "Create note"}
+                      {language === "vi" ? "Tạo ghi chú" : "Create note"}
                     </button>
                   </div>
                 </div>
@@ -804,10 +804,10 @@ export function DirectChat({
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-200 hover:bg-slate-800"
                 >
                   <ArrowLeft size={15} />
-                  <span>{language === "vi" ? "Quay lai" : "Back"}</span>
+                  <span>{language === "vi" ? "Quay lại" : "Back"}</span>
                 </button>
                 <h3 className="text-base font-semibold text-slate-100">
-                  {language === "vi" ? "Danh sach nhac hen" : "Reminder list"}
+                  {language === "vi" ? "Danh sách nhắc hẹn" : "Reminder list"}
                 </h3>
                 <button
                   type="button"
@@ -820,7 +820,7 @@ export function DirectChat({
               <div className="space-y-2">
                 {reminderItems.length === 0 ? (
                   <p className="rounded-lg bg-slate-900/45 px-3 py-3 text-sm text-slate-400">
-                    {language === "vi" ? "Chua co nhac hen" : "No reminders yet"}
+                    {language === "vi" ? "Chưa có nhắc hẹn" : "No reminders yet"}
                   </p>
                 ) : (
                   reminderItems.map((item) => (
@@ -836,13 +836,13 @@ export function DirectChat({
               {isCreateReminderOpen && (
                 <div className="mt-4 rounded-xl border border-slate-600 bg-slate-800 p-3">
                   <p className="mb-2 text-sm font-semibold text-slate-100">
-                    {language === "vi" ? "Tao nhac hen moi" : "Create new reminder"}
+                    {language === "vi" ? "Tạo nhắc hẹn mới" : "Create new reminder"}
                   </p>
                   <input
                     type="text"
                     value={reminderTitleDraft}
                     onChange={(e) => setReminderTitleDraft(e.target.value)}
-                    placeholder={language === "vi" ? "Tieu de nhac hen..." : "Reminder title..."}
+                    placeholder={language === "vi" ? "Tiêu đề nhắc hẹn..." : "Reminder title..."}
                     className="mb-2 h-9 w-full rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-100"
                   />
                   <input
@@ -857,7 +857,7 @@ export function DirectChat({
                       onClick={() => setIsCreateReminderOpen(false)}
                       className="rounded-md border border-slate-500 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
                     >
-                      {language === "vi" ? "Huy" : "Cancel"}
+                      {language === "vi" ? "Hủy" : "Cancel"}
                     </button>
                     <button
                       type="button"
@@ -865,7 +865,7 @@ export function DirectChat({
                       disabled={!reminderTitleDraft.trim()}
                       className="rounded-md bg-lime-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-lime-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {language === "vi" ? "Tao nhac hen" : "Create reminder"}
+                      {language === "vi" ? "Tạo nhắc hẹn" : "Create reminder"}
                     </button>
                   </div>
                 </div>

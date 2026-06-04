@@ -131,7 +131,7 @@ export function MessageActions({
           <span>
             {message.isPinned
               ? language === "vi"
-                ? "Bo ghim"
+                ? "Bỏ ghim"
                 : "Unpin"
               : language === "vi"
                 ? "Ghim"
@@ -148,7 +148,7 @@ export function MessageActions({
           className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Reply size={14} />
-          <span>{language === "vi" ? "Tra loi" : "Reply"}</span>
+          <span>{language === "vi" ? "Trả lời" : "Reply"}</span>
         </button>
         <button
           type="button"
@@ -159,7 +159,7 @@ export function MessageActions({
           className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] hover:bg-slate-700"
         >
           <Forward size={14} />
-          <span>{language === "vi" ? "Chuyen" : "Forward"}</span>
+          <span>{language === "vi" ? "Chuyển" : "Forward"}</span>
         </button>
         <button
           type="button"
@@ -170,7 +170,7 @@ export function MessageActions({
           className="inline-flex flex-col items-center justify-center rounded-lg py-1 text-[10px] text-rose-300 hover:bg-rose-500/20"
         >
           <Trash2 size={14} />
-          <span>{language === "vi" ? "Xoa" : "Delete"}</span>
+          <span>{language === "vi" ? "Xóa" : "Delete"}</span>
         </button>
         <div ref={moreMenuRef} className="relative">
           <button
@@ -193,7 +193,7 @@ export function MessageActions({
                 }}
                 className="w-full rounded-md px-2 py-1.5 text-left text-slate-100 hover:bg-slate-700"
               >
-                {language === "vi" ? "Sao chep" : "Copy"}
+                {language === "vi" ? "Sao chép" : "Copy"}
               </button>
               {isMine && onEdit && !isRecalled && (
                 <button
@@ -204,7 +204,7 @@ export function MessageActions({
                   }}
                   className="w-full rounded-md px-2 py-1.5 text-left text-sky-300 hover:bg-sky-500/15"
                 >
-                  {language === "vi" ? "Chinh sua" : "Edit"}
+                  {language === "vi" ? "Chỉnh sửa" : "Edit"}
                 </button>
               )}
               {isMine && onRecall && !isRecalled && (
@@ -215,7 +215,7 @@ export function MessageActions({
                   }}
                   className="w-full rounded-md px-2 py-1.5 text-left text-amber-300 hover:bg-amber-500/15"
                 >
-                  {language === "vi" ? "Thu hoi" : "Recall"}
+                  {language === "vi" ? "Thu hồi" : "Recall"}
                 </button>
               )}
             </div>
