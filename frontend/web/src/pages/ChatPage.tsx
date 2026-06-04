@@ -7654,11 +7654,11 @@ export function ChatPage() {
       />
 
       {activeTab !== "messages" && (
-        <aside className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface-muted)] text-[var(--color-zola-text)] max-md:order-1">
+        <aside className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--color-zola-surface)] text-slate-100 max-md:order-1">
           {activeTab === "contacts" && (
             <div className="mx-auto flex min-h-full w-full max-w-[1500px] flex-col gap-3 p-3 md:h-full md:flex-row md:gap-5 md:p-5">
-              <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:w-[320px] md:rounded-[28px]">
-                <div className="border-b border-white/6 px-3 pb-3 pt-3 md:px-4 md:pt-4">
+              <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:w-[320px] md:rounded-[28px]">
+                <div className="border-b border-[var(--color-zola-border)] px-3 pb-3 pt-3 md:px-4 md:pt-4">
                   <div className="flex gap-2">
                     <div className="relative min-w-0 flex-1">
                       <Search
@@ -7675,7 +7675,7 @@ export function ChatPage() {
                             ? "email@example.com"
                             : language === "vi" ? "Tìm danh bạ" : "Search contacts"
                         }
-                        className="h-10 w-full rounded-xl border border-white/6 bg-[#181c22] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)] md:h-11"
+                        className="h-10 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-page)] pl-10 pr-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[var(--color-zola-accent-soft)] md:h-11"
                       />
                     </div>
                     {contactsView === "people" && (
@@ -7705,12 +7705,12 @@ export function ChatPage() {
                         className={`flex min-w-[8.5rem] items-center gap-2 rounded-2xl px-3 py-2.5 text-left transition md:w-full md:gap-3 md:px-4 md:py-3 ${
                           isActive
                             ? "bg-[rgba(42,134,255,0.20)] text-white shadow-[inset_0_0_0_1px_rgba(82,168,255,0.35)]"
-                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                            : "text-slate-300 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
                         }`}
                       >
                         <span
                           className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl md:h-10 md:w-10 ${
-                            isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-white/5 text-slate-400"
+                            isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
                           }`}
                         >
                           <Icon size={18} />
@@ -7741,7 +7741,7 @@ export function ChatPage() {
                         </span>
                         <span
                           className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
-                            isActive ? "bg-white/10 text-slate-100" : "bg-white/5 text-slate-400"
+                            isActive ? "bg-[var(--color-zola-panel-hover)] text-slate-100" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
                           }`}
                         >
                           {item.count}
@@ -7751,19 +7751,19 @@ export function ChatPage() {
                   })}
                 </div>
 
-                <div className="mt-auto hidden border-t border-white/6 px-4 py-4 text-xs text-slate-500 md:block">
+                <div className="mt-auto hidden border-t border-[var(--color-zola-border)] px-4 py-4 text-xs text-slate-500 md:block">
                   {language === "vi"
                     ? "Danh bạ được đồng bộ theo dữ liệu bạn bè, nhóm và lời mời hiện tại."
                     : "Contacts are synced from your current friends, groups, and request data."}
                 </div>
               </aside>
 
-              <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/8 bg-[#22272e] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:rounded-[28px]">
-                <div className="border-b border-white/6 px-4 py-3 md:px-6 md:py-5">
+              <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] text-slate-100 shadow-[0_20px_40px_rgba(8,15,28,0.32)] md:rounded-[28px]">
+                <div className="border-b border-[var(--color-zola-border)] px-4 py-3 md:px-6 md:py-5">
                   <div className="flex flex-wrap items-start justify-between gap-3 md:gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/5 text-slate-300">
+                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-zola-panel-soft)] text-slate-300">
                           {contactsView === "friends" ? (
                             <Users size={18} />
                           ) : contactsView === "people" ? (
@@ -7822,7 +7822,7 @@ export function ChatPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                      <span className="rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-soft)] px-3 py-1.5 text-xs font-semibold text-slate-300">
                         {language === "vi"
                           ? contactsView === "friends"
                             ? "Sap xep A-Z"
@@ -7843,7 +7843,7 @@ export function ChatPage() {
                                 ? "Status overview"
                                 : "Realtime ready"}
                       </span>
-                      <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                      <span className="rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-soft)] px-3 py-1.5 text-xs font-semibold text-slate-300">
                         {normalizedContactsSearchQuery
                           ? language === "vi"
                             ? `Dang loc: "${contactsSearchQuery}"`
@@ -7870,7 +7870,7 @@ export function ChatPage() {
                     </div>
                   )}
                   {isLoadingFriendshipData && (
-                    <div className="mb-4 rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                    <div className="mb-4 rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-soft)] px-4 py-3 text-sm text-slate-300">
                       {language === "vi" ? "Đang đồng bộ trạng thái bạn bè..." : "Syncing friendship state..."}
                     </div>
                   )}
@@ -7878,8 +7878,8 @@ export function ChatPage() {
                   {contactsView === "friends" && (
                     <div className="space-y-6">
                       {groupedContactUsers.length === 0 ? (
-                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
-                          <p className="text-sm font-semibold text-slate-200">
+                        <div className="rounded-[24px] border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-300">
                             {language === "vi" ? "Chưa có bạn bè phù hợp." : "No matching friends yet."}
                           </p>
                           <p className="mt-2 text-xs text-slate-500">
@@ -7898,7 +7898,7 @@ export function ChatPage() {
                                 return (
                                   <div
                                     key={user.sortKey}
-                                    className="flex items-center gap-4 rounded-[22px] border border-white/8 bg-[#1b2027] px-4 py-3 transition hover:border-sky-400/30 hover:bg-[#202731]"
+                                    className="flex items-center gap-4 rounded-[22px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)] px-4 py-3 transition hover:border-sky-400/30 hover:bg-[#202731]"
                                   >
                                     <button
                                       type="button"
@@ -7938,7 +7938,7 @@ export function ChatPage() {
                                         onClick={() => {
                                           void onOpenUserPreview(user.id);
                                         }}
-                                        className="grid h-10 w-10 place-items-center rounded-full border border-white/8 text-slate-400 hover:bg-white/5 hover:text-white"
+                                        className="grid h-10 w-10 place-items-center rounded-full border border-[var(--color-zola-border)] text-slate-400 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
                                         title={language === "vi" ? "Thêm thao tác" : "More actions"}
                                       >
                                         <MoreHorizontal size={16} />
@@ -7957,8 +7957,8 @@ export function ChatPage() {
                   {contactsView === "people" && (
                     <div className="space-y-4">
                       {!contactsSearchQuery.trim() && !contactCandidateProfile && (
-                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
-                          <p className="text-sm font-semibold text-slate-200">
+                        <div className="rounded-[24px] border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-300">
                             {language === "vi" ? "Nhập email để tìm người dùng." : "Enter an email to find a user."}
                           </p>
                           <p className="mt-2 text-xs text-slate-500">
@@ -7976,13 +7976,13 @@ export function ChatPage() {
                       )}
 
                       {isSearchingContactCandidate && (
-                        <div className="rounded-[24px] border border-white/8 bg-[#1b2027] px-5 py-4 text-sm text-slate-300">
+                        <div className="rounded-[24px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)] px-5 py-4 text-sm text-slate-300">
                           {language === "vi" ? "Đang tìm người dùng..." : "Finding user..."}
                         </div>
                       )}
 
                       {contactCandidateProfile && contactCandidateRelationship && (
-                        <div className="rounded-[24px] border border-white/8 bg-[#1b2027] p-4">
+                        <div className="rounded-[24px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)] p-4">
                           <div className="flex flex-wrap items-center gap-4">
                             <button
                               type="button"
@@ -8012,7 +8012,7 @@ export function ChatPage() {
                               </div>
                             </button>
 
-                            <span className="rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                            <span className="rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-soft)] px-3 py-1.5 text-xs font-semibold text-slate-300">
                               {contactCandidateRelationship.kind === "self"
                                 ? language === "vi" ? "Tài khoản của bạn" : "Your account"
                                 : contactCandidateRelationship.kind === "friend"
@@ -8065,7 +8065,7 @@ export function ChatPage() {
                                     type="button"
                                     disabled={processingFriendshipId === contactCandidateRelationship.friendshipId}
                                     onClick={() => void onDeclineFriendRequest(contactCandidateRelationship.friendshipId!)}
-                                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
+                                    className="rounded-xl border border-[var(--color-zola-border-strong)] px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-[var(--color-zola-panel-hover)] disabled:opacity-50"
                                   >
                                     {language === "vi" ? "Từ chối" : "Decline"}
                                   </button>
@@ -8129,8 +8129,8 @@ export function ChatPage() {
                   {contactsView === "groups" && (
                     <div className="space-y-2">
                       {filteredJoinedGroupContacts.length === 0 ? (
-                        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
-                          <p className="text-sm font-semibold text-slate-200">
+                        <div className="rounded-[24px] border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-6 py-10 text-center">
+                          <p className="text-sm font-semibold text-slate-300">
                             {language === "vi" ? "Chưa có nhóm phù hợp." : "No matching groups yet."}
                           </p>
                         </div>
@@ -8142,7 +8142,7 @@ export function ChatPage() {
                               key={group.id}
                               type="button"
                               onClick={() => onActivateConversation(group.id)}
-                              className="flex w-full items-center gap-4 rounded-[22px] border border-white/8 bg-[#1b2027] px-4 py-3 text-left transition hover:border-sky-400/30 hover:bg-[#202731]"
+                              className="flex w-full items-center gap-4 rounded-[22px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)] px-4 py-3 text-left transition hover:border-sky-400/30 hover:bg-[#202731]"
                             >
                               {avatarUrl ? (
                                 <img
@@ -8170,7 +8170,7 @@ export function ChatPage() {
                                     : `${group.memberCount} members`}
                                 </p>
                               </div>
-                              <span className="grid h-10 w-10 place-items-center rounded-full border border-white/8 text-slate-400">
+                              <span className="grid h-10 w-10 place-items-center rounded-full border border-[var(--color-zola-border)] text-slate-400">
                                 <ChevronRight size={16} />
                               </span>
                             </button>
@@ -8182,15 +8182,15 @@ export function ChatPage() {
 
                   {contactsView === "requests" && (
                     <div className="grid gap-5 xl:grid-cols-2">
-                      <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
-                        <div className="border-b border-white/6 px-5 py-4">
+                      <section className="rounded-[24px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)]">
+                        <div className="border-b border-[var(--color-zola-border)] px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
                             {language === "vi" ? "Lời mời kết bạn đến" : "Incoming requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
                           {filteredPendingFriendRequests.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
+                            <div className="rounded-2xl border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-panel-hover)] p-4 text-xs text-slate-400">
                               {language === "vi"
                                 ? "Không có lời mời kết bạn nào phù hợp."
                                 : "No incoming friend requests match the current filter."}
@@ -8203,7 +8203,7 @@ export function ChatPage() {
                               return (
                                 <div
                                   key={request.friendshipId}
-                                  className="rounded-2xl border border-white/8 bg-[#171b21] p-4"
+                                  className="rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] p-4"
                                 >
                                   <div className="flex items-center gap-3">
                                     {avatarUrl ? (
@@ -8243,7 +8243,7 @@ export function ChatPage() {
                                       type="button"
                                       disabled={processingFriendshipId === request.friendshipId}
                                       onClick={() => void onDeclineFriendRequest(request.friendshipId)}
-                                      className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
+                                      className="flex-1 rounded-xl border border-[var(--color-zola-border-strong)] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-[var(--color-zola-panel-hover)] disabled:opacity-50"
                                     >
                                       {language === "vi" ? "Từ chối" : "Decline"}
                                     </button>
@@ -8255,15 +8255,15 @@ export function ChatPage() {
                         </div>
                       </section>
 
-                      <section className="rounded-[24px] border border-white/8 bg-[#1b2027]">
-                        <div className="border-b border-white/6 px-5 py-4">
+                      <section className="rounded-[24px] border border-[var(--color-zola-border)] bg-[var(--color-zola-page)]">
+                        <div className="border-b border-[var(--color-zola-border)] px-5 py-4">
                           <h3 className="text-sm font-semibold text-slate-100">
                             {language === "vi" ? "Lời mời đã gửi" : "Sent requests"}
                           </h3>
                         </div>
                         <div className="space-y-3 p-4">
                           {filteredSentPendingFriendRequests.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 bg-[#171b21] p-4 text-xs text-slate-400">
+                            <div className="rounded-2xl border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-panel-hover)] p-4 text-xs text-slate-400">
                               {language === "vi"
                                 ? "Không có lời mời đã gửi nào phù hợp."
                                 : "No sent friend requests match the current filter."}
@@ -8276,7 +8276,7 @@ export function ChatPage() {
                               return (
                                 <div
                                   key={request.friendshipId}
-                                  className="rounded-2xl border border-white/8 bg-[#171b21] p-4"
+                                  className="rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] p-4"
                                 >
                                   <div className="flex items-center gap-3">
                                     {avatarUrl ? (
@@ -8315,7 +8315,7 @@ export function ChatPage() {
                                     <button
                                       type="button"
                                       onClick={() => void onOpenFriendConversation(request.addresseeId)}
-                                      className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5"
+                                      className="flex-1 rounded-xl border border-[var(--color-zola-border-strong)] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-[var(--color-zola-panel-hover)]"
                                     >
                                       {language === "vi" ? "Nhắn tin" : "Message"}
                                     </button>
@@ -8330,8 +8330,8 @@ export function ChatPage() {
                   )}
 
                   {contactsView === "group-invites" && (
-                    <div className="rounded-[24px] border border-dashed border-white/10 bg-[#1b2027] px-6 py-10 text-center">
-                      <p className="text-sm font-semibold text-slate-200">
+                    <div className="rounded-[24px] border border-dashed border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-6 py-10 text-center">
+                      <p className="text-sm font-semibold text-slate-300">
                         {language === "vi"
                           ? "Hiện tại chưa có lời mời vào nhóm và cộng đồng."
                           : "There are no group or community invites right now."}
@@ -8356,7 +8356,7 @@ export function ChatPage() {
 
           {activeTab === "profile" && (
             <div className="mx-auto max-w-5xl space-y-4 p-6">
-              <div className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-hidden rounded-[1.75rem] border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] shadow-sm">
                 <div className="h-36 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_35%),linear-gradient(135deg,_#1d4ed8,_#0f172a_70%)]" />
                 <div className="relative px-5 pb-5">
                   <div className="-mt-12 flex items-end gap-4">
@@ -8372,10 +8372,10 @@ export function ChatPage() {
                       </div>
                     )}
                     <div className="min-w-0 flex-1 pb-2">
-                      <h2 className="truncate text-2xl font-semibold text-slate-900">
+                      <h2 className="truncate text-2xl font-semibold text-slate-100">
                         {myProfile?.fullName ?? "User"}
                       </h2>
-                      <p className="truncate text-sm text-slate-500">
+                      <p className="truncate text-sm text-slate-400">
                         {myProfile?.email ?? "-"}
                       </p>
                     </div>
@@ -8383,39 +8383,39 @@ export function ChatPage() {
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="space-y-3 rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4">
                 <div className="grid grid-cols-1 gap-3">
-                  <label className="block text-xs font-semibold text-slate-500">
+                  <label className="block text-xs font-semibold text-slate-400">
                     {language === "vi" ? "Họ tên đầy đủ" : "Full name"}
                     <input
                       type="text"
                       value={profileFullName}
                       onChange={(event) => setProfileFullName(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                      className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-100"
                     />
                   </label>
 
-                  <label className="block text-xs font-semibold text-slate-500">
+                  <label className="block text-xs font-semibold text-slate-400">
                     {language === "vi" ? "Email" : "Email"}
                     <input
                       type="text"
                       value={myProfile?.email ?? ""}
                       readOnly
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm text-slate-500"
+                      className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-400"
                     />
                   </label>
 
-                  <label className="block text-xs font-semibold text-slate-500">
+                  <label className="block text-xs font-semibold text-slate-400">
                     {language === "vi" ? "Số điện thoại" : "Phone"}
                     <input
                       type="text"
                       value={profilePhone}
                       onChange={(event) => setProfilePhone(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                      className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-100"
                     />
                   </label>
 
-                  <label className="block text-xs font-semibold text-slate-500">
+                  <label className="block text-xs font-semibold text-slate-400">
                     {language === "vi" ? "Ảnh đại diện" : "Avatar"}
                     <input
                       type="file"
@@ -8425,17 +8425,17 @@ export function ChatPage() {
                           event.target.files?.[0] ?? null,
                         )
                       }
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                      className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-100"
                     />
                   </label>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-xs font-semibold text-slate-500">
+                    <label className="block text-xs font-semibold text-slate-400">
                       {language === "vi" ? "Giới tính" : "Gender"}
                       <select
                         value={profileGender}
                         onChange={(event) => setProfileGender(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                        className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-100"
                       >
                         <option value="">
                           {language === "vi" ? "Không chọn" : "Not set"}
@@ -8452,13 +8452,13 @@ export function ChatPage() {
                       </select>
                     </label>
 
-                    <label className="block text-xs font-semibold text-slate-500">
+                    <label className="block text-xs font-semibold text-slate-400">
                       {language === "vi" ? "Ngày sinh" : "Birthdate"}
                       <input
                         type="date"
                         value={profileBirthdate}
                         onChange={(event) => setProfileBirthdate(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"
+                        className="mt-1 w-full rounded-xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-hover)] px-3 py-2.5 text-sm text-slate-100"
                       />
                     </label>
                   </div>
@@ -8505,11 +8505,11 @@ export function ChatPage() {
 
           {(activeTab as string) === "calls" && (
             <div className="mx-auto h-full max-w-5xl overflow-y-auto p-6">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h2 className="text-base font-semibold text-slate-800">
+              <div className="rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4 shadow-sm">
+                <h2 className="text-base font-semibold text-slate-200">
                   {language === "vi" ? "Cuộc gọi" : "Calls"}
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-400">
                   {language === "vi"
                     ? "Bắt đầu cuộc gọi thoại/video trực tiếp ngay trong ứng dụng."
                     : "Start voice/video calls directly inside the app."}
@@ -8522,7 +8522,7 @@ export function ChatPage() {
                     onClick={() => {
                       void onStartQuickCall("voice");
                     }}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg border border-[var(--color-zola-border-strong)] px-3 py-2 text-xs font-semibold text-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {language === "vi" ? "Gọi thoại" : "Voice call"}
                   </button>
@@ -8539,13 +8539,13 @@ export function ChatPage() {
                 </div>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-800">
+              <div className="mt-4 rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-200">
                   {language === "vi" ? "Lịch sử cuộc gọi" : "Recent calls"}
                 </h3>
 
                 {callHistory.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-400">
                     {language === "vi"
                       ? "Chưa có cuộc gọi nào trong phiên này."
                       : "No calls in this session yet."}
@@ -8555,10 +8555,10 @@ export function ChatPage() {
                     {callHistory.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
+                        className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-zola-border)] px-3 py-2"
                       >
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-slate-700">
+                          <p className="truncate text-xs font-semibold text-slate-300">
                             {item.mode === "video"
                               ? language === "vi"
                                 ? "Gọi video"
@@ -8568,11 +8568,11 @@ export function ChatPage() {
                                 : "Voice call"}{" "}
                             · {item.conversationName}
                           </p>
-                          <p className="text-[11px] text-slate-500">
+                          <p className="text-[11px] text-slate-400">
                             {new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                        <span className="shrink-0 rounded-md border border-[var(--color-zola-border-strong)] px-2 py-1 text-[11px] font-semibold text-slate-600">
                           {item.status === "connected"
                             ? language === "vi"
                               ? "Đã kết nối"
@@ -8603,7 +8603,7 @@ export function ChatPage() {
 
           {activeTab === "settings" && (
             <div className="mx-auto max-w-4xl p-6">
-              <div className="rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+              <div className="rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h2 className="text-base font-semibold text-slate-100">
                   {language === "vi" ? "Cài đặt" : "Settings"}
                 </h2>
@@ -8614,12 +8614,12 @@ export function ChatPage() {
                 </p>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+              <div className="mt-4 rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h3 className="text-sm font-semibold text-slate-100">
                   {language === "vi" ? "Quyền riêng tư thông tin" : "Profile privacy"}
                 </h3>
                 <div className="mt-3 space-y-3">
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
                         {language === "vi" ? "Ẩn ngày tháng năm sinh" : "Hide birthdate"}
@@ -8638,7 +8638,7 @@ export function ChatPage() {
                     />
                   </label>
 
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
                         {language === "vi" ? "Ẩn email" : "Hide email"}
@@ -8657,7 +8657,7 @@ export function ChatPage() {
                     />
                   </label>
 
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
                         {language === "vi" ? "Ẩn số điện thoại" : "Hide phone"}
@@ -8676,7 +8676,7 @@ export function ChatPage() {
                     />
                   </label>
 
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[#355d87] bg-[#0b243f] px-3 py-3">
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-100">
                         {language === "vi" ? "Cho phép nhắn tin từ người lạ" : "Allow stranger messages"}
@@ -8707,7 +8707,7 @@ export function ChatPage() {
                 </p>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-[#2f537a] bg-[#0e2b4a] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
+              <div className="mt-4 rounded-2xl border border-[var(--color-zola-border)] bg-[var(--color-zola-panel)] p-4 shadow-[0_10px_30px_rgba(2,8,22,0.28)]">
                 <h3 className="text-sm font-semibold text-slate-100">
                   {language === "vi" ? "Mã PIN ẩn cuộc trò chuyện" : "Hidden conversation PIN"}
                 </h3>
@@ -8728,7 +8728,7 @@ export function ChatPage() {
                     value={settingsPinDraft}
                     onChange={(event) => setSettingsPinDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
                     placeholder={language === "vi" ? "PIN mới (4-8 số)" : "New PIN (4-8 digits)"}
-                    className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
+                    className="h-10 rounded-lg border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 text-sm text-slate-100"
                   />
                   <input
                     type="password"
@@ -8736,7 +8736,7 @@ export function ChatPage() {
                     value={settingsPinConfirmDraft}
                     onChange={(event) => setSettingsPinConfirmDraft(event.target.value.replace(/\D/g, "").slice(0, 8))}
                     placeholder={language === "vi" ? "Nhập lại PIN" : "Confirm PIN"}
-                    className="h-10 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 text-sm text-slate-100"
+                    className="h-10 rounded-lg border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 text-sm text-slate-100"
                   />
                 </div>
 
@@ -8774,7 +8774,7 @@ export function ChatPage() {
                     clearAuthTokens();
                     window.location.replace("/login");
                   }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#3a648f] bg-[#0b243f] px-3 py-2 text-sm text-slate-100 transition-all duration-200 hover:bg-[#12355b]"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-zola-border-strong)] bg-[var(--color-zola-page)] px-3 py-2 text-sm text-slate-100 transition-all duration-200 hover:bg-[#12355b]"
                 >
                   <LogOut size={16} />
                   <span>{language === "vi" ? "Đăng xuất" : "Logout"}</span>
@@ -9171,12 +9171,12 @@ export function ChatPage() {
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center">
             <div>
-              <h2 className="text-2xl font-semibold text-slate-800">
+              <h2 className="text-2xl font-semibold text-slate-200">
                 {language === "vi"
                   ? "Chọn tab Messages"
                   : "Select Messages tab"}
               </h2>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-slate-400">
                 {language === "vi"
                   ? "Chuyển về tab Messages để bắt đầu nhắn tin real-time."
                   : "Switch back to Messages tab to start real-time chat."}
@@ -9332,7 +9332,7 @@ export function ChatPage() {
       />
 
       {bannerMessage && (
-        <div className="fixed bottom-4 left-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-700 shadow-lg">
+        <div className="fixed bottom-4 left-4 z-50 max-w-md rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-300 shadow-lg">
           {bannerMessage}
         </div>
       )}
