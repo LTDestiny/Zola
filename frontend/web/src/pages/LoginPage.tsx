@@ -145,24 +145,6 @@ export function LoginPage() {
             {t("register")}
           </Link>
         </div>
-
-        <div className="m-3 md:m-4 p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <strong className="block text-sm text-slate-900">
-              Nang cao hieu qua cong viec voi Zola PC
-            </strong>
-            <p className="mt-1 text-sm text-slate-600">
-              Gui file lon len den 1 GB, chup man hinh, goi video va nhieu tien
-              ich hon nua
-            </p>
-          </div>
-          <Link
-            to="/"
-            className="h-10 px-5 w-40 rounded-lg bg-zola-blue text-white inline-flex items-center justify-center font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Tai ngay
-          </Link>
-        </div>
       </section>
 
       <Link to="/chat" className="text-sm text-zola-blue hover:text-blue-700">
