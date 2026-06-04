@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface AiChatMessageRepository extends MongoRepository<AiChatMessage, String> {
     List<AiChatMessage> findAllByUserIdOrderByTimestampAsc(String userId);
+    void deleteByUserId(String userId);
 }

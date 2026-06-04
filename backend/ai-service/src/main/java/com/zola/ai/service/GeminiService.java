@@ -113,4 +113,8 @@ public class GeminiService {
     public List<AiChatMessage> getHistory(String userId) {
         return chatMessageRepository.findAllByUserIdOrderByTimestampAsc(userId);
     }
+
+    public void clearHistory(String userId) {
+        chatMessageRepository.deleteByUserId(userId);
+    }
 }

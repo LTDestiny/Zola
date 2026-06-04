@@ -18,4 +18,8 @@ export const aiApi = {
     const response = await httpClient.get<{ data: ChatMessage[] }>("/api/v1/ai/chat/history");
     return response.data.data;
   },
+
+  clearHistory: async (): Promise<void> => {
+    await httpClient.delete("/api/v1/ai/chat/history");
+  },
 };

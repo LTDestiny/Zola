@@ -38,4 +38,12 @@ public class ChatbotController {
         List<AiChatMessage> history = geminiService.getHistory(userId);
         return ApiResponse.ok("History fetched", history);
     }
+
+    @DeleteMapping("/chat/history")
+    public ApiResponse<Void> clearHistory(
+        @RequestHeader("X-User-Id") String userId
+    ) {
+        geminiService.clearHistory(userId);
+        return ApiResponse.ok("History cleared", null);
+    }
 }

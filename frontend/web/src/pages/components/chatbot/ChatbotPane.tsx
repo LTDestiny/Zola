@@ -1,4 +1,4 @@
-import { Bot, Send, User, Sparkles } from "lucide-react";
+import { Bot, Send, User, Sparkles, Trash2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "../../../i18n/language";
 import { aiApi, type ChatMessage } from "../../../api/aiApi";
@@ -73,19 +73,48 @@ export function ChatbotPane() {
     }
   };
 
+  const handleClear = async () => {
+    if (isLoading) return;
+    try {
+      await aiApi.clearHistory();
+      setMessages([
+        {
+          id: "welcome",
+          role: "model",
+          content: language === "vi" 
+            ? "Xin chào! Tôi là Zola AI. Tôi có thể giúp gì cho bạn hôm nay?" 
+            : "Hello! I am Zola AI. How can I help you today?",
+          timestamp: new Date().toISOString()
+        }
+      ]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-[#0b0f17] text-slate-100">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-white/5 bg-[#121822] px-6 py-4 shadow-sm">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-purple-500/20">
-          <Sparkles size={20} />
+      <div className="flex shrink-0 items-center justify-between border-b border-white/5 bg-[#121822] px-6 py-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-purple-500/20">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-white">Zola AI</h2>
+            <p className="text-xs text-indigo-300">
+              {language === "vi" ? "Trợ lý ảo thông minh" : "Smart Assistant"}
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-white">Zola AI</h2>
-          <p className="text-xs text-indigo-300">
-            {language === "vi" ? "Trợ lý ảo thông minh" : "Smart Assistant"}
-          </p>
-        </div>
+        <button
+          onClick={handleClear}
+          disabled={isLoading || messages.length <= 1}
+          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-red-400 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+          title={language === "vi" ? "Xóa lịch sử" : "Clear history"}
+        >
+          <Trash2 size={18} />
+        </button>
       </div>
 
       {/* Chat Area */}

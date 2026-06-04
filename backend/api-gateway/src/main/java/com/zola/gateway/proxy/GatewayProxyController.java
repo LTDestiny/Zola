@@ -181,6 +181,12 @@ public class GatewayProxyController {
         return getMap(aiServiceUrl + "/api/v1/ai/chat/history", null, null, Map.of("X-User-Id", userId));
     }
 
+    @DeleteMapping("/ai/chat/history")
+    public ApiResponse<Object> clearAiChatHistory(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        return deleteMap(aiServiceUrl + "/api/v1/ai/chat/history", null, Map.of("X-User-Id", userId));
+    }
+
     @PostMapping("/auth/register")
     public ApiResponse<Object> register(@RequestBody Map<String, Object> body) {
         return postMap(authServiceUrl + "/api/v1/auth/register", body, null, null, Map.of());

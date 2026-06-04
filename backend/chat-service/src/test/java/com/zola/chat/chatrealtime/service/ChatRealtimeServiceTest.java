@@ -74,6 +74,7 @@ class ChatRealtimeServiceTest {
             presenceManager,
             messageHiddenRepository,
             userRelationshipClient,
+            new com.fasterxml.jackson.databind.ObjectMapper(),
             900,
             86_400
         );
