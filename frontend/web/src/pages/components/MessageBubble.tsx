@@ -306,7 +306,9 @@ export function MessageBubble({ message, isMine, onVotePoll, onClosePoll, onComp
                         </div>
                         <div>
                             <p className="max-w-36 truncate text-sm font-medium">{message.fileName ?? message.text}</p>
-                            <p className="text-xs text-slate-500">{message.fileSize ?? "1.2 MB"}</p>
+                            {message.fileSize && (
+                                <p className="text-xs text-slate-500">{message.fileSize}</p>
+                            )}
                         </div>
                     </div>
                     <button
