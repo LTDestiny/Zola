@@ -261,7 +261,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_NAME: ${AI_META_DB_NAME:-zola_ai_meta_db}
       MONGO_URI: ${AI_MONGO_URI:-mongodb://mongodb:27017/zola_ai_db}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
