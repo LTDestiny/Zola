@@ -7,7 +7,7 @@ import { resolveMediaUrl } from "../../utils/mediaUrl";
 // Ownership: direct 1-1 chat message pane. Keep private-chat changes here.
 const currentUserIdFallback = "me";
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
-const RECALL_WINDOW_MS = 5 * 60 * 1000;
+const RECALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function initials(name: string) {
   const parts = name.split(" ").filter(Boolean);
@@ -1251,8 +1251,8 @@ export function DirectConversationPane({
     if (selectedRecallableMessages.length === 0) {
       setSelectionActionFeedback(
         language === "vi"
-          ? "Chỉ thu hồi được tin nhắn của bạn trong 5 phút."
-          : "You can only recall your own messages within 5 minutes.",
+          ? "Chỉ thu hồi được tin nhắn của bạn trong 24 giờ."
+          : "You can only recall your own messages within 24 hours.",
       );
       return;
     }
@@ -2044,8 +2044,8 @@ export function DirectConversationPane({
                         if (isMessageActionExpired(messageId, RECALL_WINDOW_MS)) {
                           setPolicyModalMessage(
                             language === "vi"
-                              ? "Không thể thu hồi tin nhắn vì quá 5p"
-                              : "Cannot recall this message after 5 minutes",
+                              ? "Không thể thu hồi tin nhắn vì quá 24 giờ"
+                              : "Cannot recall this message after 24 hours",
                           );
                           return;
                         }
@@ -2360,8 +2360,8 @@ export function DirectConversationPane({
                 {selectedRecallableMessages.length !== selectedMessages.length && (
                   <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-amber-100">
                     {language === "vi"
-                      ? `Chỉ ${selectedRecallableMessages.length}/${selectedMessages.length} tin được thu hồi trong 5 phút`
-                      : `Only ${selectedRecallableMessages.length}/${selectedMessages.length} message(s) can be recalled within 5 minutes`}
+                      ? `Chỉ ${selectedRecallableMessages.length}/${selectedMessages.length} tin được thu hồi trong 24 giờ`
+                      : `Only ${selectedRecallableMessages.length}/${selectedMessages.length} message(s) can be recalled within 24 hours`}
                   </span>
                 )}
               </div>
