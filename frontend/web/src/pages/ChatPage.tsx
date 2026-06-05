@@ -957,12 +957,12 @@ export function ChatPage() {
         ...prev,
         [notice.conversationId]: existing
           ? {
-              ...existing,
-              callId: notice.callId,
-              initiatorUserId: notice.initiatorUserId,
-              initiatorDisplayName: notice.initiatorDisplayName,
-              mode: notice.mode,
-            }
+            ...existing,
+            callId: notice.callId,
+            initiatorUserId: notice.initiatorUserId,
+            initiatorDisplayName: notice.initiatorDisplayName,
+            mode: notice.mode,
+          }
           : notice,
       };
     });
@@ -1256,7 +1256,7 @@ export function ChatPage() {
     return `${mutedPrefix}${getParticipantDisplayName(senderId)}: ${body}`;
   };
 
-  
+
 
   const activeConversation = useMemo(
     () =>
@@ -1785,10 +1785,10 @@ export function ChatPage() {
           ? "Họp nhanh"
           : "Quick meeting"
         : window.prompt(
-            language === "vi"
-              ? `Nhập nội dung ${prefixByType[type]}`
-              : `Enter ${prefixByType[type]} content`,
-          ) ?? "";
+          language === "vi"
+            ? `Nhập nội dung ${prefixByType[type]}`
+            : `Enter ${prefixByType[type]} content`,
+        ) ?? "";
 
     if (type !== "MEETING" && !title.trim()) {
       return;
@@ -1797,14 +1797,14 @@ export function ChatPage() {
     const payload =
       type === "MEETING"
         ? {
-            title,
-            link: `https://meet.jit.si/zola-${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`,
-            createdAt: nowIso,
-          }
+          title,
+          link: `https://meet.jit.si/zola-${activeConversationId.slice(0, 8)}-${Date.now().toString(36)}`,
+          createdAt: nowIso,
+        }
         : {
-            title: title.trim(),
-            createdAt: nowIso,
-          };
+          title: title.trim(),
+          createdAt: nowIso,
+        };
 
     const content = JSON.stringify(payload);
 
@@ -2493,9 +2493,9 @@ export function ChatPage() {
         video:
           mode === "video"
             ? {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-              }
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
             : false,
       });
 
@@ -2685,10 +2685,10 @@ export function ChatPage() {
         setActiveCall((prev) =>
           prev && prev.callId === session.callId
             ? {
-                ...prev,
-                status: "connected",
-                connectedAt: prev.connectedAt ?? new Date().toISOString(),
-              }
+              ...prev,
+              status: "connected",
+              connectedAt: prev.connectedAt ?? new Date().toISOString(),
+            }
             : prev,
         );
         updateCallHistoryStatus(session.callId, "connected");
@@ -2702,10 +2702,10 @@ export function ChatPage() {
           setActiveCall((prev) =>
             prev && prev.callId === session.callId
               ? {
-                  ...prev,
-                  status: "connected",
-                  connectedAt: prev.connectedAt ?? new Date().toISOString(),
-                }
+                ...prev,
+                status: "connected",
+                connectedAt: prev.connectedAt ?? new Date().toISOString(),
+              }
               : prev,
           );
           updateCallHistoryStatus(session.callId, "connected");
@@ -3726,15 +3726,15 @@ export function ChatPage() {
       setActiveCall((prev) =>
         prev && prev.callId === callId
           ? {
-              ...prev,
-              status: "ringing",
-              participantIds:
-                prev.conversationType === "group"
-                  ? prev.participantIds
-                  : peerUserId
-                    ? Array.from(new Set([...prev.participantIds, peerUserId]))
-                    : prev.participantIds,
-            }
+            ...prev,
+            status: "ringing",
+            participantIds:
+              prev.conversationType === "group"
+                ? prev.participantIds
+                : peerUserId
+                  ? Array.from(new Set([...prev.participantIds, peerUserId]))
+                  : prev.participantIds,
+          }
           : prev,
       );
     } catch (error) {
@@ -3919,14 +3919,14 @@ export function ChatPage() {
     const base = isPinUnlockQuery
       ? visible
       : !normalized
-      ? visible
-      : visible.filter((conversation) => {
-      const displayName = getConversationDisplayName(conversation);
-      return (
-        displayName.toLowerCase().includes(normalized) ||
-        conversation.lastMessage.toLowerCase().includes(normalized)
-      );
-    });
+        ? visible
+        : visible.filter((conversation) => {
+          const displayName = getConversationDisplayName(conversation);
+          return (
+            displayName.toLowerCase().includes(normalized) ||
+            conversation.lastMessage.toLowerCase().includes(normalized)
+          );
+        });
 
     return [...base].sort((left, right) => {
       const leftPinned = Boolean(left.isPinned);
@@ -5259,7 +5259,7 @@ export function ChatPage() {
       );
       const lastSyncedMessageId =
         lastReadSyncedMessageByConversationRef.current[
-          activeConversationIdRef.current
+        activeConversationIdRef.current
         ];
 
       markConversationReadLocal(activeConversationIdRef.current);
@@ -5335,10 +5335,10 @@ export function ChatPage() {
   );
   const canComposeDirectForActions = Boolean(
     activeDirectPeerIdForActions &&
-      activeDirectPeerIsFriendForActions &&
-      (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
-        !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
-        !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
+    activeDirectPeerIsFriendForActions &&
+    (!blockedUserIds.includes(activeDirectPeerIdForActions) &&
+      !blockedByPeerUserIds.includes(activeDirectPeerIdForActions) &&
+      !peerRejectedMessageUserIds[activeDirectPeerIdForActions]),
   );
 
   useEffect(() => {
@@ -6587,9 +6587,9 @@ export function ChatPage() {
       }
       setPreviewUserFriendshipStatus(
         blockedByMe ||
-        blockedByPeer ||
-        blockedUserIds.includes(userId) ||
-        blockedByPeerUserIds.includes(userId)
+          blockedByPeer ||
+          blockedUserIds.includes(userId) ||
+          blockedByPeerUserIds.includes(userId)
           ? "BLOCKED"
           : normalizeFriendshipStatus(statusResult.data.status),
       );
@@ -7243,9 +7243,9 @@ export function ChatPage() {
     !isActiveDirectPeerRejectingMessages;
   const isActiveDirectPeerStranger = Boolean(
     activeConversationForView &&
-      activeConversationForView.type !== "group" &&
-      activeDirectPeerUserId &&
-      !friendUserIdSet.has(activeDirectPeerUserId),
+    activeConversationForView.type !== "group" &&
+    activeDirectPeerUserId &&
+    !friendUserIdSet.has(activeDirectPeerUserId),
   );
   const activeIncomingPendingFriendRequest = activeDirectPeerUserId
     ? pendingFriendRequests.find(
@@ -7299,8 +7299,8 @@ export function ChatPage() {
   const isProcessingActivePeerFriendship = Boolean(
     (activeIncomingPendingFriendRequest &&
       processingFriendshipId === activeIncomingPendingFriendRequest.friendshipId) ||
-      (activeSentPendingFriendRequest &&
-        processingFriendshipId === activeSentPendingFriendRequest.friendshipId),
+    (activeSentPendingFriendRequest &&
+      processingFriendshipId === activeSentPendingFriendRequest.friendshipId),
   );
 
   useEffect(() => {
@@ -7422,49 +7422,49 @@ export function ChatPage() {
       ? null
       : isActiveDirectPeerBlockedByMe
         ? {
-            tone: "danger" as const,
-            title: language === "vi" ? "Bạn đã chặn người này" : "You blocked this user",
-            description:
-              language === "vi"
-                ? "Cả hai hiện không thể nhắn tin cho nhau cho tới khi bạn bỏ chặn."
-                : "Neither side can send messages until you unblock this user.",
-          }
+          tone: "danger" as const,
+          title: language === "vi" ? "Bạn đã chặn người này" : "You blocked this user",
+          description:
+            language === "vi"
+              ? "Cả hai hiện không thể nhắn tin cho nhau cho tới khi bạn bỏ chặn."
+              : "Neither side can send messages until you unblock this user.",
+        }
         : isActiveDirectPeerBlockedByPeer
           ? {
-              tone: "danger" as const,
-              title: language === "vi" ? "Bạn đã bị chặn" : "You were blocked",
-              description:
-                language === "vi"
-                  ? "Người dùng này đã chặn bạn. Cuộc trò chuyện được giữ lại để bạn xem lịch sử."
-                  : "This user blocked you. The conversation stays visible for history only.",
-            }
+            tone: "danger" as const,
+            title: language === "vi" ? "Bạn đã bị chặn" : "You were blocked",
+            description:
+              language === "vi"
+                ? "Người dùng này đã chặn bạn. Cuộc trò chuyện được giữ lại để bạn xem lịch sử."
+                : "This user blocked you. The conversation stays visible for history only.",
+          }
           : directStrangerActionMode === "incoming-request"
             ? {
-                tone: "info" as const,
-                title: language === "vi" ? "Lời mời kết bạn mới" : "New friend request",
-                description:
-                  language === "vi"
-                    ? "Người này đã gửi lời mời kết bạn cho bạn. Bạn có thể xác nhận, từ chối hoặc chặn."
-                    : "This person sent you a friend request. You can accept, decline, or block them.",
-              }
+              tone: "info" as const,
+              title: language === "vi" ? "Lời mời kết bạn mới" : "New friend request",
+              description:
+                language === "vi"
+                  ? "Người này đã gửi lời mời kết bạn cho bạn. Bạn có thể xác nhận, từ chối hoặc chặn."
+                  : "This person sent you a friend request. You can accept, decline, or block them.",
+            }
             : directStrangerActionMode === "outgoing-request"
               ? {
-                  tone: "info" as const,
-                  title: language === "vi" ? "Đang chờ phản hồi" : "Waiting for reply",
-                  description:
-                    language === "vi"
-                      ? "Bạn đã gửi lời mời kết bạn. Trong lúc chờ xác nhận, bạn vẫn có thể hủy lời mời hoặc chặn."
-                      : "You already sent a friend request. While waiting, you can cancel it or block this user.",
-                }
+                tone: "info" as const,
+                title: language === "vi" ? "Đang chờ phản hồi" : "Waiting for reply",
+                description:
+                  language === "vi"
+                    ? "Bạn đã gửi lời mời kết bạn. Trong lúc chờ xác nhận, bạn vẫn có thể hủy lời mời hoặc chặn."
+                    : "You already sent a friend request. While waiting, you can cancel it or block this user.",
+              }
               : isActiveDirectPeerStranger
                 ? {
-                    tone: "warning" as const,
-                    title: language === "vi" ? "Người lạ" : "Stranger",
-                    description:
-                      language === "vi"
-                        ? "Đây là người chưa có trong danh bạ. Hãy kết bạn nếu bạn muốn tiếp tục trò chuyện an toàn hơn."
-                        : "This person is outside your contacts. Add them first if you want a safer, more familiar chat flow.",
-                  }
+                  tone: "warning" as const,
+                  title: language === "vi" ? "Người lạ" : "Stranger",
+                  description:
+                    language === "vi"
+                      ? "Đây là người chưa có trong danh bạ. Hãy kết bạn nếu bạn muốn tiếp tục trò chuyện an toàn hơn."
+                      : "This person is outside your contacts. Add them first if you want a safer, more familiar chat flow.",
+                }
                 : null;
 
   const onChangeTab = (tab: ChatTab) => {
@@ -7533,15 +7533,15 @@ export function ChatPage() {
   const activeGroupPreference =
     activeConversationForView
       ? groupPreferenceMap[activeConversationForView.id] ?? {
-          muted: false,
-          pinned: false,
-          hidden: false,
-        }
+        muted: false,
+        pinned: false,
+        hidden: false,
+      }
       : {
-          muted: false,
-          pinned: false,
-          hidden: false,
-        };
+        muted: false,
+        pinned: false,
+        hidden: false,
+      };
 
   const activeTypingUserIds = activeConversationId
     ? typingUserIdsByConversation[activeConversationId] ?? []
@@ -7568,7 +7568,7 @@ export function ChatPage() {
 
   const showJoinGroupCallNotice = Boolean(
     activeGroupCallNotice &&
-      (!activeCall || activeCall.callId !== activeGroupCallNotice.callId),
+    (!activeCall || activeCall.callId !== activeGroupCallNotice.callId),
   );
 
   const typingIndicatorText = useMemo(() => {
@@ -7576,9 +7576,8 @@ export function ChatPage() {
       return null;
     }
     if (typingDisplayNames.length === 1) {
-      return `${typingDisplayNames[0]} ${
-        language === "vi" ? "đang gõ..." : "is typing..."
-      }`;
+      return `${typingDisplayNames[0]} ${language === "vi" ? "đang gõ..." : "is typing..."
+        }`;
     }
     if (typingDisplayNames.length === 2) {
       return language === "vi"
@@ -7590,18 +7589,15 @@ export function ChatPage() {
       : `${typingDisplayNames[0]} and ${typingDisplayNames.length - 1} others are typing...`;
   }, [language, typingDisplayNames]);
 
-  const activeGroupMemberLabel = `${activeGroupMembers.length} ${
-    language === "vi" ? "thành viên" : "members"
-  }`;
+  const activeGroupMemberLabel = `${activeGroupMembers.length} ${language === "vi" ? "thành viên" : "members"
+    }`;
 
   const activeGroupCallNoticeDescription = activeGroupCallNotice
     ? language === "vi"
-      ? `${activeGroupCallNotice.initiatorDisplayName} dang trong cuoc goi ${
-          activeGroupCallNotice.mode === "video" ? "video" : "thoai"
-        } nhom`
-      : `${activeGroupCallNotice.initiatorDisplayName} is in an active ${
-          activeGroupCallNotice.mode === "video" ? "video" : "voice"
-        } group call`
+      ? `${activeGroupCallNotice.initiatorDisplayName} dang trong cuoc goi ${activeGroupCallNotice.mode === "video" ? "video" : "thoai"
+      } nhom`
+      : `${activeGroupCallNotice.initiatorDisplayName} is in an active ${activeGroupCallNotice.mode === "video" ? "video" : "voice"
+      } group call`
     : "";
 
   const incomingCallView: IncomingCallView | null = incomingCall
@@ -7702,16 +7698,14 @@ export function ChatPage() {
                         key={item.key}
                         type="button"
                         onClick={() => setContactsView(item.key)}
-                        className={`flex min-w-[8.5rem] items-center gap-2 rounded-2xl px-3 py-2.5 text-left transition md:w-full md:gap-3 md:px-4 md:py-3 ${
-                          isActive
+                        className={`flex min-w-[8.5rem] items-center gap-2 rounded-2xl px-3 py-2.5 text-left transition md:w-full md:gap-3 md:px-4 md:py-3 ${isActive
                             ? "bg-[rgba(42,134,255,0.20)] text-white shadow-[inset_0_0_0_1px_rgba(82,168,255,0.35)]"
                             : "text-slate-300 hover:bg-[var(--color-zola-panel-hover)] hover:text-white"
-                        }`}
+                          }`}
                       >
                         <span
-                          className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl md:h-10 md:w-10 ${
-                            isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
-                          }`}
+                          className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl md:h-10 md:w-10 ${isActive ? "bg-[rgba(42,134,255,0.26)] text-sky-200" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
+                            }`}
                         >
                           <Icon size={18} />
                         </span>
@@ -7726,23 +7720,22 @@ export function ChatPage() {
                                 ? language === "vi"
                                   ? "Tìm theo email và gửi lời mời đúng trạng thái."
                                   : "Find by email and send the right request action."
-                              : item.key === "groups"
-                                ? language === "vi"
-                                  ? "Nhóm và cộng đồng bạn đang tham gia."
-                                  : "Groups and communities you joined."
-                                : item.key === "requests"
+                                : item.key === "groups"
                                   ? language === "vi"
-                                    ? "Lời mời đến và lời mời bạn đã gửi."
-                                    : "Incoming and sent friendship requests."
-                                  : language === "vi"
-                                    ? "Danh mục cho lời mời nhóm sau này."
-                                    : "Reserved for future group invites."}
+                                    ? "Nhóm và cộng đồng bạn đang tham gia."
+                                    : "Groups and communities you joined."
+                                  : item.key === "requests"
+                                    ? language === "vi"
+                                      ? "Lời mời đến và lời mời bạn đã gửi."
+                                      : "Incoming and sent friendship requests."
+                                    : language === "vi"
+                                      ? "Danh mục cho lời mời nhóm sau này."
+                                      : "Reserved for future group invites."}
                           </span>
                         </span>
                         <span
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
-                            isActive ? "bg-[var(--color-zola-panel-hover)] text-slate-100" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
-                          }`}
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${isActive ? "bg-[var(--color-zola-panel-hover)] text-slate-100" : "bg-[var(--color-zola-panel-soft)] text-slate-400"
+                            }`}
                         >
                           {item.count}
                         </span>
@@ -7785,17 +7778,17 @@ export function ChatPage() {
                               ? language === "vi"
                                 ? "Tìm người dùng"
                                 : "Find people"
-                            : contactsView === "groups"
-                              ? language === "vi"
-                                ? "Danh sách nhóm và cộng đồng"
-                                : "Groups and communities"
-                              : contactsView === "requests"
+                              : contactsView === "groups"
                                 ? language === "vi"
-                                  ? "Lời mời kết bạn"
-                                  : "Friend requests"
-                                : language === "vi"
-                                  ? "Lời mời vào nhóm và cộng đồng"
-                                  : "Group invites"}
+                                  ? "Danh sách nhóm và cộng đồng"
+                                  : "Groups and communities"
+                                : contactsView === "requests"
+                                  ? language === "vi"
+                                    ? "Lời mời kết bạn"
+                                    : "Friend requests"
+                                  : language === "vi"
+                                    ? "Lời mời vào nhóm và cộng đồng"
+                                    : "Group invites"}
                         </h2>
                       </div>
                       <p className="mt-1 text-xs text-slate-400 md:mt-2 md:text-sm">
@@ -7807,17 +7800,17 @@ export function ChatPage() {
                             ? language === "vi"
                               ? "Tìm đúng theo email để lấy dữ liệu thật từ backend"
                               : "Search by exact email to load real backend data"
-                          : contactsView === "groups"
-                            ? language === "vi"
-                              ? `Nhóm và cộng đồng (${filteredJoinedGroupContacts.length})`
-                              : `Groups and communities (${filteredJoinedGroupContacts.length})`
-                            : contactsView === "requests"
+                            : contactsView === "groups"
                               ? language === "vi"
-                                ? `${filteredPendingFriendRequests.length} lời mời đến, ${filteredSentPendingFriendRequests.length} lời mời đã gửi`
-                                : `${filteredPendingFriendRequests.length} incoming, ${filteredSentPendingFriendRequests.length} sent`
-                              : language === "vi"
-                                ? "Danh mục này đã sẵn sàng cho realtime."
-                                : "This area is ready for realtime invite data."}
+                                ? `Nhóm và cộng đồng (${filteredJoinedGroupContacts.length})`
+                                : `Groups and communities (${filteredJoinedGroupContacts.length})`
+                              : contactsView === "requests"
+                                ? language === "vi"
+                                  ? `${filteredPendingFriendRequests.length} lời mời đến, ${filteredSentPendingFriendRequests.length} lời mời đã gửi`
+                                  : `${filteredPendingFriendRequests.length} incoming, ${filteredSentPendingFriendRequests.length} sent`
+                                : language === "vi"
+                                  ? "Danh mục này đã sẵn sàng cho realtime."
+                                  : "This area is ready for realtime invite data."}
                       </p>
                     </div>
 
@@ -7828,20 +7821,20 @@ export function ChatPage() {
                             ? "Sap xep A-Z"
                             : contactsView === "people"
                               ? "Theo trang thai ket ban"
-                            : contactsView === "groups"
-                              ? "Theo ten nhom"
-                              : contactsView === "requests"
-                                ? "Dung theo trang thai"
-                                : "Cho du lieu realtime"
+                              : contactsView === "groups"
+                                ? "Theo ten nhom"
+                                : contactsView === "requests"
+                                  ? "Dung theo trang thai"
+                                  : "Cho du lieu realtime"
                           : contactsView === "friends"
                             ? "Sorted A-Z"
                             : contactsView === "people"
                               ? "By relationship state"
-                            : contactsView === "groups"
-                              ? "By group name"
-                              : contactsView === "requests"
-                                ? "Status overview"
-                                : "Realtime ready"}
+                              : contactsView === "groups"
+                                ? "By group name"
+                                : contactsView === "requests"
+                                  ? "Status overview"
+                                  : "Realtime ready"}
                       </span>
                       <span className="rounded-full border border-[var(--color-zola-border)] bg-[var(--color-zola-panel-soft)] px-3 py-1.5 text-xs font-semibold text-slate-300">
                         {normalizedContactsSearchQuery
@@ -8087,18 +8080,18 @@ export function ChatPage() {
                                 contactCandidateRelationship.status === "REJECTED" ||
                                 contactCandidateRelationship.status === "DECLINED" ||
                                 contactCandidateRelationship.status === "CANCELLED") && (
-                                <button
-                                  type="button"
-                                  disabled={isUpdatingPeerRelationship}
-                                  onClick={() => void onAddFriendToUser(contactCandidateProfile.id)}
-                                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                                >
-                                  {language === "vi" ? "Kết bạn" : "Add friend"}
-                                </button>
-                              )}
+                                  <button
+                                    type="button"
+                                    disabled={isUpdatingPeerRelationship}
+                                    onClick={() => void onAddFriendToUser(contactCandidateProfile.id)}
+                                    className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                                  >
+                                    {language === "vi" ? "Kết bạn" : "Add friend"}
+                                  </button>
+                                )}
 
                               {contactCandidateRelationship.kind === "blocked_by_me" ||
-                              contactCandidateRelationship.kind === "blocked_mutual" ? (
+                                contactCandidateRelationship.kind === "blocked_mutual" ? (
                                 <button
                                   type="button"
                                   disabled={isUpdatingPeerRelationship}
@@ -8817,6 +8810,7 @@ export function ChatPage() {
                 conversation={activeConversationForView}
                 isPanelOpen={isGroupPanelOpen}
                 members={activeGroupMembers}
+                pendingMembers={activeGroupSettings?.pendingParticipants ?? []}
                 friendContacts={friendContacts}
                 pinnedMessages={activePinnedBoardItems}
                 onOpenPinnedMessage={(sourceMessageId: string) => {
@@ -9047,124 +9041,124 @@ export function ChatPage() {
                 }}
                 onClosePanel={() => setIsDirectPanelOpen(false)}
               >
-              <DirectConversationPane
-                language={language}
-                activeConversation={activeConversationForView}
-                activeConversationOnline={activeConversationPresence?.online ?? false}
-                activeConversationPresenceLabel={toPresenceLabel(
-                  activeConversationPresence,
-                )}
-                activeConversationPinned={activeConversationPinned}
-                onTogglePin={() => {
-                  if (activeConversationForView?.id) {
-                    updateGroupPreference(activeConversationForView.id, {
-                      pinned: !activeConversationPinned,
-                    });
-                  }
-                }}
-                headerUnreadBadgeCount={headerUnreadBadgeCount}
-                relationshipBadgeLabel={activeDirectRelationshipBadgeLabel}
-                conversationNotice={activeDirectConversationNotice}
-                userProfileMap={userProfileMap}
-                messages={messages}
-                myProfile={myProfile}
-                isLoadingMessages={isLoadingMessages}
-                draftMessage={draftMessage}
-                onDraftChange={(value) => {
-                  setDraftMessage(value);
-                  onTypingTextChange(value);
-                }}
-                pinnedMessages={activePinnedBoardItems}
-                latestPinnedSummary={latestPinnedSummary}
-                onVoiceCall={() => {
-                  void onStartQuickCall("voice");
-                }}
-                onVideoCall={() => {
-                  void onStartQuickCall("video");
-                }}
-                onSendMessage={onSendMessage}
-                onQuickSendText={onQuickSendText}
-                onSendFiles={onSendFiles}
-                onEditMessage={onEditMessage}
-                onRecallMessage={onRecallMessage}
-                onDeleteForMe={onDeleteForMe}
-                onForwardMessage={onForwardMessage}
-                onForwardMessages={onForwardMessages}
-                onReactMessage={onReactMessage}
-                onPinMessage={(targetMessage) => {
-                  void onPinGroupMessage(targetMessage);
-                }}
-                onUnpinMessage={(targetMessage) => {
-                  void onUnpinGroupMessage(targetMessage.id);
-                }}
-                pendingUploads={pendingUploads}
-                onRetryUpload={onRetryUpload}
-                onCancelUpload={onCancelUpload}
-                isSending={isSending}
-                typingText={typingIndicatorText}
-                allowComposer={canComposeDirectMessage}
-                composerDisabledMessage={
-                  isActiveDirectPeerBlockedByMe
-                    ? language === "vi"
-                      ? "Ban da chan nguoi dung nay."
-                      : "You blocked this user."
-                    : isActiveDirectPeerBlockedByPeer
-                      ? language === "vi"
-                        ? "Nguoi dung nay da chan ban."
-                        : "This user blocked you."
-                      : isActiveDirectPeerStranger
-                        ? language === "vi"
-                          ? "Hai bạn chưa kết bạn. Hãy kết bạn trước khi nhắn tin."
-                          : "You are not friends yet. Add this person before messaging."
-                    : language === "vi"
-                      ? "Người dùng hiện không muốn nhắn tin."
-                      : "This user currently does not want to receive messages."
-                }
-                showStrangerActionPrompt={directStrangerActionMode === "add-or-block"}
-                strangerActionMode={directStrangerActionMode}
-                onAddFriendForPeer={() => {
-                  if (activeDirectPeerUserId) {
-                    void onAddFriendToUser(activeDirectPeerUserId);
-                  }
-                }}
-                onAcceptFriendRequestForPeer={() => {
-                  if (activeIncomingPendingFriendRequest) {
-                    void onAcceptFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
-                  }
-                }}
-                onDeclineFriendRequestForPeer={() => {
-                  if (activeIncomingPendingFriendRequest) {
-                    void onDeclineFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
-                  }
-                }}
-                onCancelFriendRequestForPeer={() => {
-                  if (activeSentPendingFriendRequest) {
-                    void onCancelFriendRequest(activeSentPendingFriendRequest.friendshipId);
-                  }
-                }}
-                onBlockPeer={() => {
-                  if (activeDirectPeerUserId) {
-                    if (isActiveDirectPeerBlockedByMe) {
-                      void onUnblockUser(activeDirectPeerUserId);
-                    } else {
-                      void onBlockUser(activeDirectPeerUserId);
+                <DirectConversationPane
+                  language={language}
+                  activeConversation={activeConversationForView}
+                  activeConversationOnline={activeConversationPresence?.online ?? false}
+                  activeConversationPresenceLabel={toPresenceLabel(
+                    activeConversationPresence,
+                  )}
+                  activeConversationPinned={activeConversationPinned}
+                  onTogglePin={() => {
+                    if (activeConversationForView?.id) {
+                      updateGroupPreference(activeConversationForView.id, {
+                        pinned: !activeConversationPinned,
+                      });
                     }
+                  }}
+                  headerUnreadBadgeCount={headerUnreadBadgeCount}
+                  relationshipBadgeLabel={activeDirectRelationshipBadgeLabel}
+                  conversationNotice={activeDirectConversationNotice}
+                  userProfileMap={userProfileMap}
+                  messages={messages}
+                  myProfile={myProfile}
+                  isLoadingMessages={isLoadingMessages}
+                  draftMessage={draftMessage}
+                  onDraftChange={(value) => {
+                    setDraftMessage(value);
+                    onTypingTextChange(value);
+                  }}
+                  pinnedMessages={activePinnedBoardItems}
+                  latestPinnedSummary={latestPinnedSummary}
+                  onVoiceCall={() => {
+                    void onStartQuickCall("voice");
+                  }}
+                  onVideoCall={() => {
+                    void onStartQuickCall("video");
+                  }}
+                  onSendMessage={onSendMessage}
+                  onQuickSendText={onQuickSendText}
+                  onSendFiles={onSendFiles}
+                  onEditMessage={onEditMessage}
+                  onRecallMessage={onRecallMessage}
+                  onDeleteForMe={onDeleteForMe}
+                  onForwardMessage={onForwardMessage}
+                  onForwardMessages={onForwardMessages}
+                  onReactMessage={onReactMessage}
+                  onPinMessage={(targetMessage) => {
+                    void onPinGroupMessage(targetMessage);
+                  }}
+                  onUnpinMessage={(targetMessage) => {
+                    void onUnpinGroupMessage(targetMessage.id);
+                  }}
+                  pendingUploads={pendingUploads}
+                  onRetryUpload={onRetryUpload}
+                  onCancelUpload={onCancelUpload}
+                  isSending={isSending}
+                  typingText={typingIndicatorText}
+                  allowComposer={canComposeDirectMessage}
+                  composerDisabledMessage={
+                    isActiveDirectPeerBlockedByMe
+                      ? language === "vi"
+                        ? "Ban da chan nguoi dung nay."
+                        : "You blocked this user."
+                      : isActiveDirectPeerBlockedByPeer
+                        ? language === "vi"
+                          ? "Nguoi dung nay da chan ban."
+                          : "This user blocked you."
+                        : isActiveDirectPeerStranger
+                          ? language === "vi"
+                            ? "Hai bạn chưa kết bạn. Hãy kết bạn trước khi nhắn tin."
+                            : "You are not friends yet. Add this person before messaging."
+                          : language === "vi"
+                            ? "Người dùng hiện không muốn nhắn tin."
+                            : "This user currently does not want to receive messages."
                   }
-                }}
-                isUpdatingPeerRelationship={
-                  isUpdatingPeerRelationship || isProcessingActivePeerFriendship
-                }
-                hasMoreMessages={Boolean(nextCursor)}
-                isLoadingMoreMessages={isLoadingMoreMessages}
-                onLoadOlderMessages={onLoadOlderMessages}
-                onViewportBottomChange={setIsChatViewportAtBottom}
-                onOpenUserProfile={(userId) => {
-                  void onOpenUserPreview(userId);
-                }}
-                showDirectPanelToggle
-                isDirectPanelOpen={isDirectPanelOpen}
-                onToggleDirectPanel={() => setIsDirectPanelOpen((prev) => !prev)}
-              />
+                  showStrangerActionPrompt={directStrangerActionMode === "add-or-block"}
+                  strangerActionMode={directStrangerActionMode}
+                  onAddFriendForPeer={() => {
+                    if (activeDirectPeerUserId) {
+                      void onAddFriendToUser(activeDirectPeerUserId);
+                    }
+                  }}
+                  onAcceptFriendRequestForPeer={() => {
+                    if (activeIncomingPendingFriendRequest) {
+                      void onAcceptFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
+                    }
+                  }}
+                  onDeclineFriendRequestForPeer={() => {
+                    if (activeIncomingPendingFriendRequest) {
+                      void onDeclineFriendRequest(activeIncomingPendingFriendRequest.friendshipId);
+                    }
+                  }}
+                  onCancelFriendRequestForPeer={() => {
+                    if (activeSentPendingFriendRequest) {
+                      void onCancelFriendRequest(activeSentPendingFriendRequest.friendshipId);
+                    }
+                  }}
+                  onBlockPeer={() => {
+                    if (activeDirectPeerUserId) {
+                      if (isActiveDirectPeerBlockedByMe) {
+                        void onUnblockUser(activeDirectPeerUserId);
+                      } else {
+                        void onBlockUser(activeDirectPeerUserId);
+                      }
+                    }
+                  }}
+                  isUpdatingPeerRelationship={
+                    isUpdatingPeerRelationship || isProcessingActivePeerFriendship
+                  }
+                  hasMoreMessages={Boolean(nextCursor)}
+                  isLoadingMoreMessages={isLoadingMoreMessages}
+                  onLoadOlderMessages={onLoadOlderMessages}
+                  onViewportBottomChange={setIsChatViewportAtBottom}
+                  onOpenUserProfile={(userId) => {
+                    void onOpenUserPreview(userId);
+                  }}
+                  showDirectPanelToggle
+                  isDirectPanelOpen={isDirectPanelOpen}
+                  onToggleDirectPanel={() => setIsDirectPanelOpen((prev) => !prev)}
+                />
               </DirectChat>
             )}
           </section>

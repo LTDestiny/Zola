@@ -838,18 +838,7 @@ export function GroupConversationPane({
     [pinnedMessages],
   );
   const displayMessages = useMemo(() => {
-    if (pinnedMessageSourceOrder.length === 0) {
-      return localMessages;
-    }
-
-    const messageById = new Map(localMessages.map((message) => [message.id, message]));
-    const pinnedTopMessages = pinnedMessageSourceOrder
-      .map((messageId) => messageById.get(messageId))
-      .filter((message): message is ChatMessage => Boolean(message));
-    const pinnedIds = new Set(pinnedTopMessages.map((message) => message.id));
-    const normalMessages = localMessages.filter((message) => !pinnedIds.has(message.id));
-
-    return [...pinnedTopMessages, ...normalMessages];
+    return localMessages;
   }, [localMessages, pinnedMessageSourceOrder]);
 
   useEffect(() => {

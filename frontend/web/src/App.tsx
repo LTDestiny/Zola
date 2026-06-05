@@ -24,7 +24,44 @@ export function App() {
 
   return (
     <LanguageProvider>
-      <Toaster position="top-right" />
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          className: "toast-modern",
+          style: {
+            background: "#142841",
+            color: "#fff",
+            borderRadius: "12px",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
+            padding: "14px 18px",
+            fontSize: "15px",
+            fontWeight: 500,
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+          },
+          success: {
+            style: {
+              background: "var(--color-zola-success)",
+              color: "#fff",
+              border: "none",
+            },
+            iconTheme: {
+              primary: "#fff",
+              secondary: "var(--color-zola-success)",
+            },
+          },
+          error: {
+            style: {
+              background: "var(--color-zola-danger)",
+              color: "#fff",
+              border: "none",
+            },
+            iconTheme: {
+              primary: "#fff",
+              secondary: "var(--color-zola-danger)",
+            },
+          },
+        }}
+      />
       <Router>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
