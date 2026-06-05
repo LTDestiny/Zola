@@ -339,9 +339,7 @@ public class ChatRealtimeService {
         if (!CONVERSATION_TYPE_GROUP.equalsIgnoreCase(normalizeConversationType(conversation.getType()))) {
             throw new ResourceNotFoundException("Invite link is invalid or expired");
         }
-        if (conversation.isRequireApprovalToJoin()) {
-            throw new ForbiddenOperationException("This group requires admin approval to join");
-        }
+
         if (!conversation.isAllowMemberInvite()) {
             throw new ForbiddenOperationException("Invite link is currently disabled for this group");
         }

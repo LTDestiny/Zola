@@ -44,6 +44,8 @@ import {
   markPendingFriendRequestsRead,
   removeFriend,
   removeGroupMember,
+  approveGroupMember,
+  rejectGroupMember,
   readMessage,
   recallMessage,
   removeReaction,
@@ -1561,6 +1563,30 @@ export function ChatPage() {
       setBannerMessage(
         language === "vi" ? "Đã xóa thành viên" : "Member removed",
       );
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onApprovePendingMember = async (userId: string) => {
+    if (!activeConversationId) return;
+    try {
+      await approveGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(language === "vi" ? "Đã duyệt thành viên" : "Member approved");
+    } catch (error) {
+      setBannerMessage(toApiErrorMessage(error));
+    }
+  };
+
+  const onRejectPendingMember = async (userId: string) => {
+    if (!activeConversationId) return;
+    try {
+      await rejectGroupMember(activeConversationId, userId);
+      await fetchConversations({ silent: true });
+      await refreshGroupSettings(activeConversationId);
+      setBannerMessage(language === "vi" ? "Đã từ chối thành viên" : "Member rejected");
     } catch (error) {
       setBannerMessage(toApiErrorMessage(error));
     }
@@ -8822,6 +8848,8 @@ export function ChatPage() {
                 onDeleteMessageForMe={(messageId: string) => {
                   void onDeleteForMe(messageId);
                 }}
+                onApprovePendingMember={onApprovePendingMember}
+                onRejectPendingMember={onRejectPendingMember}
                 onUnpinPinnedMessage={(sourceMessageId: string) => {
                   void onUnpinGroupMessage(sourceMessageId);
                 }}
